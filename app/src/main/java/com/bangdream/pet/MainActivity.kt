@@ -232,7 +232,8 @@ fun BangDreamPetApp(
         } else {
             val hazeState = rememberLiquidGlassState()
             val liquidGlass = themeSettings.liquidGlassEnabled && VisualGuard.supportsLiquidGlass(appContext)
-            val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp
+            val statusBarInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            val topInset = statusBarInset + 64.dp
             Box(Modifier.fillMaxSize()) {
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
@@ -290,7 +291,7 @@ fun BangDreamPetApp(
                                     }
                                 },
                             )
-                            Screen.Model -> Box(Modifier.fillMaxSize().padding(top = topInset)) {
+                            Screen.Model -> Box(Modifier.fillMaxSize().padding(top = statusBarInset)) {
                                 ModelScreen(
                                     data = data,
                                     selectedBandId = selectedBandId,
@@ -332,10 +333,12 @@ fun BangDreamPetApp(
                     }
                 }
             }
-            AppTopBar(
-                selectedModel = selectedModel,
-                modifier = Modifier.align(Alignment.TopCenter).appLiquidGlass(hazeState, enabled = liquidGlass),
-            )
+            if (selectedScreen != Screen.Model) {
+                AppTopBar(
+                    selectedModel = selectedModel,
+                    modifier = Modifier.align(Alignment.TopCenter).appLiquidGlass(hazeState, enabled = liquidGlass),
+                )
+            }
             }
         }
     }
