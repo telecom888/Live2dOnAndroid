@@ -4,6 +4,9 @@ import android.app.WallpaperManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import com.bandori.pet.loadWallpaperOriginalBackupPath
 import com.bandori.pet.saveWallpaperOriginalBackupPath
 import com.bandori.pet.saveWallpaperBackgroundUri
@@ -15,38 +18,42 @@ import kotlin.math.max
 object WallpaperBackup {
     private const val MAX_EDGE = 2048
 
-    /** 捕获当前系统壁纸，保存到应用私有目录，并设为壁纸背景 URI。返回 uri。 */
+    /**
+     * 捕获当前系统壁纸并设为壁纸背景 URI。
+     * 兜底顺序：
+     * 1. WallpaperManager.getDrawable()
+     * 2. WallpaperManager.getWallpaper()（Bitmap）
+     * 3. 已存在的旧备份文件（复用，不重新捕获）
+     * 返回 uri；全部失败返回 null（例如当前已是动态壁纸且无备份）。
+     */
     fun captureAndUseAsBackground(context: Context): String? {
-        val drawable = runCatching {
-            WallpaperManager.getInstance(context).drawable
-        }.getOrNull() ?: return null
-
-        val bitmap = runCatching {
-            val src = when (drawable) {
-                is android.graphics.drawable.BitmapDrawable -> drawable.bitmap
-                else -> {
-                    val w = drawable.intrinsicWidth.takeIf { it > 0 } ?: 1080
-                    val h = drawable.intrinsicHeight.takeIf { it > 0 } ?: 1920
-                    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                    val canvas = android.graphics.Canvas(bmp)
-                    drawable.setBounds(0, 0, w, h)
-                    drawable.draw(canvas)
-                    bmp
-                }
-            }
-            scaleToMaxEdge(src)
-        }.getOrNull() ?: return null
-
-        val file = File(context.filesDir, "wallpaper_backup.png")
-        runCatching {
-            FileOutputStream(file).use { out -> bitmap.compress(Bitmap.CompressFormat.PNG, 90, out) }
-        }.getOrNull() ?: run { bitmap.recycle(); return null }
-        bitmap.recycle()
-
+        val file = captureToFile(context) ?: return null
         saveWallpaperOriginalBackupPath(context, file.absolutePath)
         val uri = "file://" + file.absolutePath
         saveWallpaperBackgroundUri(context, uri)
         return uri
+    }
+
+    /** 是否还能从系统读取到静态壁纸（动态壁纸时为 false）。 */
+    fun canReadSystemWallpaper(context: Context): Boolean = runCatching {
+        val wm = WallpaperManager.getInstance(context)
+        wm.drawable != null || wm.peekDrawable() != null
+    }.getOrDefault(false)
+
+    private fun captureToFile(context: Context): File? {
+        val bitmap = captureCurrentWallpaperBitmap(context)
+        if (bitmap != null) {
+            val file = File(context.filesDir, "wallpaper_backup.png")
+            val ok = runCatching {
+                FileOutputStream(file).use { out -> bitmap.compress(Bitmap.CompressFormat.PNG, 90, out) }
+            }.getOrDefault(false)
+            bitmap.recycle()
+            if (ok) return file
+        }
+        // 兜底：复用旧备份
+        val path = loadWallpaperOriginalBackupPath(context)
+        val old = path?.let { File(it) }
+        return old?.takeIf { it.exists() }
     }
 
     fun loadBackupBitmap(context: Context): Bitmap? {
@@ -70,6 +77,27 @@ object WallpaperBackup {
             bitmap.recycle()
             false
         }
+    }
+
+    private fun captureCurrentWallpaperBitmap(context: Context): Bitmap? = runCatching {
+        val wm = WallpaperManager.getInstance(context)
+        val fromDrawable = runCatching { wm.drawable }.getOrNull()
+        if (fromDrawable != null) {
+            return@runCatching scaleToMaxEdge(drawableToBitmap(fromDrawable))
+        }
+        val fromPeek = runCatching { wm.peekDrawable() }.getOrNull()
+        fromPeek?.let { scaleToMaxEdge(drawableToBitmap(it)) }
+    }.getOrNull()
+
+    private fun drawableToBitmap(drawable: Drawable): Bitmap {
+        if (drawable is BitmapDrawable) return drawable.bitmap
+        val w = drawable.intrinsicWidth.takeIf { it > 0 } ?: 1080
+        val h = drawable.intrinsicHeight.takeIf { it > 0 } ?: 1920
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        drawable.setBounds(0, 0, w, h)
+        drawable.draw(canvas)
+        return bmp
     }
 
     private fun computeSampleSize(bytes: Long): Int {

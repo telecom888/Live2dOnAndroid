@@ -143,6 +143,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
+    val scope = rememberCoroutineScope()
     var wallpaperEnabled by remember { mutableStateOf(isWallpaperEnabled(appContext)) }
     var wallpaperBackgroundUri by remember { mutableStateOf(loadWallpaperBackgroundUri(appContext)) }
     var floatingOverlaySettings by remember { mutableStateOf(FloatingOverlaySettings.load(appContext)) }
@@ -202,7 +203,17 @@ fun SettingsScreen(
                 onEnabledChanged = { enabled ->
                     wallpaperEnabled = enabled
                     setWallpaperEnabled(appContext, enabled)
-                    if (enabled) openLiveWallpaperPicker(context)
+                    if (enabled) {
+                        scope.launch {
+                            if (loadWallpaperBackgroundUri(appContext).isNullOrBlank()) {
+                                val uri = withContext(Dispatchers.IO) {
+                                    WallpaperBackup.captureAndUseAsBackground(appContext)
+                                }
+                                if (uri != null) wallpaperBackgroundUri = uri
+                            }
+                            openLiveWallpaperPicker(context)
+                        }
+                    }
                 },
                 onBackgroundChanged = { uri ->
                     wallpaperBackgroundUri = uri
@@ -1175,11 +1186,30 @@ private fun renderResolutionLabel(resolution: RenderResolution): String = when (
 
 private fun openLiveWallpaperPicker(context: android.content.Context) {
     val component = ComponentName(context, Live2DWallpaperService::class.java)
-    val changeIntent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
-        .putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, component)
-    val fallbackIntent = Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER)
-    runCatching { context.startActivity(changeIntent) }
-        .recoverCatching { context.startActivity(fallbackIntent) }
+    val intents = buildList {
+        add(
+            Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
+                .putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, component)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+        add(
+            Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+        add(
+            Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+    for (intent in intents) {
+        runCatching { context.startActivity(intent) }
+            .onSuccess { return }
+    }
+    Toast.makeText(
+        context,
+        "未找到系统壁纸选择器，请到：系统设置 → 壁纸 → 动态壁纸 → 选择 Bandori Pet",
+        Toast.LENGTH_LONG,
+    ).show()
 }
 
 
@@ -1192,7 +1222,7 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("保留系统原壁纸", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "启用动态壁纸前捕获当前系统壁纸，作为背景层绘制（模型在壁纸与桌面图标之间）。",
+                "开启桌面渲染时会自动捕获当前系统壁纸作为背景层（模型在壁纸与桌面图标之间）；这里可手动重新捕获或恢复系统壁纸。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -1204,7 +1234,17 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
                                 WallpaperBackup.captureAndUseAsBackground(appContext)
                             }
                             onCaptured(uri)
-                            Toast.makeText(appContext, if (uri != null) "已捕获原壁纸并设为背景" else "捕获失败", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                appContext,
+                                if (uri != null) {
+                                    "已捕获原壁纸并设为背景"
+                                } else if (!WallpaperBackup.canReadSystemWallpaper(appContext)) {
+                                    "当前已是动态壁纸，无法读取原静态壁纸：请先切回静态壁纸再捕获，或选择一张图片作为背景"
+                                } else {
+                                    "捕获失败：请检查系统壁纸设置"
+                                },
+                                Toast.LENGTH_LONG,
+                            ).show()
                         }
                     },
                 ) {
