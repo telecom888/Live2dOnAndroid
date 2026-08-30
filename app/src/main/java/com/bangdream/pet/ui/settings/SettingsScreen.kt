@@ -72,8 +72,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.bangdream.pet.DarkModeSetting
-import com.bangdream.pet.FloatingLive2DItem
-import com.bangdream.pet.FloatingOverlaySettings
 import com.bangdream.pet.I18n
 import com.bangdream.pet.RenderResolution
 import com.bangdream.pet.RenderSettings
@@ -96,9 +94,7 @@ import com.bangdream.pet.loadBuiltinVoiceLanguage
 import com.bangdream.pet.saveBuiltinVoiceLanguage
 import com.bangdream.pet.saveBuiltinVoiceEnabled
 import com.bangdream.pet.saveBubbleEnabled
-import com.bangdream.pet.addFloatingLive2DItem
 import com.bangdream.pet.data.ModelChoice
-import com.bangdream.pet.floating.FloatingLive2DOverlayService
 import com.bangdream.pet.isWallpaperEnabled
 import com.bangdream.pet.llm.ChatHistoryRepository
 import com.bangdream.pet.llm.LlmSettings
@@ -112,8 +108,6 @@ import com.bangdream.pet.loadTouchAnimationEnabled
 import com.bangdream.pet.loadTouchAnimations
 import com.bangdream.pet.loadWallpaperBackgroundUri
 import com.bangdream.pet.persistBackgroundUri
-import com.bangdream.pet.removeFloatingLive2DItem
-import com.bangdream.pet.resetFloatingLive2DItemPositions
 import com.bangdream.pet.saveIdleAnimationEnabled
 import com.bangdream.pet.saveMimoApiKey
 import com.bangdream.pet.saveIdleAnimations
@@ -147,31 +141,12 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     var wallpaperEnabled by remember { mutableStateOf(isWallpaperEnabled(appContext)) }
     var wallpaperBackgroundUri by remember { mutableStateOf(loadWallpaperBackgroundUri(appContext)) }
-    var floatingOverlaySettings by remember { mutableStateOf(FloatingOverlaySettings.load(appContext)) }
-    fun updateFloatingOverlaySettings(settings: FloatingOverlaySettings) {
-        val latestItemsById = FloatingOverlaySettings.load(appContext).items.associateBy { it.id }
-        val nextSettings = settings.copy(
-            items = settings.items.map { item ->
-                latestItemsById[item.id]?.let { latest ->
-                    item.copy(
-                        x = latest.x,
-                        y = latest.y,
-                        width = latest.width,
-                        height = latest.height,
-                    )
-                } ?: item
-            },
-        )
-        floatingOverlaySettings = nextSettings
-        nextSettings.save(appContext)
-        FloatingLive2DOverlayService.sync(appContext)
-    }
-
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(top = topInset + 4.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item(key = "section_appearance") { SettingsSectionHeader("外观") }
         item(key = "theme") {
             ThemeSettingsCard(
                 settings = themeSettings,
@@ -183,17 +158,10 @@ fun SettingsScreen(
                 settings = renderSettings,
                 onSettingsChanged = { settings ->
                     onRenderSettingsChanged(settings)
-                    FloatingLive2DOverlayService.sync(appContext)
                 },
             )
         }
-        item(key = "llm") {
-            LlmSettingsEntryCard()
-        }
-        item(key = "voice_settings") {
-            VoiceSettingsCard()
-        }
-        // 悬浮窗模式已按需求移除：模型只通过动态壁纸显示。
+        item(key = "section_desktop") { SettingsSectionHeader("桌面壁纸") }
         item(key = "wallpaper") {
             WallpaperSettingsCard(
                 enabled = wallpaperEnabled,
@@ -211,12 +179,6 @@ fun SettingsScreen(
                 },
             )
         }
-        item(key = "builtin_voice") {
-            BuiltinVoiceCard(selectedModel = selectedModel)
-        }
-        item(key = "voice_samples") {
-            VoiceSamplesCard(selectedModel = selectedModel)
-        }
         item(key = "original_wallpaper") {
             OriginalWallpaperCard(
                 onCaptured = { uri ->
@@ -228,6 +190,21 @@ fun SettingsScreen(
         item(key = "interaction") {
             InteractionSettingsCard()
         }
+        item(key = "section_ai") { SettingsSectionHeader("AI 对话") }
+        item(key = "llm") {
+            LlmSettingsEntryCard()
+        }
+        item(key = "section_voice") { SettingsSectionHeader("语音") }
+        item(key = "voice_settings") {
+            VoiceSettingsCard()
+        }
+        item(key = "builtin_voice") {
+            BuiltinVoiceCard(selectedModel = selectedModel)
+        }
+        item(key = "voice_samples") {
+            VoiceSamplesCard(selectedModel = selectedModel)
+        }
+        item(key = "section_about") { SettingsSectionHeader("关于") }
         item(key = "info") {
             InfoCard(
                 I18n.t("settings_about"),
@@ -346,16 +323,6 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(I18n.t("settings_llm_model")) },
                     singleLine = true,
-                )
-                OutlinedTextField(
-                    value = draft.customPrompt,
-                    onValueChange = { draft = draft.copy(customPrompt = it); saved = false },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(I18n.t("settings_llm_custom_prompt")) },
-                    supportingText = { Text(I18n.t("settings_llm_custom_prompt_desc")) },
-                    placeholder = { Text(I18n.t("settings_llm_custom_prompt_hint")) },
-                    minLines = 4,
-                    maxLines = 10,
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -781,229 +748,6 @@ private fun RenderSettingsCard(
 }
 
 @Composable
-private fun FloatingOverlaySettingsCard(
-    selectedModel: ModelChoice?,
-    settings: FloatingOverlaySettings,
-    onSettingsChanged: (FloatingOverlaySettings) -> Unit,
-    onRefreshSettings: () -> Unit,
-) {
-    val context = LocalContext.current
-    val appContext = context.applicationContext
-    var hasOverlayPermission by remember { mutableStateOf(FloatingLive2DOverlayService.canDrawOverlays(appContext)) }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        hasOverlayPermission = FloatingLive2DOverlayService.canDrawOverlays(appContext)
-        onRefreshSettings()
-        FloatingLive2DOverlayService.sync(appContext)
-    }
-
-    fun requestPermission() {
-        permissionLauncher.launch(FloatingLive2DOverlayService.permissionIntent(context))
-    }
-
-    SettingsSectionCard {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(I18n.t("settings_floating_title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    I18n.t("settings_floating_desc"),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            if (!hasOverlayPermission) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(I18n.t("settings_floating_permission"), fontWeight = FontWeight.SemiBold)
-                        Text(
-                            I18n.t("settings_floating_permission_desc"),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    FilledTonalButton(onClick = ::requestPermission) { Text(I18n.t("settings_floating_auth")) }
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(I18n.t("settings_floating_enable"), fontWeight = FontWeight.SemiBold)
-                    Text(
-                        when {
-                            !hasOverlayPermission -> I18n.t("settings_floating_no_permission")
-                            settings.items.isEmpty() -> I18n.t("settings_floating_no_items")
-                            settings.enabled -> I18n.t("settings_floating_count", settings.items.size)
-                            else -> I18n.t("settings_floating_enable_desc")
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                Switch(
-                    checked = settings.enabled,
-                    enabled = hasOverlayPermission,
-                    onCheckedChange = { enabled ->
-                        onSettingsChanged(settings.copy(enabled = enabled))
-                    },
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(I18n.t("settings_floating_lock"), fontWeight = FontWeight.SemiBold)
-                    Text(
-                        if (settings.locked) I18n.t("settings_floating_lock_on") else I18n.t("settings_floating_lock_off"),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                Switch(
-                    checked = settings.locked,
-                    onCheckedChange = { locked -> onSettingsChanged(settings.copy(locked = locked)) },
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(I18n.t("settings_floating_touch"), fontWeight = FontWeight.SemiBold)
-                    Text(
-                        if (settings.touchThrough) {
-                            I18n.t("settings_floating_touch_on")
-                        } else {
-                            I18n.t("settings_floating_touch_off")
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                Switch(
-                    checked = settings.touchThrough,
-                    onCheckedChange = { touchThrough ->
-                        onSettingsChanged(settings.copy(touchThrough = touchThrough))
-                    },
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(I18n.t("settings_floating_add"), fontWeight = FontWeight.SemiBold)
-                    Text(
-                        selectedModel?.title ?: I18n.t("settings_floating_no_model"),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                FilledTonalButton(
-                    enabled = selectedModel != null,
-                    onClick = {
-                        selectedModel?.let { model ->
-                            val next = addFloatingLive2DItem(appContext, model)
-                            onSettingsChanged(next)
-                        }
-                    },
-                ) {
-                    Text(I18n.t("settings_floating_add_btn"))
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(I18n.t("settings_floating_reset"), fontWeight = FontWeight.SemiBold)
-                    Text(
-                        I18n.t("settings_floating_reset_desc"),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                FilledTonalButton(
-                    enabled = settings.items.isNotEmpty(),
-                    onClick = {
-                        val next = resetFloatingLive2DItemPositions(appContext)
-                        onSettingsChanged(next)
-                    },
-                ) {
-                    Text(I18n.t("settings_floating_reset_btn"))
-                }
-            }
-            if (settings.items.isEmpty()) {
-                Text(
-                    I18n.t("settings_floating_empty"),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    settings.items.forEachIndexed { index, item ->
-                        FloatingOverlayItemRow(
-                            index = index,
-                            item = item,
-                            onRemove = {
-                                val next = removeFloatingLive2DItem(appContext, item.id)
-                                onSettingsChanged(next)
-                            },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FloatingOverlayItemRow(
-    index: Int,
-    item: FloatingLive2DItem,
-    onRemove: () -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    text = "${index + 1}. ${item.model.title}",
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = I18n.t("settings_floating_pos", item.x, item.y, item.width, item.height),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            TextButton(onClick = onRemove) { Text(I18n.t("settings_floating_remove")) }
-        }
-    }
-}
-
-@Composable
 private fun WallpaperSettingsCard(
     enabled: Boolean,
     backgroundUri: String?,
@@ -1164,6 +908,17 @@ private fun InfoCard(title: String, body: String) {
             Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+@Composable
+private fun SettingsSectionHeader(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 6.dp, top = 10.dp, bottom = 2.dp),
+    )
 }
 
 @Composable

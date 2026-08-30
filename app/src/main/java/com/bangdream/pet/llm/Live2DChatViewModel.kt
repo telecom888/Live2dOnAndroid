@@ -283,7 +283,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             }
 
             try {
-                client.streamCompletion(settings, settings.systemPromptWithCustom(characterPrompt.text), messages).collect { event ->
+                client.streamCompletion(settings, characterPrompt.text, messages).collect { event ->
                     if (!isActive(requestContext)) return@collect
                     when (event) {
                         is LlmStreamEvent.Content -> {

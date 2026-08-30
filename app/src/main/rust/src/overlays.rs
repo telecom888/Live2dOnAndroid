@@ -362,9 +362,10 @@ impl FpsRenderer {
 
         let width = surface_width.max(1);
         let height = surface_height.max(1);
-        let cell_size = (width as f32 / 46.0)
-            .min(height as f32 / 32.0)
-            .clamp(3.0, 7.0);
+        // FPS 字号太小在手机屏幕上几乎不可见，放大并保持清晰
+        let cell_size = (width as f32 / 34.0)
+            .min(height as f32 / 22.0)
+            .clamp(8.0, 14.0);
         let text = format!("FPS {}", fps.clamp(0, 999));
         let mut vertices = Vec::with_capacity(text.len() * 7 * 5 * 12);
         append_fps_text(&mut vertices, &text, width, height, cell_size);
@@ -396,8 +397,8 @@ impl FpsRenderer {
             );
             ffi::glUniform2f(
                 self.offset_uniform,
-                3.0 / width as f32,
-                -3.0 / height as f32,
+                4.0 / width as f32,
+                -4.0 / height as f32,
             );
             ffi::glUniform4f(self.color_uniform, 0.0, 0.0, 0.0, 0.8);
             ffi::glDrawArrays(ffi::GL_TRIANGLES, 0, (vertices.len() / 2) as i32);
