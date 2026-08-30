@@ -525,3 +525,16 @@ fun saveBubbleEnabled(context: Context, enabled: Boolean) {
     context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
         .edit().putBoolean(KEY_BUBBLE_ENABLED, enabled).apply()
 }
+
+
+// ==================== 内置语音（台词 → 克隆 TTS） ====================
+const val KEY_BUILTIN_VOICE_ENABLED = "builtin_voice_enabled"
+
+fun loadBuiltinVoiceEnabled(context: Context): Boolean =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getBoolean(KEY_BUILTIN_VOICE_ENABLED, false)
+
+fun saveBuiltinVoiceEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_BUILTIN_VOICE_ENABLED, enabled).apply()
+}

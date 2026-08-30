@@ -24,7 +24,10 @@ import android.widget.Toast
 import com.bandori.pet.chat.PetRuntime
 import com.bandori.pet.chat.WallpaperBubbleService
 import com.bandori.pet.chat.WallpaperChatActivity
+import com.bandori.pet.loadBubbleEnabled
+import com.bandori.pet.loadBuiltinVoiceEnabled
 import com.bandori.pet.loadIdleAnimationEnabled
+import com.bandori.pet.loadSelectedCharacterId
 import com.bandori.pet.loadIdleAnimations
 import com.bandori.pet.loadIdleIntervalMs
 import com.bandori.pet.loadSwipeAnimationEnabled
@@ -34,6 +37,8 @@ import com.bandori.pet.loadPersistedModelChoice
 import com.bandori.pet.loadWallpaperBackgroundUri
 import com.bandori.pet.loadWallpaperTransform
 import com.bandori.pet.live2d.AssetSync
+import com.bandori.pet.voice.BuiltinVoiceManager
+import com.bandori.pet.voice.VoicePlayer
 import com.bandori.pet.live2d.NativeLive2D
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -272,10 +277,24 @@ class Live2DWallpaperService : WallpaperService() {
 
         private fun playIdleAction() {
             if (handle == 0L || !visible) return
+            if (loadBuiltinVoiceEnabled(applicationContext)) {
+                val charId = loadSelectedCharacterId(applicationContext)
+                val line = BuiltinVoiceManager.randomLineWithVoice(applicationContext, charId)
+                if (line != null) {
+                    NativeLive2D.playAction(handle, baseMotionName(line.motion))
+                    runCatching { line.wavFile?.readBytes()?.let { VoicePlayer.play(applicationContext, it) } }
+                    if (loadBubbleEnabled(applicationContext)) {
+                        WallpaperBubbleService.show(applicationContext, line.text)
+                    }
+                    return
+                }
+            }
             val choices = loadIdleAnimations(applicationContext)
             if (choices.isEmpty()) return
             NativeLive2D.playAction(handle, choices.random())
         }
+
+        private fun baseMotionName(name: String): String = name.replace(Regex("\\d+$"), "")
 
         private fun startIdleLoop() {
             idleJob?.cancel()
@@ -320,3 +339,4 @@ class Live2DWallpaperService : WallpaperService() {
         const val RESTART_DEBOUNCE_MS = 50L
     }
 }
+
