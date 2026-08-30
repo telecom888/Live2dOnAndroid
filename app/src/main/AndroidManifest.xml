@@ -73,6 +73,9 @@
                 android:resource="@xml/live2d_wallpaper" />
         </service>
         <service
+            android:name=".chat.WallpaperBubbleService"
+            android:exported="false" />
+        <service
             android:name=".floating.FloatingLive2DOverlayService"
             android:exported="false" />
     </application>

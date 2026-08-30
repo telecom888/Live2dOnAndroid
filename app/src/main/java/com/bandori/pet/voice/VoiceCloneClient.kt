@@ -15,7 +15,11 @@ import java.util.concurrent.TimeUnit
  * mimo-v2.5-tts-voiceclone（免费）音色克隆合成。
  * 文档：docs/mimo-tts-voiceclone.txt（已实测：返回 message.audio.data base64 WAV）
  */
-class VoiceCloneClient(private val apiKey: String) {
+class VoiceCloneClient(
+    private val baseUrl: String,
+    private val model: String,
+    private val apiKey: String,
+) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
@@ -34,7 +38,7 @@ class VoiceCloneClient(private val apiKey: String) {
             }
             val b64 = Base64.getEncoder().encodeToString(sampleBytes)
             val body = JSONObject()
-                .put("model", "mimo-v2.5-tts-voiceclone")
+                .put("model", model)
                 .put(
                     "messages",
                     org.json.JSONArray()
@@ -44,8 +48,9 @@ class VoiceCloneClient(private val apiKey: String) {
                 .put("audio", JSONObject().put("format", "wav").put("voice", "data:$mime;base64,$b64"))
                 .toString()
 
+            val endpoint = if (baseUrl.endsWith("/chat/completions", ignoreCase = true)) baseUrl else "$baseUrl/chat/completions"
             val request = Request.Builder()
-                .url("https://api.xiaomimimo.com/v1/chat/completions")
+                .url(endpoint)
                 .header("Authorization", "Bearer $apiKey")
                 .post(body.toRequestBody(jsonMediaType))
                 .build()

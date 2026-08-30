@@ -466,3 +466,62 @@ fun saveMimoApiKey(context: Context, key: String) {
     context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
         .edit().putString(KEY_MIMO_API_KEY, key.trim()).apply()
 }
+
+
+// ==================== 语音合成（服务商 + 模型 + 密钥） ====================
+const val VOICE_PROVIDER_MIMO = "mimo"
+const val VOICE_PROVIDER_CUSTOM = "custom"
+const val VOICE_MIMO_DEFAULT_MODEL = "mimo-v2.5-tts-voiceclone"
+const val VOICE_MIMO_DEFAULT_BASE = "https://api.xiaomimimo.com/v1"
+
+const val KEY_VOICE_PROVIDER = "voice_provider"
+const val KEY_VOICE_BASE_URL = "voice_base_url"
+const val KEY_VOICE_MODEL = "voice_model"
+const val KEY_VOICE_API_KEY = "voice_api_key"
+const val KEY_BUBBLE_ENABLED = "bubble_enabled"
+
+data class VoiceSettings(
+    val provider: String = VOICE_PROVIDER_MIMO,
+    val baseUrl: String = VOICE_MIMO_DEFAULT_BASE,
+    val model: String = VOICE_MIMO_DEFAULT_MODEL,
+    val apiKey: String = "",
+) {
+    val isConfigured: Boolean get() = apiKey.isNotBlank() && model.isNotBlank() && baseUrl.isNotBlank()
+    fun normalized(): VoiceSettings = copy(
+        baseUrl = baseUrl.trim().trimEnd('/'),
+        model = model.trim(),
+        apiKey = apiKey.trim(),
+    )
+    fun endpoint(): String =
+        if (baseUrl.endsWith("/chat/completions", ignoreCase = true)) baseUrl else "$baseUrl/chat/completions"
+    fun save(context: Context) {
+        val value = normalized()
+        context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_VOICE_PROVIDER, value.provider)
+            .putString(KEY_VOICE_BASE_URL, value.baseUrl)
+            .putString(KEY_VOICE_MODEL, value.model)
+            .putString(KEY_VOICE_API_KEY, value.apiKey)
+            .apply()
+    }
+    companion object {
+        fun load(context: Context): VoiceSettings {
+            val prefs = context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+            val legacyMimoKey = prefs.getString(KEY_MIMO_API_KEY, null).orEmpty()
+            return VoiceSettings(
+                provider = prefs.getString(KEY_VOICE_PROVIDER, VOICE_PROVIDER_MIMO) ?: VOICE_PROVIDER_MIMO,
+                baseUrl = prefs.getString(KEY_VOICE_BASE_URL, VOICE_MIMO_DEFAULT_BASE) ?: VOICE_MIMO_DEFAULT_BASE,
+                model = prefs.getString(KEY_VOICE_MODEL, VOICE_MIMO_DEFAULT_MODEL) ?: VOICE_MIMO_DEFAULT_MODEL,
+                apiKey = prefs.getString(KEY_VOICE_API_KEY, null)?.takeIf { it.isNotBlank() } ?: legacyMimoKey,
+            )
+        }
+    }
+}
+
+fun loadBubbleEnabled(context: Context): Boolean =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getBoolean(KEY_BUBBLE_ENABLED, true)
+
+fun saveBubbleEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_BUBBLE_ENABLED, enabled).apply()
+}

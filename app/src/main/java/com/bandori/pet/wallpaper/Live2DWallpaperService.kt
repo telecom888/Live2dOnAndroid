@@ -22,6 +22,7 @@ import com.bandori.pet.SETTINGS_PREFS
 import com.bandori.pet.isWallpaperEnabled
 import android.widget.Toast
 import com.bandori.pet.chat.PetRuntime
+import com.bandori.pet.chat.WallpaperBubbleService
 import com.bandori.pet.chat.WallpaperChatActivity
 import com.bandori.pet.loadIdleAnimationEnabled
 import com.bandori.pet.loadIdleAnimations
@@ -114,6 +115,7 @@ class Live2DWallpaperService : WallpaperService() {
                 onDoubleTap = { _, _ -> openChatInput() },
                 onLongPress = {
                     PetRuntime.stopAll()
+                    WallpaperBubbleService.hide(applicationContext)
                     Toast.makeText(applicationContext, "已停止", Toast.LENGTH_SHORT).show()
                 },
                 onMove = { nx, ny ->

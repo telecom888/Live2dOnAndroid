@@ -45,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -70,6 +71,11 @@ import com.bandori.pet.RenderSettings
 import com.bandori.pet.ThemeSettings
 import android.widget.Toast
 import com.bandori.pet.ANIMATION_CHOICES
+import com.bandori.pet.VOICE_PROVIDER_CUSTOM
+import com.bandori.pet.VOICE_PROVIDER_MIMO
+import com.bandori.pet.VoiceSettings
+import com.bandori.pet.loadBubbleEnabled
+import com.bandori.pet.saveBubbleEnabled
 import com.bandori.pet.addFloatingLive2DItem
 import com.bandori.pet.data.ModelChoice
 import com.bandori.pet.floating.FloatingLive2DOverlayService
@@ -98,6 +104,7 @@ import com.bandori.pet.saveTouchAnimationEnabled
 import com.bandori.pet.saveTouchAnimations
 import com.bandori.pet.saveWallpaperBackgroundUri
 import com.bandori.pet.setWallpaperEnabled
+import com.bandori.pet.voice.VoiceSamples
 import com.bandori.pet.wallpaper.Live2DWallpaperService
 import com.bandori.pet.wallpaper.WallpaperBackup
 import kotlin.math.roundToInt
@@ -160,6 +167,9 @@ fun SettingsScreen(
         item(key = "llm") {
             LlmSettingsEntryCard()
         }
+        item(key = "voice_settings") {
+            VoiceSettingsCard()
+        }
         item(key = "companion") {
             CompanionSettingsEntryCard()
         }
@@ -181,6 +191,9 @@ fun SettingsScreen(
                     context.startActivity(Intent(context, com.bandori.pet.WallpaperAdjustActivity::class.java))
                 },
             )
+        }
+        item(key = "voice_samples") {
+            VoiceSamplesCard(selectedModel = selectedModel)
         }
         item(key = "original_wallpaper") {
             OriginalWallpaperCard(
@@ -1230,6 +1243,15 @@ private fun InteractionSettingsCard() {
                     modifier = Modifier.weight(1f),
                 )
             }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("壁纸文字气泡", fontWeight = FontWeight.SemiBold)
+                    Text("对话回复/台词以悬浮气泡显示", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+                var bubbleEnabled by remember { mutableStateOf(loadBubbleEnabled(appContext)) }
+                Switch(checked = bubbleEnabled, onCheckedChange = { bubbleEnabled = it; saveBubbleEnabled(appContext, it) })
+            }
             Text(
                 "提示：双击模型弹出输入框对话；长按桌面任意位置停止当前对话/语音。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1270,3 +1292,160 @@ private fun AnimationMultiSelect(
         }
     }
 }
+
+
+@Composable
+private fun VoiceSettingsCard() {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    var settings by remember { mutableStateOf(VoiceSettings.load(appContext)) }
+    var apiKeyVisible by remember { mutableStateOf(false) }
+    var providerMenuExpanded by remember { mutableStateOf(false) }
+    var saved by remember { mutableStateOf(false) }
+
+    SettingsSectionCard {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("语音合成（音色克隆 TTS）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("服务商", fontWeight = FontWeight.SemiBold)
+                    Text(if (settings.provider == VOICE_PROVIDER_MIMO) "mimo 预设（免费）" else "自定义 OpenAI 兼容", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Box {
+                    TextButton(onClick = { providerMenuExpanded = true }) {
+                        Text(if (settings.provider == VOICE_PROVIDER_MIMO) "mimo" else "自定义")
+                    }
+                    DropdownMenu(expanded = providerMenuExpanded, onDismissRequest = { providerMenuExpanded = false }) {
+                        DropdownMenuItem(text = { Text("mimo 预设（免费）") }, onClick = {
+                            settings = settings.copy(
+                                provider = VOICE_PROVIDER_MIMO,
+                                baseUrl = "https://api.xiaomimimo.com/v1",
+                                model = "mimo-v2.5-tts-voiceclone",
+                            )
+                            saved = false
+                            providerMenuExpanded = false
+                        })
+                        DropdownMenuItem(text = { Text("自定义 OpenAI 兼容") }, onClick = {
+                            settings = settings.copy(provider = VOICE_PROVIDER_CUSTOM)
+                            saved = false
+                            providerMenuExpanded = false
+                        })
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = settings.model,
+                onValueChange = { settings = settings.copy(model = it); saved = false },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(if (settings.provider == VOICE_PROVIDER_MIMO) "mimo 模型名称" else "模型名称") },
+                supportingText = { Text(if (settings.provider == VOICE_PROVIDER_MIMO) "默认 mimo-v2.5-tts-voiceclone，防止未来变动可自行改" else "如 deepseek-v4-tts-voiceclone / gpt-4o-audio") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = settings.apiKey,
+                onValueChange = { settings = settings.copy(apiKey = it); saved = false },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("密钥") },
+                visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+                        Icon(if (apiKeyVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, contentDescription = null)
+                    }
+                },
+                singleLine = true,
+            )
+            if (settings.provider == VOICE_PROVIDER_CUSTOM) {
+                OutlinedTextField(
+                    value = settings.baseUrl,
+                    onValueChange = { settings = settings.copy(baseUrl = it); saved = false },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Base URL（OpenAI 兼容）") },
+                    singleLine = true,
+                )
+            }
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = settings.apiKey.isNotBlank() && settings.model.isNotBlank() && settings.baseUrl.isNotBlank(),
+                onClick = {
+                    settings.normalized().save(appContext)
+                    saved = true
+                    Toast.makeText(appContext, "语音设置已保存", Toast.LENGTH_SHORT).show()
+                },
+            ) { Text(if (saved) "已保存" else "保存") }
+            Text(
+                "文档：docs/mimo-tts-voiceclone.txt（样本 ≤10MB，mp3/wav；返回 WAV）",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun VoiceSamplesCard(selectedModel: ModelChoice?) {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    var samples by remember { mutableStateOf(emptyList<com.bandori.pet.voice.VoiceSampleInfo>()) }
+    var refreshTick by remember { mutableStateOf(0) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null && selectedModel != null) {
+            val ok = VoiceSamples.importSample(appContext, selectedModel.characterId, uri)
+            Toast.makeText(appContext, if (ok) "已导入并设为当前音色" else "导入失败（仅支持 mp3/wav，≤10MB）", Toast.LENGTH_SHORT).show()
+            refreshTick++
+        }
+    }
+    LaunchedEffect(selectedModel?.characterId, refreshTick) {
+        if (selectedModel != null) {
+            samples = VoiceSamples.listSamples(appContext, selectedModel.characterId)
+        }
+    }
+
+    SettingsSectionCard {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                selectedModel?.let { "语音样本 · ${it.characterName}" } ?: "语音样本",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            if (selectedModel == null) {
+                Text("请先在模型页选择角色", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else if (samples.isEmpty()) {
+                Text("暂无样本，导入一个音频作为克隆音色", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                samples.forEach { sample ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(sample.name, fontWeight = if (sample.active) FontWeight.Bold else FontWeight.Normal)
+                            Text(
+                                if (sample.active) "当前音色" else "未启用",
+                                color = if (sample.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        if (!sample.active) {
+                            TextButton(onClick = {
+                                VoiceSamples.setActiveSample(appContext, selectedModel.characterId, sample.file.name)
+                                refreshTick++
+                            }) { Text("选择") }
+                        }
+                        TextButton(onClick = {
+                            VoiceSamples.deleteSample(appContext, selectedModel.characterId, sample.file.name)
+                            refreshTick++
+                        }) { Text("删除") }
+                    }
+                }
+            }
+            FilledTonalButton(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = selectedModel != null,
+                onClick = { launcher.launch("audio/*") },
+            ) { Text("导入音色样本") }
+            Text(
+                "支持 mp3/wav，≤10MB；一个角色可存多个样本，选择其中一个作为当前克隆音色。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+

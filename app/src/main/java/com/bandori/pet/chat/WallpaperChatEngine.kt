@@ -10,7 +10,7 @@ import com.bandori.pet.llm.CharacterPromptRepository
 import com.bandori.pet.llm.LlmChatClient
 import com.bandori.pet.llm.LlmSettings
 import com.bandori.pet.llm.LlmStreamEvent
-import com.bandori.pet.loadMimoApiKey
+import com.bandori.pet.VoiceSettings
 import com.bandori.pet.voice.VoicePlayer
 import com.bandori.pet.voice.VoiceCloneClient
 import com.bandori.pet.voice.VoiceSamples
@@ -107,11 +107,11 @@ class WallpaperChatEngine(private val context: Context) {
     }
 
     private suspend fun speak(characterId: String, text: String): Boolean {
-        val apiKey = loadMimoApiKey(context)
-        if (apiKey.isBlank()) return false
+        val settings = VoiceSettings.load(context)
+        if (!settings.isConfigured) return false
         val sample = VoiceSamples.activeSampleFile(context, characterId) ?: return false
         val wav = withContext(Dispatchers.IO) {
-            VoiceCloneClient(apiKey).synthesize(text, sample)
+            VoiceCloneClient(settings.baseUrl, settings.model, settings.apiKey).synthesize(text, sample)
         } ?: return false
         return VoicePlayer.play(context.applicationContext, wav)
     }

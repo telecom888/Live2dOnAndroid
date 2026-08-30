@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.bandori.pet.loadBubbleEnabled
 import com.bandori.pet.loadPersistedModelChoice
 import com.bandori.pet.live2d.NativeLive2D
 import com.bandori.pet.voice.VoicePlayer
@@ -184,7 +185,12 @@ private fun WallpaperChatPanel(onDismiss: () -> Unit) {
                                             if (result.actionTag != null) {
                                                 NativeLive2D.playAction(Live2DWallpaperService.activeHandle, result.actionTag)
                                             }
+                                            if (loadBubbleEnabled(appContext)) {
+                                                WallpaperBubbleService.show(appContext, result.text)
+                                            }
                                             busy = false
+                                            delay(1600)
+                                            onDismiss()
                                         }
                                     }
                                 },
