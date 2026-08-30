@@ -2,6 +2,12 @@
 
 package com.bangdream.pet.ui.chat
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -47,12 +54,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bangdream.pet.data.AppData
+import com.bangdream.pet.ui.design.appEntrance
 import com.bangdream.pet.data.CharacterInfo
 import com.bangdream.pet.data.DataRepository
 import com.bangdream.pet.data.ModelChoice
@@ -60,6 +69,8 @@ import com.bangdream.pet.llm.ChatConversationSummary
 import com.bangdream.pet.llm.ChatTextSearch
 import com.bangdream.pet.llm.ChatUiState
 import com.bangdream.pet.llm.Live2DChatViewModel
+import com.bangdream.pet.ui.design.emphasizedTween
+import com.bangdream.pet.ui.design.expressiveTween
 import com.bangdream.pet.ui.live2d.ChatMessageList
 import java.text.DateFormat
 import java.util.Date
@@ -84,45 +95,76 @@ fun ConversationManagerScreen(
     var selectedCharacter by remember { mutableStateOf<ModelChoice?>(null) }
     var openConversationId by remember { mutableStateOf<String?>(null) }
 
-    when {
-        selectedCharacter == null -> CharacterListScreen(
-            appData = appData,
-            topInset = topInset,
-            modifier = modifier,
-            onCharacterClick = { character ->
-                scope.launch {
-                    val model = withContext(Dispatchers.IO) {
-                        repository.availableModels(character).firstOrNull()
-                    }
-                    if (model != null) {
-                        selectedCharacter = model
+    val level = when {
+        selectedCharacter == null -> 0
+        openConversationId == null -> 1
+        else -> 2
+    }
+    AnimatedContent(
+        targetState = level,
+        transitionSpec = {
+            if (targetState > initialState) {
+                (slideInHorizontally(animationSpec = emphasizedTween(), initialOffsetX = { it }) +
+                    fadeIn(animationSpec = emphasizedTween()))
+                    .togetherWith(
+                        slideOutHorizontally(animationSpec = expressiveTween(), targetOffsetX = { -it / 4 }) +
+                            fadeOut(animationSpec = expressiveTween()),
+                    )
+            } else {
+                (slideInHorizontally(animationSpec = emphasizedTween(), initialOffsetX = { -it / 4 }) +
+                    fadeIn(animationSpec = emphasizedTween()))
+                    .togetherWith(
+                        slideOutHorizontally(animationSpec = expressiveTween(), targetOffsetX = { it }) +
+                            fadeOut(animationSpec = expressiveTween()),
+                    )
+            }
+        },
+        modifier = modifier,
+        label = "conversationLevel",
+    ) { target ->
+        when (target) {
+            0 -> CharacterListScreen(
+                appData = appData,
+                topInset = topInset,
+                onCharacterClick = { character ->
+                    scope.launch {
+                        val model = withContext(Dispatchers.IO) {
+                            runCatching { repository.availableModels(character).firstOrNull() }.getOrNull()
+                        }
+                        // 未下载/未使用角色也允许进入（占位 ModelChoice，历史可浏览）
+                        val choice = model ?: ModelChoice(
+                            characterId = character.id,
+                            characterName = character.display,
+                            costumeId = "",
+                            costumeName = "未下载",
+                            modelAssetPath = "",
+                        )
+                        selectedCharacter = choice
                         openConversationId = null
-                        viewModel.selectCharacter(model, force = true)
+                        viewModel.selectCharacter(choice, force = true)
                     }
-                }
-            },
-        )
-        openConversationId == null -> ConversationListScreen(
-            state = state,
-            character = selectedCharacter!!,
-            topInset = topInset,
-            modifier = modifier,
-            viewModel = viewModel,
-            onBack = { selectedCharacter = null },
-            onOpen = { id -> openConversationId = id },
-            onNew = {
-                viewModel.startNewConversation(selectedCharacter!!.characterId)
-                openConversationId = "new"
-            },
-        )
-        else -> ConversationDetailScreen(
-            state = state,
-            character = selectedCharacter!!,
-            topInset = topInset,
-            modifier = modifier,
-            viewModel = viewModel,
-            onBack = { openConversationId = null },
-        )
+                },
+            )
+            1 -> ConversationListScreen(
+                state = state,
+                character = selectedCharacter!!,
+                topInset = topInset,
+                viewModel = viewModel,
+                onBack = { selectedCharacter = null },
+                onOpen = { id -> openConversationId = id },
+                onNew = {
+                    viewModel.startNewConversation(selectedCharacter!!.characterId)
+                    openConversationId = "new"
+                },
+            )
+            else -> ConversationDetailScreen(
+                state = state,
+                character = selectedCharacter!!,
+                topInset = topInset,
+                viewModel = viewModel,
+                onBack = { openConversationId = null },
+            )
+        }
     }
 }
 
@@ -136,6 +178,15 @@ private fun CharacterListScreen(
     val characters = remember(appData) {
         appData?.characters?.values?.sortedBy { it.display }.orEmpty()
     }
+    var filter by remember { mutableStateOf("") }
+    val filtered = remember(characters, filter) {
+        val query = filter.trim()
+        if (query.isEmpty()) {
+            characters
+        } else {
+            characters.filter { it.display.contains(query, ignoreCase = true) }
+        }
+    }
     Column(modifier.fillMaxSize().padding(top = topInset)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
@@ -144,13 +195,21 @@ private fun CharacterListScreen(
             Text(
                 "角色",
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f),
             )
         }
-        if (characters.isEmpty()) {
+        OutlinedTextField(
+            value = filter,
+            onValueChange = { filter = it },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            label = { Text("搜索角色") },
+            singleLine = true,
+        )
+        Spacer(Modifier.height(8.dp))
+        if (filtered.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("暂无角色数据", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (characters.isEmpty()) "暂无角色数据" else "未找到角色", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(
@@ -158,10 +217,12 @@ private fun CharacterListScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(characters, key = { it.id }) { character ->
+                items(filtered, key = { it.id }) { character ->
                     Surface(
                         onClick = { onCharacterClick(character) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .appEntrance(delayMillis = (filtered.indexOfFirst { it.id == character.id } * 22).coerceAtMost(160)),
                         shape = RoundedCornerShape(18.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
                     ) {
@@ -173,7 +234,7 @@ private fun CharacterListScreen(
                                 Text(
                                     character.display,
                                     style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                                    fontWeight = FontWeight.Medium,
                                 )
                                 Text(
                                     "${character.costumes.size} 套服装",
@@ -236,7 +297,7 @@ private fun ConversationListScreen(
             Text(
                 character.characterName,
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = onNew) {
@@ -274,7 +335,8 @@ private fun ConversationListScreen(
                                     renameDraft = conversation.title
                                     detailConversation = conversation
                                 },
-                            ),
+                            )
+                            .appEntrance(delayMillis = (filtered.indexOfFirst { it.id == conversation.id } * 22).coerceAtMost(160)),
                         shape = RoundedCornerShape(18.dp),
                         color = if (selected) {
                             MaterialTheme.colorScheme.primaryContainer
@@ -292,7 +354,7 @@ private fun ConversationListScreen(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                 )
                                 Text(
                                     conversation.preview.ifBlank { "空对话" },
@@ -390,7 +452,7 @@ private fun ConversationDetailScreen(
         if (text.isNotEmpty() && viewModel.send(character, text)) input.value = ""
     }
 
-    Column(modifier.fillMaxSize().padding(top = topInset)) {
+    Column(modifier.fillMaxSize().padding(top = topInset).imePadding()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -413,7 +475,7 @@ private fun ConversationDetailScreen(
                 Text(
                     state.conversationTitle.ifBlank { "新对话" },
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
