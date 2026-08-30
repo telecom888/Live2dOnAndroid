@@ -614,6 +614,8 @@ class Live2DWallpaperService : WallpaperService() {
             loading = false
             clearLastWallpaperAction(applicationContext)
             if (handle != 0L) {
+                // 单模型走 slot 0（loadModel），多模型走 slotModels；两种情况都卸载
+                NativeLive2D.unloadModelAt(handle, 0)
                 for (slot in slotModels.keys.toList()) {
                     NativeLive2D.unloadModelAt(handle, slot)
                 }
