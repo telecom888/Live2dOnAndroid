@@ -8,18 +8,20 @@ import kotlin.math.hypot
 
 /**
  * 壁纸手势仲裁：
+ * - 按下（DOWN）→ onDown（用于视线跟随等全局响应）
  * - 滑动（位移超过阈值，抚摸）→ onSwipe
  * - 短按抬起（无位移）→ 双击判定，无第二次则 onTap
- * - 按住超过阈值未移动 → onLongPress
+ * - 按住超过阈值未移动 → onLongPress（携带按下坐标）
  * - 移动过程中持续 onMove（视线跟随）
  */
 class WallpaperGestureHandler(
     context: Context,
+    private val onDown: (x: Float, y: Float) -> Unit,
     private val onTap: (x: Float, y: Float) -> Unit,
-    private val onSwipe: (nx: Float, ny: Float) -> Unit,
-    private val onDoubleTap: (nx: Float, ny: Float) -> Unit,
-    private val onLongPress: () -> Unit,
-    private val onMove: (nx: Float, ny: Float) -> Unit,
+    private val onSwipe: (x: Float, y: Float) -> Unit,
+    private val onDoubleTap: (x: Float, y: Float) -> Unit,
+    private val onLongPress: (x: Float, y: Float) -> Unit,
+    private val onMove: (x: Float, y: Float) -> Unit,
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val slopPx = (24 * context.resources.displayMetrics.density).toFloat()
@@ -45,6 +47,7 @@ class WallpaperGestureHandler(
                 swipeConsumed = false
                 longPressFired = false
                 handler.postDelayed(longPressRunnable, longPressMs)
+                onDown(event.x, event.y)
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = event.x - downX
@@ -98,7 +101,7 @@ class WallpaperGestureHandler(
     private val longPressRunnable = Runnable {
         if (!swipeConsumed) {
             longPressFired = true
-            onLongPress()
+            onLongPress(downX, downY)
         }
     }
 
