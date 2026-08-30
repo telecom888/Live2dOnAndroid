@@ -56,7 +56,6 @@ import com.bangdream.pet.Live2DControlIcon
 import com.bangdream.pet.data.ModelChoice
 import com.bangdream.pet.live2d.Live2DRenderView
 import com.bangdream.pet.llm.Live2DChatViewModel
-import com.bangdream.pet.llm.ChatBackendMode
 import com.bangdream.pet.ui.ImageBitmapCache
 import com.bangdream.pet.ui.SampledImageDecoder
 import kotlinx.coroutines.Dispatchers
@@ -70,7 +69,6 @@ fun Live2DScreen(
     renderSettings: RenderSettings,
     fullScreen: Boolean,
     onFullScreenChanged: (Boolean) -> Unit,
-    onRemoteCharacterSelected: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var status by remember(selectedModel) { mutableStateOf<String?>(null) }
@@ -80,12 +78,6 @@ fun Live2DScreen(
     var chatExpanded by remember(selectedModel) { mutableStateOf(false) }
     val chatViewModel: Live2DChatViewModel = viewModel()
     val chatState by chatViewModel.state.collectAsStateWithLifecycle()
-
-    LaunchedEffect(chatState.backendMode, chatState.characterId) {
-        if (chatState.backendMode == ChatBackendMode.Desktop) {
-            chatState.characterId?.let(onRemoteCharacterSelected)
-        }
-    }
 
     fun revealControls() {
         controlsVisible = true
@@ -297,9 +289,6 @@ private fun Live2DRenderer(
 
     LaunchedEffect(renderView, chatViewModel) {
         chatViewModel.actions.collect { action -> renderView?.playAction(action) }
-    }
-    LaunchedEffect(renderView, chatViewModel) {
-        chatViewModel.mouth.collect { (open, form) -> renderView?.setLipSync(open, form) }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current

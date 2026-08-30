@@ -279,7 +279,6 @@ fun BangDreamPetApp(
                                 selectedModel = selectedModel,
                                 renderSettings = renderSettings,
                                 fullScreen = false,
-                                onRemoteCharacterSelected = selectCharacter,
                                 onFullScreenChanged = { fullScreen ->
                                     if (fullScreen) {
                                         context.startActivity(Intent(context, FullscreenLive2DActivity::class.java))

@@ -79,8 +79,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bangdream.pet.I18n
 import com.bangdream.pet.data.ModelChoice
-import com.bangdream.pet.companion.CompanionConnectionState
-import com.bangdream.pet.llm.ChatBackendMode
 import com.bangdream.pet.llm.ChatConversationSummary
 import com.bangdream.pet.llm.ChatMessage
 import com.bangdream.pet.llm.ChatUiState
@@ -295,16 +293,12 @@ private fun ChatPanelContent(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        if (state.backendMode == ChatBackendMode.Desktop) state.characterId ?: "桌面互联" else model.characterName,
+                        model.characterName,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        if (state.backendMode == ChatBackendMode.Desktop) {
-                            "桌面模式 · ${companionConnectionText(state.companionConnection)}"
-                        } else {
-                            "本机模式 · ${settings.model.ifBlank { I18n.t("chat_not_configured_short") }}"
-                        },
+                        "本机模式 · ${settings.model.ifBlank { I18n.t("chat_not_configured_short") }}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -316,26 +310,13 @@ private fun ChatPanelContent(
                     Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = I18n.t("chat_minimize"))
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(
-                    onClick = { viewModel.setBackendMode(ChatBackendMode.Local) },
-                    enabled = state.backendMode != ChatBackendMode.Local,
-                ) { Text("本机") }
-                TextButton(
-                    onClick = { viewModel.setBackendMode(ChatBackendMode.Desktop) },
-                    enabled = state.backendMode != ChatBackendMode.Desktop,
-                ) { Text("桌面") }
-                if (state.backendMode == ChatBackendMode.Desktop && state.companionConnection != CompanionConnectionState.Connected) {
-                    TextButton(onClick = viewModel::reconnectCompanion) { Text("重新连接") }
-                }
-            }
             Spacer(Modifier.height(8.dp))
         }
         if (state.isHistoryLoading) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-        } else if (state.backendMode == ChatBackendMode.Local && !settings.isConfigured) {
+        } else if (!settings.isConfigured) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Text(
                     I18n.t("chat_not_configured"),
@@ -344,28 +325,11 @@ private fun ChatPanelContent(
             }
         } else {
             if (!compactForIme) {
-                if (state.backendMode == ChatBackendMode.Desktop && (
-                        state.companionConnection != CompanionConnectionState.Connected ||
-                            state.companionMode != "private" ||
-                            !state.companionCapabilities.remoteChat
-                    )) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        shape = RoundedCornerShape(14.dp),
-                    ) {
-                        Text(
-                            companionUnavailableText(state),
-                            modifier = Modifier.padding(12.dp),
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                    }
-                }
                 ChatMessageList(
                     messages = state.messages,
                     streamingText = state.streamingText,
                     thinking = state.isThinking,
-                    onReplay = if (state.backendMode == ChatBackendMode.Desktop && state.companionCapabilities.tts) viewModel::replayTts else null,
+                    onReplay = null,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
                 state.error?.let { error ->
@@ -403,7 +367,7 @@ private fun ChatPanelContent(
                     modifier = Modifier.weight(1f),
                     placeholder = { Text(I18n.t("chat_input_hint")) },
                     maxLines = if (compactForIme) 1 else 4,
-                    enabled = !state.isGenerating && companionCanSend(state),
+                    enabled = !state.isGenerating,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = {
                         val message = input.value
@@ -423,7 +387,7 @@ private fun ChatPanelContent(
                             if (viewModel.send(model, message)) input.value = ""
                         }
                     },
-                    enabled = state.isGenerating || (input.value.isNotBlank() && companionCanSend(state)),
+                    enabled = state.isGenerating || input.value.isNotBlank(),
                     modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
@@ -434,30 +398,6 @@ private fun ChatPanelContent(
             }
         }
     }
-}
-
-private fun companionCanSend(state: ChatUiState): Boolean =
-    state.backendMode == ChatBackendMode.Local || (
-        state.companionConnection == CompanionConnectionState.Connected &&
-            state.companionMode == "private" &&
-            state.companionCapabilities.remoteChat
-        )
-
-private fun companionConnectionText(state: CompanionConnectionState): String = when (state) {
-    CompanionConnectionState.Disconnected -> "已断开"
-    CompanionConnectionState.Connecting -> "连接中"
-    CompanionConnectionState.Connected -> "已连接"
-    CompanionConnectionState.ProfileUnavailable -> "档案不可用"
-    CompanionConnectionState.Error -> "连接失败"
-}
-
-private fun companionUnavailableText(state: ChatUiState): String = when {
-    state.companionConnection == CompanionConnectionState.ProfileUnavailable || state.companionMode == "profile_unavailable" ->
-        "桌面已切换到其他用户档案，当前设备无权读取。"
-    state.companionMode == "group_unavailable" -> "桌面正在使用不受支持的群聊。请选择一个私聊继续。"
-    state.companionConnection != CompanionConnectionState.Connected -> "桌面连接已断开，远程消息已从手机内存清除。"
-    !state.companionCapabilities.remoteChat -> "桌面 LLM 未配置或当前不可用；仍可查看已同步的私聊记录。"
-    else -> "桌面互联当前不可用。"
 }
 
 @Composable

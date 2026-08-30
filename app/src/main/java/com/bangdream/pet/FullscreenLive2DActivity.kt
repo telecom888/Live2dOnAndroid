@@ -45,16 +45,6 @@ class FullscreenLive2DActivity : ComponentActivity() {
                     selectedModel = selectedModel,
                     renderSettings = renderSettings,
                     fullScreen = true,
-                    onRemoteCharacterSelected = { characterId ->
-                        scope.launch {
-                            val remoteModel = withContext(Dispatchers.IO) {
-                                repository.load().characters[characterId]
-                                    ?.let(repository::availableModels)
-                                    ?.firstOrNull()
-                            }
-                            if (remoteModel != null) selectedModel = remoteModel
-                        }
-                    },
                     onFullScreenChanged = { fullScreen ->
                         if (!fullScreen) finish()
                     },

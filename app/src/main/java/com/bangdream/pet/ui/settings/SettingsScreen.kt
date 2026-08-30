@@ -103,7 +103,6 @@ import com.bangdream.pet.isWallpaperEnabled
 import com.bangdream.pet.llm.ChatHistoryRepository
 import com.bangdream.pet.llm.LlmSettings
 import com.bangdream.pet.llm.ThinkingMode
-import com.bangdream.pet.companion.CompanionSettings
 import com.bangdream.pet.loadIdleAnimationEnabled
 import com.bangdream.pet.loadMimoApiKey
 import com.bangdream.pet.loadIdleAnimations
@@ -194,9 +193,6 @@ fun SettingsScreen(
         item(key = "voice_settings") {
             VoiceSettingsCard()
         }
-        item(key = "companion") {
-            CompanionSettingsEntryCard()
-        }
         // 悬浮窗模式已按需求移除：模型只通过动态壁纸显示。
         item(key = "wallpaper") {
             WallpaperSettingsCard(
@@ -237,39 +233,6 @@ fun SettingsScreen(
                 I18n.t("settings_about"),
                 I18n.t("settings_about_text"),
             )
-        }
-    }
-}
-
-@Composable
-private fun CompanionSettingsEntryCard() {
-    val context = LocalContext.current
-    val appContext = context.applicationContext
-    var desktopName by remember { mutableStateOf(CompanionSettings.load(appContext)?.name) }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        desktopName = CompanionSettings.load(appContext)?.name
-    }
-    Card(
-        onClick = { launcher.launch(Intent(context, CompanionSettingsActivity::class.java)) },
-        modifier = Modifier.fillMaxWidth().appPressScale(),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("桌面互联", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    desktopName?.let { "已配对：$it" } ?: "扫描桌面二维码，安全同步私聊与 TTS",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Icon(Icons.Outlined.ChevronRight, contentDescription = null)
         }
     }
 }

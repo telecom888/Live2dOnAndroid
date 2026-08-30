@@ -27,18 +27,6 @@
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false" />
         <activity
-            android:name=".ui.settings.CompanionSettingsActivity"
-            android:configChanges="orientation|screenSize|keyboardHidden"
-            android:exported="true"
-            android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="bandoripet" android:host="pair" />
-            </intent-filter>
-        </activity>
-        <activity
             android:name=".ui.settings.LlmSettingsActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"
