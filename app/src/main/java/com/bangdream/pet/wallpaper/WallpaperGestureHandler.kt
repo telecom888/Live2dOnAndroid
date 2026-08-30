@@ -15,7 +15,7 @@ import kotlin.math.hypot
  */
 class WallpaperGestureHandler(
     context: Context,
-    private val onTap: () -> Unit,
+    private val onTap: (x: Float, y: Float) -> Unit,
     private val onSwipe: (nx: Float, ny: Float) -> Unit,
     private val onDoubleTap: (nx: Float, ny: Float) -> Unit,
     private val onLongPress: () -> Unit,
@@ -81,7 +81,7 @@ class WallpaperGestureHandler(
                     lastTapX = event.x
                     lastTapY = event.y
                     lastTapTime = now
-                    val runnable = Runnable { onTap() }
+                    val runnable = Runnable { onTap(event.x, event.y) }
                     pendingSingleTap = runnable
                     handler.postDelayed(runnable, doubleTapWindowMs)
                 }

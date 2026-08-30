@@ -376,6 +376,8 @@ const val KEY_SWIPE_ANIMATION_ENABLED = "swipe_animation_enabled"
 const val KEY_IDLE_ANIMATION_ENABLED = "idle_animation_enabled"
 const val KEY_IDLE_ANIMATIONS = "idle_animations"
 const val KEY_IDLE_INTERVAL_MS = "idle_interval_ms"
+const val KEY_LAST_WALLPAPER_ACTION = "last_wallpaper_action"
+const val KEY_LAST_WALLPAPER_ACTION_AT = "last_wallpaper_action_at"
 const val KEY_WALLPAPER_ORIGINAL_BACKUP_PATH = "wallpaper_original_backup_path"
 
 /** 可选动画基础名（Lua 端 __bp_action 用基础名匹配，如 smile 匹配 smile01） */
@@ -444,6 +446,22 @@ fun loadIdleIntervalMs(context: Context): Long =
 fun saveIdleIntervalMs(context: Context, interval: Long) {
     context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
         .edit().putLong(KEY_IDLE_INTERVAL_MS, interval.coerceIn(3_000L, 60_000L)).apply()
+}
+
+/** 最近一次在桌面播放的动作（用于 surface 重建后短暂恢复动作状态）。 */
+fun saveLastWallpaperAction(context: Context, action: String) {
+    if (action.isBlank()) return
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putString(KEY_LAST_WALLPAPER_ACTION, action)
+        .putLong(KEY_LAST_WALLPAPER_ACTION_AT, System.currentTimeMillis())
+        .apply()
+}
+
+fun loadLastWallpaperAction(context: Context): Pair<String, Long> {
+    val prefs = context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+    return (prefs.getString(KEY_LAST_WALLPAPER_ACTION, null) ?: "") to
+        prefs.getLong(KEY_LAST_WALLPAPER_ACTION_AT, 0L)
 }
 
 fun loadWallpaperOriginalBackupPath(context: Context): String? =

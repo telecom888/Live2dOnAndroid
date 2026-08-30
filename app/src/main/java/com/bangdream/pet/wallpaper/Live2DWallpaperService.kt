@@ -30,6 +30,8 @@ import com.bangdream.pet.loadBuiltinVoiceLanguage
 import com.bangdream.pet.loadIdleAnimationEnabled
 import com.bangdream.pet.loadSelectedCharacterId
 import com.bangdream.pet.loadIdleAnimations
+import com.bangdream.pet.loadLastWallpaperAction
+import com.bangdream.pet.saveLastWallpaperAction
 import com.bangdream.pet.loadIdleIntervalMs
 import com.bangdream.pet.loadSwipeAnimationEnabled
 import com.bangdream.pet.loadTouchAnimationEnabled
@@ -111,14 +113,25 @@ class Live2DWallpaperService : WallpaperService() {
             setTouchEventsEnabled(true)
             gestureHandler = WallpaperGestureHandler(
                 applicationContext,
-                onTap = { playTouchAction() },
-                onSwipe = { nx, ny ->
-                    if (loadSwipeAnimationEnabled(applicationContext)) playTouchAction()
-                    if (RenderSettings.load(applicationContext).gazeFollowEnabled) {
-                        NativeLive2D.lookAt(handle, nx.coerceIn(0f, 1f), ny.coerceIn(0f, 1f))
+                onTap = { x, y ->
+                    if (loadTouchAnimationEnabled(applicationContext)) {
+                        sendWallpaperTouch(x, y)
+                        playRandomTouchAction()
                     }
                 },
-                onDoubleTap = { _, _ -> openChatInput() },
+                onSwipe = { x, y ->
+                    if (loadSwipeAnimationEnabled(applicationContext)) {
+                        sendWallpaperTouch(x, y)
+                        playRandomTouchAction()
+                    }
+                    if (RenderSettings.load(applicationContext).gazeFollowEnabled) {
+                        NativeLive2D.lookAt(handle, x.coerceIn(0f, 1f), y.coerceIn(0f, 1f))
+                    }
+                },
+                onDoubleTap = { x, y ->
+                    sendWallpaperTouch(x, y)
+                    openChatInput()
+                },
                 onLongPress = {
                     PetRuntime.stopAll()
                     WallpaperBubbleService.hide(applicationContext)
@@ -165,9 +178,14 @@ class Live2DWallpaperService : WallpaperService() {
         override fun onVisibilityChanged(visible: Boolean) {
             this.visible = visible
             if (visible) {
+                // 恢复渲染但不重建：保留当前模型/动作状态
+                if (handle != 0L) NativeLive2D.setPaused(handle, false)
                 ensureRenderer()
             } else {
-                stopRenderer()
+                // 被覆盖时只暂停（模型/动作状态保留在 native 侧），回到桌面立即恢复，不重置动作
+                idleJob?.cancel()
+                idleJob = null
+                if (handle != 0L) NativeLive2D.setPaused(handle, true)
             }
         }
 
@@ -236,6 +254,7 @@ class Live2DWallpaperService : WallpaperService() {
                             prepared.resourcePaths.toTypedArray(),
                             prepared.resourceBytes.toTypedArray(),
                         )
+                        replayRecentAction()
                         startIdleLoop()
                     }
                 } finally {
@@ -268,12 +287,30 @@ class Live2DWallpaperService : WallpaperService() {
             NativeLive2D.setTransform(handle, transform.offsetX, transform.offsetY, transform.scale)
         }
 
-        private fun playTouchAction() {
+        private fun playRandomTouchAction() {
             if (handle == 0L || !visible) return
-            if (!loadTouchAnimationEnabled(applicationContext)) return
             val choices = loadTouchAnimations(applicationContext)
             if (choices.isEmpty()) return
-            NativeLive2D.playAction(handle, choices.random())
+            val action = choices.random()
+            saveLastWallpaperAction(applicationContext, action)
+            NativeLive2D.playAction(handle, action)
+        }
+
+        /** surface 被系统销毁重建后，若刚播放过动作则在窗口期内重放，避免回到桌面动作被重置。 */
+        private fun replayRecentAction() {
+            if (handle == 0L) return
+            val (action, at) = loadLastWallpaperAction(applicationContext)
+            if (action.isBlank()) return
+            if (System.currentTimeMillis() - at > LAST_ACTION_REPLAY_WINDOW_MS) return
+            NativeLive2D.playAction(handle, action)
+        }
+
+        /** 把桌面触摸坐标（surface 像素）归一化后发送给 native，触发区域化触摸动作（摸头/拍肩等）。 */
+        private fun sendWallpaperTouch(x: Float, y: Float) {
+            if (handle == 0L || !visible) return
+            val nx = (x / width).coerceIn(0f, 1f)
+            val ny = (y / height).coerceIn(0f, 1f)
+            NativeLive2D.touch(handle, nx, ny)
         }
 
         private fun playIdleAction() {
@@ -286,7 +323,9 @@ class Live2DWallpaperService : WallpaperService() {
                         loadBuiltinVoiceLanguage(applicationContext),
                     )
                 if (line != null) {
-                    NativeLive2D.playAction(handle, baseMotionName(line.motion))
+                    val motion = baseMotionName(line.motion)
+                    saveLastWallpaperAction(applicationContext, motion)
+                    NativeLive2D.playAction(handle, motion)
                     runCatching { line.wavFile?.readBytes()?.let { VoicePlayer.play(applicationContext, it) } }
                     if (loadBubbleEnabled(applicationContext)) {
                         WallpaperBubbleService.show(applicationContext, line.text)
@@ -296,7 +335,9 @@ class Live2DWallpaperService : WallpaperService() {
             }
             val choices = loadIdleAnimations(applicationContext)
             if (choices.isEmpty()) return
-            NativeLive2D.playAction(handle, choices.random())
+            val action = choices.random()
+            saveLastWallpaperAction(applicationContext, action)
+            NativeLive2D.playAction(handle, action)
         }
 
         private fun baseMotionName(name: String): String = name.replace(Regex("\\d+$"), "")
@@ -342,6 +383,7 @@ class Live2DWallpaperService : WallpaperService() {
 
         const val TAG = "BangDreamPetWallpaper"
         const val RESTART_DEBOUNCE_MS = 50L
+        const val LAST_ACTION_REPLAY_WINDOW_MS = 10_000L
     }
 }
 
