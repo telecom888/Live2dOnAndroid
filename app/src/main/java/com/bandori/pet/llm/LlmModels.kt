@@ -17,9 +17,9 @@ enum class ThinkingMode(val value: String) {
 
 @Immutable
 data class LlmSettings(
-    val baseUrl: String = "",
+    val baseUrl: String = "https://api.deepseek.com",
     val apiKey: String = "",
-    val model: String = "",
+    val model: String = "deepseek-v4-flash",
     val customPrompt: String = "",
     val thinkingMode: ThinkingMode = ThinkingMode.Auto,
     val temperature: Float = 0.8f,

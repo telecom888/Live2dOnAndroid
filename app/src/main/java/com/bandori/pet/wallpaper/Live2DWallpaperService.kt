@@ -20,6 +20,15 @@ import com.bandori.pet.KEY_WALLPAPER_OFFSET_Y
 import com.bandori.pet.KEY_WALLPAPER_SCALE
 import com.bandori.pet.SETTINGS_PREFS
 import com.bandori.pet.isWallpaperEnabled
+import android.widget.Toast
+import com.bandori.pet.chat.PetRuntime
+import com.bandori.pet.chat.WallpaperChatActivity
+import com.bandori.pet.loadIdleAnimationEnabled
+import com.bandori.pet.loadIdleAnimations
+import com.bandori.pet.loadIdleIntervalMs
+import com.bandori.pet.loadSwipeAnimationEnabled
+import com.bandori.pet.loadTouchAnimationEnabled
+import com.bandori.pet.loadTouchAnimations
 import com.bandori.pet.loadPersistedModelChoice
 import com.bandori.pet.loadWallpaperBackgroundUri
 import com.bandori.pet.loadWallpaperTransform
@@ -52,6 +61,9 @@ class Live2DWallpaperService : WallpaperService() {
         private var surfaceHolderRef: SurfaceHolder? = null
         private var settingsPreferences: SharedPreferences? = null
         private var restartJob: Job? = null
+        private var gestureHandler: WallpaperGestureHandler? = null
+        private var idleJob: Job? = null
+        private var lastInteractionAt = 0L
         private val renderSettingsListener = SharedPreferences.OnSharedPreferenceChangeListener { preferences, key ->
             scope.launch {
                 when (key) {
@@ -90,6 +102,26 @@ class Live2DWallpaperService : WallpaperService() {
                 it.registerOnSharedPreferenceChangeListener(renderSettingsListener)
             }
             setTouchEventsEnabled(true)
+            gestureHandler = WallpaperGestureHandler(
+                applicationContext,
+                onTap = { playTouchAction() },
+                onSwipe = { nx, ny ->
+                    if (loadSwipeAnimationEnabled(applicationContext)) playTouchAction()
+                    if (RenderSettings.load(applicationContext).gazeFollowEnabled) {
+                        NativeLive2D.lookAt(handle, nx.coerceIn(0f, 1f), ny.coerceIn(0f, 1f))
+                    }
+                },
+                onDoubleTap = { _, _ -> openChatInput() },
+                onLongPress = {
+                    PetRuntime.stopAll()
+                    Toast.makeText(applicationContext, "已停止", Toast.LENGTH_SHORT).show()
+                },
+                onMove = { nx, ny ->
+                    if (RenderSettings.load(applicationContext).gazeFollowEnabled) {
+                        NativeLive2D.lookAt(handle, nx.coerceIn(0f, 1f), ny.coerceIn(0f, 1f))
+                    }
+                },
+            )
             surfaceHolder.addCallback(this)
         }
 
@@ -99,6 +131,8 @@ class Live2DWallpaperService : WallpaperService() {
             settingsPreferences?.unregisterOnSharedPreferenceChangeListener(renderSettingsListener)
             settingsPreferences = null
             stopRenderer()
+            gestureHandler?.destroy()
+            gestureHandler = null
             scope.cancel()
             super.onDestroy()
         }
@@ -131,15 +165,9 @@ class Live2DWallpaperService : WallpaperService() {
 
         override fun onTouchEvent(event: MotionEvent) {
             super.onTouchEvent(event)
-            if (event.actionMasked == MotionEvent.ACTION_UP && visible && handle != 0L) {
-                val xRatio = event.x / max(width.toFloat(), 1f)
-                val yRatio = event.y / max(height.toFloat(), 1f)
-                val clampedX = xRatio.coerceIn(0f, 1f)
-                val clampedY = yRatio.coerceIn(0f, 1f)
-                NativeLive2D.touch(handle, clampedX, clampedY)
-                if (RenderSettings.load(applicationContext).gazeFollowEnabled) {
-                    NativeLive2D.lookAt(handle, clampedX, clampedY)
-                }
+            if (visible) {
+                lastInteractionAt = System.currentTimeMillis()
+                gestureHandler?.onTouchEvent(event)
             }
         }
 
@@ -176,6 +204,7 @@ class Live2DWallpaperService : WallpaperService() {
                     if (handle == 0L || runtimeRoot != prepared.runtimeRoot) {
                         destroyHandle()
                         runtimeRoot = prepared.runtimeRoot
+                        Live2DWallpaperService.activeHandle = 0L
                         handle = NativeLive2D.create(
                             activeSurface,
                             prepared.runtimeRoot,
@@ -199,6 +228,7 @@ class Live2DWallpaperService : WallpaperService() {
                             prepared.resourcePaths.toTypedArray(),
                             prepared.resourceBytes.toTypedArray(),
                         )
+                        startIdleLoop()
                     }
                 } finally {
                     if (generation == loadGeneration) loading = false
@@ -230,7 +260,40 @@ class Live2DWallpaperService : WallpaperService() {
             NativeLive2D.setTransform(handle, transform.offsetX, transform.offsetY, transform.scale)
         }
 
+        private fun playTouchAction() {
+            if (handle == 0L || !visible) return
+            if (!loadTouchAnimationEnabled(applicationContext)) return
+            val choices = loadTouchAnimations(applicationContext)
+            if (choices.isEmpty()) return
+            NativeLive2D.playAction(handle, choices.random())
+        }
+
+        private fun playIdleAction() {
+            if (handle == 0L || !visible) return
+            val choices = loadIdleAnimations(applicationContext)
+            if (choices.isEmpty()) return
+            NativeLive2D.playAction(handle, choices.random())
+        }
+
+        private fun startIdleLoop() {
+            idleJob?.cancel()
+            idleJob = scope.launch {
+                while (true) {
+                    delay(loadIdleIntervalMs(applicationContext))
+                    if (!loadIdleAnimationEnabled(applicationContext)) continue
+                    if (System.currentTimeMillis() - lastInteractionAt < 2_000L) continue
+                    playIdleAction()
+                }
+            }
+        }
+
+        private fun openChatInput() {
+            WallpaperChatActivity.open(applicationContext)
+        }
+
         private fun stopRenderer() {
+            idleJob?.cancel()
+            idleJob = null
             loadGeneration++
             loading = false
             destroyHandle()
@@ -241,12 +304,16 @@ class Live2DWallpaperService : WallpaperService() {
                 NativeLive2D.destroy(handle)
                 handle = 0L
                 runtimeRoot = null
+                activeHandle = 0L
             }
         }
 
     }
 
-    private companion object {
+    companion object {
+        @Volatile var activeHandle = 0L
+            private set
+
         const val TAG = "BandoriPetWallpaper"
         const val RESTART_DEBOUNCE_MS = 50L
     }

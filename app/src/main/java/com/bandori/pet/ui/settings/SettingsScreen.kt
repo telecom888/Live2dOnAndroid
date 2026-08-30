@@ -68,6 +68,8 @@ import com.bandori.pet.I18n
 import com.bandori.pet.RenderResolution
 import com.bandori.pet.RenderSettings
 import com.bandori.pet.ThemeSettings
+import android.widget.Toast
+import com.bandori.pet.ANIMATION_CHOICES
 import com.bandori.pet.addFloatingLive2DItem
 import com.bandori.pet.data.ModelChoice
 import com.bandori.pet.floating.FloatingLive2DOverlayService
@@ -76,13 +78,28 @@ import com.bandori.pet.llm.ChatHistoryRepository
 import com.bandori.pet.llm.LlmSettings
 import com.bandori.pet.llm.ThinkingMode
 import com.bandori.pet.companion.CompanionSettings
+import com.bandori.pet.loadIdleAnimationEnabled
+import com.bandori.pet.loadMimoApiKey
+import com.bandori.pet.loadIdleAnimations
+import com.bandori.pet.loadIdleIntervalMs
+import com.bandori.pet.loadSwipeAnimationEnabled
+import com.bandori.pet.loadTouchAnimationEnabled
+import com.bandori.pet.loadTouchAnimations
 import com.bandori.pet.loadWallpaperBackgroundUri
 import com.bandori.pet.persistBackgroundUri
 import com.bandori.pet.removeFloatingLive2DItem
 import com.bandori.pet.resetFloatingLive2DItemPositions
+import com.bandori.pet.saveIdleAnimationEnabled
+import com.bandori.pet.saveMimoApiKey
+import com.bandori.pet.saveIdleAnimations
+import com.bandori.pet.saveIdleIntervalMs
+import com.bandori.pet.saveSwipeAnimationEnabled
+import com.bandori.pet.saveTouchAnimationEnabled
+import com.bandori.pet.saveTouchAnimations
 import com.bandori.pet.saveWallpaperBackgroundUri
 import com.bandori.pet.setWallpaperEnabled
 import com.bandori.pet.wallpaper.Live2DWallpaperService
+import com.bandori.pet.wallpaper.WallpaperBackup
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -146,14 +163,7 @@ fun SettingsScreen(
         item(key = "companion") {
             CompanionSettingsEntryCard()
         }
-        item(key = "floating") {
-            FloatingOverlaySettingsCard(
-                selectedModel = selectedModel,
-                settings = floatingOverlaySettings,
-                onSettingsChanged = ::updateFloatingOverlaySettings,
-                onRefreshSettings = { floatingOverlaySettings = FloatingOverlaySettings.load(appContext) },
-            )
-        }
+        // 悬浮窗模式已按需求移除：模型只通过动态壁纸显示。
         item(key = "wallpaper") {
             WallpaperSettingsCard(
                 enabled = wallpaperEnabled,
@@ -171,6 +181,17 @@ fun SettingsScreen(
                     context.startActivity(Intent(context, com.bandori.pet.WallpaperAdjustActivity::class.java))
                 },
             )
+        }
+        item(key = "original_wallpaper") {
+            OriginalWallpaperCard(
+                onCaptured = { uri ->
+                    wallpaperBackgroundUri = uri
+                    saveWallpaperBackgroundUri(appContext, uri)
+                },
+            )
+        }
+        item(key = "interaction") {
+            InteractionSettingsCard()
         }
         item(key = "info") {
             InfoCard(
@@ -261,6 +282,7 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
     var saved by remember { mutableStateOf(false) }
     var confirmClearAll by remember { mutableStateOf(false) }
     var clearAllFailed by remember { mutableStateOf(false) }
+    var mimoKey by remember { mutableStateOf(loadMimoApiKey(appContext)) }
     val scope = rememberCoroutineScope()
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -304,6 +326,18 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
             item(key = "llm_form") {
                 SettingsSectionCard {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        "DeepSeek" to Pair("https://api.deepseek.com", "deepseek-v4-flash"),
+                        "OpenCode Go" to Pair("https://opencode.ai/zen/go/v1", "mimo-v2.5"),
+                        "小米 mimo" to Pair("https://api.xiaomimimo.com/v1", "mimo-v2.5"),
+                    ).forEach { (label, pair) ->
+                        FilledTonalButton(onClick = {
+                            draft = draft.copy(baseUrl = pair.first, model = pair.second)
+                            saved = false
+                        }) { Text(label) }
+                    }
+                }
                 OutlinedTextField(
                     value = draft.baseUrl,
                     onValueChange = { draft = draft.copy(baseUrl = it); saved = false },
@@ -399,6 +433,15 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                 )
+                OutlinedTextField(
+                    value = mimoKey,
+                    onValueChange = { mimoKey = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("mimo TTS 音色克隆 Key（免费）") },
+                    supportingText = { Text("用于 docs/mimo-tts-voiceclone.txt 的语音合成") },
+                    visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    singleLine = true,
+                )
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = draft.baseUrl.trim().let { it.startsWith("http://") || it.startsWith("https://") } &&
@@ -409,6 +452,7 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
                             draft = draft.copy(maxTokens = maxTokens).normalized()
                             maxTokensText = draft.maxTokens.toString()
                             draft.save(appContext)
+                            saveMimoApiKey(appContext, mimoKey)
                             saved = true
                         }
                     },
@@ -1079,4 +1123,150 @@ private fun openLiveWallpaperPicker(context: android.content.Context) {
     val fallbackIntent = Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER)
     runCatching { context.startActivity(changeIntent) }
         .recoverCatching { context.startActivity(fallbackIntent) }
+}
+
+
+@Composable
+private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val scope = rememberCoroutineScope()
+    SettingsSectionCard {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("保留系统原壁纸", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "启用动态壁纸前捕获当前系统壁纸，作为背景层绘制（模型在壁纸与桌面图标之间）。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                FilledTonalButton(
+                    onClick = {
+                        scope.launch {
+                            val uri = withContext(Dispatchers.IO) {
+                                WallpaperBackup.captureAndUseAsBackground(appContext)
+                            }
+                            onCaptured(uri)
+                            Toast.makeText(appContext, if (uri != null) "已捕获原壁纸并设为背景" else "捕获失败", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                ) {
+                    Text("使用原壁纸为背景")
+                }
+                FilledTonalButton(
+                    onClick = {
+                        val ok = WallpaperBackup.restoreSystemWallpaper(appContext)
+                        Toast.makeText(appContext, if (ok) "已恢复系统壁纸" else "没有可恢复的备份", Toast.LENGTH_SHORT).show()
+                    },
+                ) {
+                    Text("恢复系统壁纸")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InteractionSettingsCard() {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    var touchEnabled by remember { mutableStateOf(loadTouchAnimationEnabled(appContext)) }
+    var touchChoices by remember { mutableStateOf(loadTouchAnimations(appContext)) }
+    var swipeEnabled by remember { mutableStateOf(loadSwipeAnimationEnabled(appContext)) }
+    var idleEnabled by remember { mutableStateOf(loadIdleAnimationEnabled(appContext)) }
+    var idleChoices by remember { mutableStateOf(loadIdleAnimations(appContext)) }
+    var idleInterval by remember { mutableStateOf(loadIdleIntervalMs(appContext).toFloat()) }
+
+    SettingsSectionCard {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("壁纸交互与动画", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("触摸播放动画", fontWeight = FontWeight.SemiBold)
+                    Text("单击/滑动抚摸时随机播放勾选动作", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = touchEnabled, onCheckedChange = { touchEnabled = it; saveTouchAnimationEnabled(appContext, it) })
+            }
+            AnimationMultiSelect(
+                choices = touchChoices,
+                enabled = touchEnabled,
+                onToggle = { name ->
+                    touchChoices = if (name in touchChoices) touchChoices - name else touchChoices + name
+                    saveTouchAnimations(appContext, touchChoices)
+                },
+            )
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("滑动抚摸动画", fontWeight = FontWeight.SemiBold)
+                    Text("在模型上滑动触发随机动作", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = swipeEnabled, onCheckedChange = { swipeEnabled = it; saveSwipeAnimationEnabled(appContext, it) })
+            }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("待机随机动画", fontWeight = FontWeight.SemiBold)
+                    Text("空闲时每隔一段时间随机播放勾选动作", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = idleEnabled, onCheckedChange = { idleEnabled = it; saveIdleAnimationEnabled(appContext, it) })
+            }
+            AnimationMultiSelect(
+                choices = idleChoices,
+                enabled = idleEnabled,
+                onToggle = { name ->
+                    idleChoices = if (name in idleChoices) idleChoices - name else idleChoices + name
+                    saveIdleAnimations(appContext, idleChoices)
+                },
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("间隔：${(idleInterval / 1000).toInt()} 秒", modifier = Modifier.width(110.dp), style = MaterialTheme.typography.bodyMedium)
+                Slider(
+                    value = idleInterval,
+                    onValueChange = { idleInterval = it },
+                    onValueChangeFinished = { saveIdleIntervalMs(appContext, idleInterval.toLong()) },
+                    valueRange = 3000f..60000f,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Text(
+                "提示：双击模型弹出输入框对话；长按桌面任意位置停止当前对话/语音。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AnimationMultiSelect(
+    choices: Set<String>,
+    enabled: Boolean,
+    onToggle: (String) -> Unit,
+) {
+    val labels = mapOf(
+        "smile" to "微笑", "kandou" to "感动", "kime" to "决胜", "sad" to "难过",
+        "cry" to "哭泣", "serious" to "认真", "thinking" to "思考", "surprised" to "惊讶",
+        "angry" to "生气", "shame" to "害羞", "sing" to "唱歌", "nf" to "NF",
+        "nnf" to "NNF", "bye" to "再见",
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ANIMATION_CHOICES.chunked(7).forEach { chunk ->
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                chunk.forEach { name ->
+                    val selected = name in choices
+                    androidx.compose.material3.FilterChip(
+                        selected = selected,
+                        onClick = { onToggle(name) },
+                        enabled = enabled,
+                        label = { Text(labels[name] ?: name, style = MaterialTheme.typography.bodySmall) },
+                    )
+                }
+            }
+        }
+    }
 }

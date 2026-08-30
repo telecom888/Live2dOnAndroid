@@ -363,3 +363,106 @@ private fun decodeFloatingItems(value: String?): List<FloatingLive2DItem> {
         }
     }.getOrDefault(emptyList())
 }
+
+
+// ==================== 壁纸交互 / 动画 / 原壁纸保留 ====================
+const val KEY_TOUCH_ANIMATION_ENABLED = "touch_animation_enabled"
+const val KEY_TOUCH_ANIMATIONS = "touch_animations"
+const val KEY_SWIPE_ANIMATION_ENABLED = "swipe_animation_enabled"
+const val KEY_IDLE_ANIMATION_ENABLED = "idle_animation_enabled"
+const val KEY_IDLE_ANIMATIONS = "idle_animations"
+const val KEY_IDLE_INTERVAL_MS = "idle_interval_ms"
+const val KEY_WALLPAPER_ORIGINAL_BACKUP_PATH = "wallpaper_original_backup_path"
+
+/** 可选动画基础名（Lua 端 __bp_action 用基础名匹配，如 smile 匹配 smile01） */
+val ANIMATION_CHOICES: List<String> = listOf(
+    "smile", "kandou", "kime", "sad", "cry", "serious", "thinking",
+    "surprised", "angry", "shame", "sing", "nf", "nnf", "bye",
+)
+
+fun encodeAnimations(values: Set<String>): String = values.joinToString(",")
+fun decodeAnimations(value: String?): Set<String> =
+    value?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
+
+fun loadTouchAnimationEnabled(context: Context): Boolean =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getBoolean(KEY_TOUCH_ANIMATION_ENABLED, true)
+
+fun saveTouchAnimationEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_TOUCH_ANIMATION_ENABLED, enabled).apply()
+}
+
+fun loadTouchAnimations(context: Context): Set<String> {
+    val prefs = context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+    val stored = decodeAnimations(prefs.getString(KEY_TOUCH_ANIMATIONS, null))
+    return if (stored.isEmpty()) setOf("smile", "kandou", "kime", "sad", "surprised", "thinking") else stored
+}
+
+fun saveTouchAnimations(context: Context, values: Set<String>) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putString(KEY_TOUCH_ANIMATIONS, encodeAnimations(values)).apply()
+}
+
+fun loadSwipeAnimationEnabled(context: Context): Boolean =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getBoolean(KEY_SWIPE_ANIMATION_ENABLED, true)
+
+fun saveSwipeAnimationEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_SWIPE_ANIMATION_ENABLED, enabled).apply()
+}
+
+fun loadIdleAnimationEnabled(context: Context): Boolean =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getBoolean(KEY_IDLE_ANIMATION_ENABLED, false)
+
+fun saveIdleAnimationEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_IDLE_ANIMATION_ENABLED, enabled).apply()
+}
+
+fun loadIdleAnimations(context: Context): Set<String> {
+    val prefs = context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+    val stored = decodeAnimations(prefs.getString(KEY_IDLE_ANIMATIONS, null))
+    return if (stored.isEmpty()) setOf("smile", "kandou", "thinking") else stored
+}
+
+fun saveIdleAnimations(context: Context, values: Set<String>) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putString(KEY_IDLE_ANIMATIONS, encodeAnimations(values)).apply()
+}
+
+fun loadIdleIntervalMs(context: Context): Long =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getLong(KEY_IDLE_INTERVAL_MS, 8_000L).coerceIn(3_000L, 60_000L)
+
+fun saveIdleIntervalMs(context: Context, interval: Long) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putLong(KEY_IDLE_INTERVAL_MS, interval.coerceIn(3_000L, 60_000L)).apply()
+}
+
+fun loadWallpaperOriginalBackupPath(context: Context): String? =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getString(KEY_WALLPAPER_ORIGINAL_BACKUP_PATH, null)
+
+fun saveWallpaperOriginalBackupPath(context: Context, path: String?) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().apply {
+            if (path.isNullOrBlank()) remove(KEY_WALLPAPER_ORIGINAL_BACKUP_PATH)
+            else putString(KEY_WALLPAPER_ORIGINAL_BACKUP_PATH, path)
+        }.apply()
+}
+
+
+// ==================== mimo（语音克隆 TTS） ====================
+const val KEY_MIMO_API_KEY = "mimo_api_key"
+
+fun loadMimoApiKey(context: Context): String =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getString(KEY_MIMO_API_KEY, null).orEmpty().trim()
+
+fun saveMimoApiKey(context: Context, key: String) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putString(KEY_MIMO_API_KEY, key.trim()).apply()
+}

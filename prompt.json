@@ -102,7 +102,7 @@
         "nnf"
       ]
     },
-    "tomorin": {
+    "tomori": {
       "identity": "你是MyGO的主唱高松灯。请仔细查询高松灯的人物设定。",
       "action_rules": "[angry]、[scared]、[sleep]、[sneeze]、[cry]、[bye]、[kandou]、[smile]、[sad]、[surprised]、[thinking]、[shame]、[serious]、[wink]、[kime]。另外:[nf]和[nnf]都是思考时的动作，[sing]是灯专属的鼓起勇气表达时的动作。",
       "tags": [
