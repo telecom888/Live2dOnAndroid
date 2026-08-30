@@ -22,9 +22,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material.icons.outlined.Face
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.ViewInAr
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -64,6 +66,7 @@ import com.bangdream.pet.ui.design.emphasizedTween
 import com.bangdream.pet.ui.design.expressiveTween
 import com.bangdream.pet.ui.design.rememberLiquidGlassState
 import com.bangdream.pet.ui.design.standardTween
+import com.bangdream.pet.ui.chat.ConversationManagerScreen
 import com.bangdream.pet.ui.live2d.Live2DScreen
 import com.bangdream.pet.ui.model.ModelScreen
 import com.bangdream.pet.ui.settings.SettingsScreen
@@ -102,12 +105,14 @@ class MainActivity : ComponentActivity() {
 enum class Screen {
     Live2D,
     Model,
+    Chat,
     Settings,
 }
 
 fun Screen.title(): String = when (this) {
     Screen.Live2D -> I18n.t("nav_live2d")
     Screen.Model -> I18n.t("nav_model")
+    Screen.Chat -> "角色"
     Screen.Settings -> I18n.t("nav_settings")
 }
 
@@ -311,6 +316,11 @@ fun BangDreamPetApp(
                                     },
                                 )
                             }
+                            Screen.Chat -> ConversationManagerScreen(
+                                appData = appData,
+                                repository = repository,
+                                topInset = topInset,
+                            )
                             Screen.Settings -> SettingsScreen(
                                 selectedModel = selectedModel,
                                 themeSettings = themeSettings,
@@ -371,9 +381,11 @@ private fun NavIcon(screen: Screen, selected: Boolean) {
         imageVector = when (screen to selected) {
             Screen.Live2D to true -> Icons.Filled.Face
             Screen.Model to true -> Icons.Filled.ViewInAr
+            Screen.Chat to true -> Icons.Filled.Forum
             Screen.Settings to true -> Icons.Filled.Settings
             Screen.Live2D to false -> Icons.Outlined.Face
             Screen.Model to false -> Icons.Outlined.ViewInAr
+            Screen.Chat to false -> Icons.Outlined.Forum
             else -> Icons.Outlined.Settings
         },
         contentDescription = screen.title(),

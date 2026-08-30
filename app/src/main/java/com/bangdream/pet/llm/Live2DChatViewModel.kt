@@ -32,6 +32,7 @@ data class ChatUiState(
     val conversations: List<ChatConversationSummary> = emptyList(),
     val messages: List<ChatMessage> = emptyList(),
     val streamingText: String = "",
+    val streamingReasoning: String = "",
     val isGenerating: Boolean = false,
     val isThinking: Boolean = false,
     val isHistoryLoading: Boolean = false,
@@ -139,6 +140,47 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun renameConversation(characterId: String, conversationId: String, title: String) {
+        if (mutableState.value.characterId != characterId) return
+        launchTransition {
+            stopRequestAndJoin()
+            val conversations = runIoCatching {
+                check(history.renameConversation(characterId, conversationId, title))
+                history.listConversations(characterId)
+            }.getOrElse {
+                mutableState.value = mutableState.value.copy(error = ERROR_HISTORY_SAVE)
+                return@launchTransition
+            }
+            mutableState.value = mutableState.value.copy(
+                conversations = conversations,
+                conversationTitle = if (mutableState.value.conversationId == conversationId) {
+                    title.trim().takeIf(String::isNotBlank) ?: mutableState.value.conversationTitle
+                } else {
+                    mutableState.value.conversationTitle
+                },
+            )
+        }
+    }
+
+    data class ConversationStats(
+        val messageCount: Int = 0,
+        val totalChars: Int = 0,
+        val systemPromptChars: Int = 0,
+    )
+
+    /** 某对话的统计信息：消息条数、消息总字数、角色设定字数。 */
+    suspend fun conversationStats(model: ModelChoice, conversationId: String): ConversationStats =
+        withContext(Dispatchers.IO) {
+            val system = prompts.buildSystemPrompt(model).text
+            val conversation = history.loadConversation(model.characterId, conversationId)
+            val messages = conversation?.messages.orEmpty()
+            ConversationStats(
+                messageCount = messages.size,
+                totalChars = messages.sumOf { it.content.length },
+                systemPromptChars = system.length,
+            )
+        }
+
     fun send(model: ModelChoice, input: String): Boolean {
         val text = input.trim()
         val current = mutableState.value
@@ -243,6 +285,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             mutableState.value = mutableState.value.copy(isGenerating = true)
             lastFailedRequest = null
             var latestStreamingText = ""
+            var latestStreamingReasoning = ""
             val pendingParserText = StringBuilder()
             var lastStreamingPublishAt = 0L
             var pendingStreamingUpdate: Job? = null
@@ -264,6 +307,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                     if (isActive(requestContext)) {
                         mutableState.value = mutableState.value.copy(
                             streamingText = latestStreamingText,
+                            streamingReasoning = latestStreamingReasoning,
                             isThinking = false,
                         )
                     }
@@ -275,6 +319,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                             lastStreamingPublishAt = System.nanoTime() / 1_000_000L
                             mutableState.value = mutableState.value.copy(
                                 streamingText = latestStreamingText,
+                                streamingReasoning = latestStreamingReasoning,
                                 isThinking = false,
                             )
                         }
@@ -290,17 +335,24 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                             pendingParserText.append(event.text)
                             publishStreamingText()
                         }
+                        is LlmStreamEvent.Reasoning -> {
+                            latestStreamingReasoning += event.text
+                            mutableState.value = mutableState.value.copy(
+                                streamingReasoning = latestStreamingReasoning,
+                                isThinking = true,
+                            )
+                        }
                         LlmStreamEvent.ReasoningStarted -> mutableState.value = mutableState.value.copy(isThinking = true)
                     }
                 }
                 pendingStreamingUpdate?.cancel()
                 flushParserText()
-                finalizeAssistant(requestContext, parser)
+                finalizeAssistant(requestContext, parser, latestStreamingReasoning)
             } catch (cancelled: CancellationException) {
                 pendingStreamingUpdate?.cancel()
                 withContext(NonCancellable) {
                     flushParserText()
-                    finalizeAssistant(requestContext, parser)
+                    finalizeAssistant(requestContext, parser, latestStreamingReasoning)
                 }
                 throw cancelled
             } catch (error: Throwable) {
@@ -308,7 +360,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 if (!currentCoroutineContext().isActive) {
                     withContext(NonCancellable) {
                         flushParserText()
-                        finalizeAssistant(requestContext, parser)
+                        finalizeAssistant(requestContext, parser, latestStreamingReasoning)
                     }
                     return@launch
                 }
@@ -322,6 +374,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                         isGenerating = false,
                         isThinking = false,
                         streamingText = "",
+                        streamingReasoning = "",
                         error = error.message ?: error.javaClass.simpleName,
                     )
                 }
@@ -329,10 +382,12 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private suspend fun finalizeAssistant(request: RequestContext, parser: ActionTagParser) {
+    private suspend fun finalizeAssistant(request: RequestContext, parser: ActionTagParser, reasoning: String) {
         val result = parser.finish()
         val finalMessages = if (result.text.isNotBlank()) {
-            (request.messages + newMessage("assistant", result.text)).takeLast(ChatHistoryRepository.MAX_STORED_MESSAGES)
+            (request.messages + newMessage("assistant", result.text).copy(
+                reasoning = reasoning.takeIf(String::isNotBlank),
+            )).takeLast(ChatHistoryRepository.MAX_STORED_MESSAGES)
         } else {
             request.messages
         }
@@ -347,6 +402,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 mutableState.value = mutableState.value.copy(
                     messages = finalMessages,
                     streamingText = "",
+                    streamingReasoning = "",
                     isGenerating = false,
                     isThinking = false,
                     error = ERROR_HISTORY_SAVE,
@@ -363,6 +419,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             conversations = conversations,
             messages = finalMessages,
             streamingText = "",
+            streamingReasoning = "",
             isGenerating = false,
             isThinking = false,
             error = null,

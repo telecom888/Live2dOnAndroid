@@ -61,7 +61,8 @@ class WallpaperChatEngine(private val context: Context) {
             client.streamCompletion(settings, prompt.text, baseMessages + userMessage).collect { event ->
                 coroutineContext.ensureActive()
                 when (event) {
-                    is LlmStreamEvent.Content -> {
+                    is LlmStreamEvent.Reasoning -> Unit
+                is LlmStreamEvent.Content -> {
                         textBuilder.append(event.text)
                         onStreaming(parser.consume(textBuilder.toString()))
                     }

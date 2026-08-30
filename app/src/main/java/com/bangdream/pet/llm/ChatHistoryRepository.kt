@@ -80,6 +80,19 @@ class ChatHistoryRepository internal constructor(
     }
 
     @Synchronized
+    fun renameConversation(characterId: String, conversationId: String, title: String): Boolean {
+        val file = conversationFile(characterId, conversationId) ?: return false
+        val conversation = readConversation(file, characterId) ?: return false
+        saveConversation(
+            conversation.copy(
+                title = title.trim().takeIf(String::isNotBlank) ?: conversation.title,
+                updatedAt = System.currentTimeMillis(),
+            )
+        )
+        return true
+    }
+
+    @Synchronized
     fun deleteConversation(characterId: String, conversationId: String): Boolean {
         val file = conversationFile(characterId, conversationId) ?: return false
         val deleted = !file.exists() || file.delete()
@@ -167,6 +180,7 @@ class ChatHistoryRepository internal constructor(
                     id = item.optString("id", "$fallbackPrefix-$index"),
                     role = item.optString("role", "user"),
                     content = item.optString("content"),
+                    reasoning = item.optString("reasoning").takeIf(String::isNotEmpty),
                     timestamp = item.optLong("timestamp", 0L),
                 ),
             )
@@ -180,6 +194,7 @@ class ChatHistoryRepository internal constructor(
                     .put("id", message.id)
                     .put("role", message.role)
                     .put("content", message.content)
+                    .put("reasoning", message.reasoning)
                     .put("timestamp", message.timestamp),
             )
         }

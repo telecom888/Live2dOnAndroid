@@ -76,6 +76,7 @@ data class ChatMessage(
     val role: String,
     val content: String,
     val timestamp: Long,
+    val reasoning: String? = null,
 )
 
 @Immutable
@@ -106,6 +107,7 @@ data class ChatHistorySnapshot(
 
 sealed interface LlmStreamEvent {
     data class Content(val text: String) : LlmStreamEvent
+    data class Reasoning(val text: String) : LlmStreamEvent
     data object ReasoningStarted : LlmStreamEvent
 }
 

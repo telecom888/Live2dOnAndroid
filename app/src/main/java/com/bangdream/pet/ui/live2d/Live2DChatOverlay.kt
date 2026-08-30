@@ -14,6 +14,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -38,6 +41,9 @@ import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Refresh
@@ -81,6 +87,7 @@ import com.bangdream.pet.I18n
 import com.bangdream.pet.data.ModelChoice
 import com.bangdream.pet.llm.ChatConversationSummary
 import com.bangdream.pet.llm.ChatMessage
+import com.bangdream.pet.llm.ChatTextSearch
 import com.bangdream.pet.llm.ChatUiState
 import com.bangdream.pet.llm.Live2DChatViewModel
 import com.bangdream.pet.llm.LlmSettings
@@ -551,17 +558,25 @@ private fun calculateImeOverlapPx(
 }
 
 @Composable
-private fun ChatMessageList(
+internal fun ChatMessageList(
     messages: List<ChatMessage>,
     streamingText: String,
     thinking: Boolean,
+    streamingReasoning: String = "",
     onReplay: ((ChatMessage) -> Unit)? = null,
+    highlightQuery: String? = null,
+    scrollToMessageId: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
     val itemCount = messages.size + if (streamingText.isNotBlank() || thinking) 1 else 0
     val streamScrollBucket = streamingText.length / 24
     var previousItemCount by remember { mutableIntStateOf(0) }
+    LaunchedEffect(scrollToMessageId, messages.size) {
+        val targetId = scrollToMessageId ?: return@LaunchedEffect
+        val index = messages.indexOfFirst { it.id == targetId }
+        if (index >= 0) listState.scrollToItem(index)
+    }
     LaunchedEffect(itemCount, streamScrollBucket) {
         val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
         val wasNearBottom = shouldFollowNewChatContent(previousItemCount, lastVisibleIndex)
@@ -583,11 +598,22 @@ private fun ChatMessageList(
             } else {
                 null
             }
-            ChatBubble(message.role, message.content, onReplay = replay)
+            ChatBubble(
+                message.role,
+                message.content,
+                reasoning = message.reasoning,
+                highlightQuery = highlightQuery,
+                onReplay = replay,
+            )
         }
         if (streamingText.isNotBlank() || thinking) {
             item(key = "streaming", contentType = "message") {
-                ChatBubble("assistant", streamingText.ifBlank { I18n.t("chat_thinking") }, thinking)
+                ChatBubble(
+                    "assistant",
+                    streamingText.ifBlank { I18n.t("chat_thinking") },
+                    thinking,
+                    reasoning = streamingReasoning,
+                )
             }
         }
     }
@@ -597,31 +623,119 @@ internal fun shouldFollowNewChatContent(previousItemCount: Int, lastVisibleIndex
     previousItemCount <= 0 || lastVisibleIndex < 0 || lastVisibleIndex >= previousItemCount - 2
 
 @Composable
-private fun ChatBubble(role: String, content: String, thinking: Boolean = false, onReplay: (() -> Unit)? = null) {
+internal fun ChatBubble(
+    role: String,
+    content: String,
+    thinking: Boolean = false,
+    reasoning: String? = null,
+    highlightQuery: String? = null,
+    onReplay: (() -> Unit)? = null,
+) {
     val fromUser = role == "user"
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start,
+        horizontalAlignment = if (fromUser) Alignment.End else Alignment.Start,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(0.86f),
-            shape = RoundedCornerShape(
-                topStart = 20.dp,
-                topEnd = 20.dp,
-                bottomStart = if (fromUser) 20.dp else 6.dp,
-                bottomEnd = if (fromUser) 6.dp else 20.dp,
-            ),
-            color = if (fromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+        if (!reasoning.isNullOrBlank()) {
+            ReasoningFold(reasoning)
+            Spacer(Modifier.height(4.dp))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start,
         ) {
-            Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (thinking) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(0.86f),
+                shape = RoundedCornerShape(
+                    topStart = 20.dp,
+                    topEnd = 20.dp,
+                    bottomStart = if (fromUser) 20.dp else 6.dp,
+                    bottomEnd = if (fromUser) 6.dp else 20.dp,
+                ),
+                color = if (fromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+            ) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (thinking) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    val ranges = remember(content, highlightQuery) {
+                        if (highlightQuery.isNullOrBlank()) {
+                            emptyList()
+                        } else {
+                            ChatTextSearch.findHighlightRanges(content, highlightQuery)
+                        }
+                    }
+                    if (ranges.isEmpty()) {
+                        Text(content, style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        val annotated = buildAnnotatedString {
+                            var last = 0
+                            for (range in ranges.sortedBy { it.first }) {
+                                val start = range.first.coerceIn(0, content.length)
+                                val end = range.last.plus(1).coerceIn(start, content.length)
+                                if (start > last) append(content.substring(last, start))
+                                withStyle(
+                                    SpanStyle(
+                                        background = Color(0x66FFD54F),
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                ) {
+                                    append(content.substring(start, end))
+                                }
+                                last = end
+                            }
+                            if (last < content.length) append(content.substring(last))
+                        }
+                        Text(annotated, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (onReplay != null) {
+                        TextButton(onClick = onReplay) { Text("朗读") }
+                    }
                 }
-                Text(content, style = MaterialTheme.typography.bodyMedium)
-                if (onReplay != null) {
-                    TextButton(onClick = onReplay) { Text("朗读") }
-                }
+            }
+        }
+    }
+}
+
+/** 可折叠的深度思考（思维链）块。 */
+@Composable
+private fun ReasoningFold(reasoning: String) {
+    var expanded by remember { mutableStateOf(false) }
+    Surface(
+        onClick = { expanded = !expanded },
+        modifier = Modifier.fillMaxWidth(0.86f),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Outlined.Psychology,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "深度思考",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            if (expanded) {
+                Text(
+                    reasoning,
+                    modifier = Modifier.padding(top = 6.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

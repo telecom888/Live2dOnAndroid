@@ -62,6 +62,7 @@ class LlmChatClient {
                 val content = delta.opt("content")
                 return ParsedSseEvent(
                     reasoning = reasoning is String && reasoning.isNotEmpty(),
+                    reasoningContent = (reasoning as? String)?.takeIf(String::isNotEmpty),
                     content = content as? String,
                 )
             }
@@ -78,6 +79,7 @@ class LlmChatClient {
                                 reasoningEmitted = true
                                 emit(LlmStreamEvent.ReasoningStarted)
                             }
+                            event?.reasoningContent?.let { emit(LlmStreamEvent.Reasoning(it)) }
                             event?.content?.takeIf(String::isNotEmpty)?.let { emit(LlmStreamEvent.Content(it)) }
                         }
                         line.startsWith("data:") -> dataLines += line.removePrefix("data:").trimStart()
@@ -85,6 +87,7 @@ class LlmChatClient {
                 }
                 val event = takeEvent()
                 if (event?.reasoning == true && !reasoningEmitted) emit(LlmStreamEvent.ReasoningStarted)
+                event?.reasoningContent?.let { emit(LlmStreamEvent.Reasoning(it)) }
                 event?.content?.takeIf(String::isNotEmpty)?.let { emit(LlmStreamEvent.Content(it)) }
             }
         } finally {
@@ -120,6 +123,7 @@ class LlmChatClient {
     private data class ParsedSseEvent(
         val done: Boolean = false,
         val reasoning: Boolean = false,
+        val reasoningContent: String? = null,
         val content: String? = null,
     )
 }
