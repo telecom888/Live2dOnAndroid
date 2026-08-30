@@ -549,6 +549,18 @@ fun saveBubbleEnabled(context: Context, enabled: Boolean) {
 }
 
 
+// ==================== 回复后语音（对话回复 → 克隆 TTS 播放） ====================
+const val KEY_REPLY_VOICE_ENABLED = "reply_voice_enabled"
+
+fun loadReplyVoiceEnabled(context: Context): Boolean =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getBoolean(KEY_REPLY_VOICE_ENABLED, false)
+
+fun saveReplyVoiceEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_REPLY_VOICE_ENABLED, enabled).apply()
+}
+
 // ==================== 内置语音（台词 → 克隆 TTS） ====================
 const val KEY_BUILTIN_VOICE_ENABLED = "builtin_voice_enabled"
 

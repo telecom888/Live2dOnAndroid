@@ -4,7 +4,12 @@ import android.app.Application
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.bangdream.pet.VoiceSettings
 import com.bangdream.pet.data.ModelChoice
+import com.bangdream.pet.loadReplyVoiceEnabled
+import com.bangdream.pet.voice.VoiceCloneClient
+import com.bangdream.pet.voice.VoicePlayer
+import com.bangdream.pet.voice.VoiceSamples
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -424,6 +429,27 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             isThinking = false,
             error = null,
         )
+        if (result.text.isNotBlank()) {
+            playReplyVoiceIfEnabled(request.characterId, result.text)
+        }
+    }
+
+    /** 回复完成后若开启「回复后播放语音」且 TTS/音色已配置，合成并播放（等待合成完成后播放）。 */
+    private fun playReplyVoiceIfEnabled(characterId: String, text: String) {
+        val app = getApplication<Application>()
+        if (!loadReplyVoiceEnabled(app)) return
+        val voice = VoiceSettings.load(app)
+        if (!voice.isConfigured) return
+        val sample = VoiceSamples.activeSampleFile(app, characterId) ?: return
+        viewModelScope.launch {
+            val wav = withContext(Dispatchers.IO) {
+                runCatching {
+                    VoiceCloneClient(voice.baseUrl, voice.model, voice.apiKey).synthesize(text, sample)
+                }.getOrNull()
+            }
+            val audio = wav?.takeIf { it.isNotEmpty() }
+            if (audio != null) VoicePlayer.play(app, audio)
+        }
     }
 
     private fun applySnapshot(characterId: String, snapshot: ChatHistorySnapshot) {
