@@ -21,7 +21,7 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.BandoriPet">
+        android:theme="@style/Theme.BangDreamPet">
         <activity
             android:name=".WallpaperAdjustActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"

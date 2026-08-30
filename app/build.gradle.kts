@@ -7,10 +7,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val releaseStorePath = providers.gradleProperty("BANDORI_RELEASE_STORE_FILE").orNull
-val releaseStorePassword = providers.gradleProperty("BANDORI_RELEASE_STORE_PASSWORD").orNull
-val releaseKeyAlias = providers.gradleProperty("BANDORI_RELEASE_KEY_ALIAS").orNull
-val releaseKeyPassword = providers.gradleProperty("BANDORI_RELEASE_KEY_PASSWORD").orNull
+val releaseStorePath = providers.gradleProperty("BANGDREAM_RELEASE_STORE_FILE").orNull
+val releaseStorePassword = providers.gradleProperty("BANGDREAM_RELEASE_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.gradleProperty("BANGDREAM_RELEASE_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.gradleProperty("BANGDREAM_RELEASE_KEY_PASSWORD").orNull
 val hasReleaseSigning = listOf(
     releaseStorePath,
     releaseStorePassword,
@@ -19,11 +19,11 @@ val hasReleaseSigning = listOf(
 ).all { !it.isNullOrBlank() }
 
 android {
-    namespace = "com.bandori.pet"
+    namespace = "com.bangdream.pet"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.bandori.pet"
+        applicationId = "com.bangdream.pet"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

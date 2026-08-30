@@ -235,7 +235,7 @@ impl Drop for NativeWindow {
 }
 
 pub fn log_error(message: &str) {
-    let tag = c"BandoriPet";
+    let tag = c"BangDreamPet";
     let cleaned = message.replace('\0', "�");
     if let Ok(text) = CString::new(cleaned) {
         unsafe {

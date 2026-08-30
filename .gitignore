@@ -23,7 +23,7 @@ dist/
 # Logs
 *.log
 
-# --- BANDORI base ---
+# --- BANGDREAM base ---
 .gradle/
 app/build/
 app/src/main/rust/target/

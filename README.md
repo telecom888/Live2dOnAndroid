@@ -1,6 +1,6 @@
 # Live2dOnAndroid —— MyGO Live2D 桌面宠物 / 动态壁纸
 
-把 BanG Dream! MyGO!!!!! 的 Live2D 模型放到 Android 桌面上的应用。
+把 BangDream MyGO!!!!! 的 Live2D 模型放到 Android 桌面上的应用。
 
 - **动态壁纸模式**：层级为「原系统壁纸 < Live2D 模型 < 桌面图标/小部件」
 - **桌面宠物交互**：单击 / 滑动抚摸 / 双击输入 / 长按打断
@@ -32,7 +32,7 @@
 
 ## 许可与致谢
 
-本仓库基于 [BANDORI-PET-Android](https://github.com/HELPMEEADICE/BANDORI-PET-Android)（GPL-3.0）改造；Live2D-v2-Lua 为 LGPL-3.0；Live2D 模型来自 BanG Dream! 游戏数据包，仅供学习交流，请勿商用。
+本仓库基于 [BANDORI-PET-Android](https://github.com/HELPMEEADICE/BANDORI-PET-Android)（GPL-3.0）改造；Live2D-v2-Lua 为 LGPL-3.0；Live2D 模型来自 BangDream 游戏数据包，仅供学习交流，请勿商用。
 
 ## 文档
 

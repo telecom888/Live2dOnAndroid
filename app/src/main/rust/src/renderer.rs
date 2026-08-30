@@ -228,7 +228,7 @@ impl RendererHandle {
         let thread_shared = Arc::clone(&shared);
         let thread_window = Arc::clone(&window);
         let render_thread = thread::Builder::new()
-            .name("BandoriPet-Live2D".to_owned())
+            .name("BangDreamPet-Live2D".to_owned())
             .spawn(move || {
                 let result = catch_unwind(AssertUnwindSafe(|| {
                     render_loop(&thread_shared, thread_window.as_ref(), &runtime_root)

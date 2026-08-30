@@ -296,4 +296,4 @@
 
 ---
 
-*本分析基于《BanG Dream! Girls Band Party!》游戏内剧情文本（第0章~第3章）提取生成。*
+*本分析基于《BangDream Girls Band Party!》游戏内剧情文本（第0章~第3章）提取生成。*

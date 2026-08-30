@@ -1,4 +1,4 @@
--keep class com.bandori.pet.live2d.NativeLive2D { *; }
--keep class com.bandori.pet.floating.FloatingLive2DOverlayService { *; }
--keep class com.bandori.pet.wallpaper.Live2DWallpaperService { *; }
+-keep class com.bangdream.pet.live2d.NativeLive2D { *; }
+-keep class com.bangdream.pet.floating.FloatingLive2DOverlayService { *; }
+-keep class com.bangdream.pet.wallpaper.Live2DWallpaperService { *; }
 -keep class com.github.luben.zstd.ZstdInputStreamNoFinalizer { *; }

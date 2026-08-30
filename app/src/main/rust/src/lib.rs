@@ -122,7 +122,7 @@ fn collect_resources(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_create(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_create(
     mut env: JNIEnv<'_>,
     _this: JObject<'_>,
     surface: JObject<'_>,
@@ -166,7 +166,7 @@ pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_create(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_resize(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_resize(
     _env: JNIEnv<'_>,
     _this: JObject<'_>,
     handle: jlong,
@@ -181,7 +181,7 @@ pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_resize(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_loadModel(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_loadModel(
     mut env: JNIEnv<'_>,
     _this: JObject<'_>,
     handle: jlong,
@@ -213,7 +213,7 @@ pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_loadModel(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_setRenderOptions(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_setRenderOptions(
     _env: JNIEnv<'_>,
     _this: JObject<'_>,
     handle: jlong,
@@ -228,7 +228,7 @@ pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_setRenderOptions
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_setPaused(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_setPaused(
     _env: JNIEnv<'_>,
     _this: JObject<'_>,
     handle: jlong,
@@ -242,7 +242,7 @@ pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_setPaused(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_setRenderScale(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_setRenderScale(
     _env: JNIEnv<'_>,
     _this: JObject<'_>,
     handle: jlong,
@@ -256,7 +256,7 @@ pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_setRenderScale(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_setFpsDisplayEnabled(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_setFpsDisplayEnabled(
     _env: JNIEnv<'_>,
     _this: JObject<'_>,
     handle: jlong,
@@ -270,7 +270,7 @@ pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_setFpsDisplayEna
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_setTransform(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_setTransform(
     _env: JNIEnv<'_>,
     _this: JObject<'_>,
     handle: jlong,
@@ -286,7 +286,7 @@ pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_setTransform(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_setBackgroundPixels(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_setBackgroundPixels(
     mut env: JNIEnv<'_>,
     _this: JObject<'_>,
     handle: jlong,
@@ -323,7 +323,7 @@ pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_setBackgroundPix
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_touch(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_touch(
     _env: JNIEnv<'_>,
     _this: JObject<'_>,
     handle: jlong,
@@ -338,7 +338,7 @@ pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_touch(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_lookAt(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_lookAt(
     _env: JNIEnv<'_>,
     _this: JObject<'_>,
     handle: jlong,
@@ -353,7 +353,7 @@ pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_lookAt(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_playAction(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_playAction(
     mut env: JNIEnv<'_>,
     _this: JObject<'_>,
     handle: jlong,
@@ -374,7 +374,7 @@ pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_playAction(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_setLipSync(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_setLipSync(
     _env: JNIEnv<'_>,
     _this: JObject<'_>,
     handle: jlong,
@@ -389,7 +389,7 @@ pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_setLipSync(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_lastError(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_lastError(
     env: JNIEnv<'_>,
     _this: JObject<'_>,
     handle: jlong,
@@ -405,7 +405,7 @@ pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_lastError(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_bandori_pet_live2d_NativeLive2D_destroy(
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_destroy(
     _env: JNIEnv<'_>,
     _this: JObject<'_>,
     handle: jlong,
