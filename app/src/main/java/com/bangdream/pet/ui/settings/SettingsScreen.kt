@@ -1032,7 +1032,7 @@ private fun openLiveWallpaperPicker(context: android.content.Context) {
     }
     Toast.makeText(
         context,
-        "未找到系统壁纸选择器，请到：系统设置 → 壁纸 → 动态壁纸 → 选择 BangDream Pet",
+        "未找到系统壁纸选择器，请到：系统设置 → 壁纸 → 动态壁纸 → 选择 BangDream Live2D",
         Toast.LENGTH_LONG,
     ).show()
 }

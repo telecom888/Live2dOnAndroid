@@ -654,7 +654,7 @@ class Live2DWallpaperService : WallpaperService() {
         @Volatile var activeHandle = 0L
             private set
 
-        const val TAG = "BangDreamPetWallpaper"
+        const val TAG = "BangDreamLive2DWallpaper"
         const val RESTART_DEBOUNCE_MS = 50L
         const val LAST_ACTION_REPLAY_WINDOW_MS = 10_000L
     }

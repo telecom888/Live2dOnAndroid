@@ -355,7 +355,7 @@ class FloatingLive2DOverlayService : Service() {
         private const val MIN_HEIGHT = 240
         private const val MAX_WIDTH = 1200
         private const val MAX_HEIGHT = 1600
-        private const val TAG = "BangDreamPetFloating"
+        private const val TAG = "BangDreamLive2DFloating"
 
         fun sync(context: Context) {
             val appContext = context.applicationContext
