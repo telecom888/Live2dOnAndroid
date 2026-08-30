@@ -86,6 +86,9 @@ class Live2DRenderView @JvmOverloads constructor(
         }
         selectedModel = model
         loadGeneration += 1
+        // 同一角色不同服装也强制销毁重建渲染实例：避免在同一 EGL/Lua 实例上反复
+        // loadModel 导致旧模型资源累积（帧率逐次下降）。
+        destroyRenderer()
         loadSelectedModel()
     }
 

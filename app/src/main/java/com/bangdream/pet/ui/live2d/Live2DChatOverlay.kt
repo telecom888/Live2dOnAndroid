@@ -710,13 +710,6 @@ private fun ReasoningFold(reasoning: String) {
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Outlined.Psychology,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(Modifier.width(6.dp))
                 Text(
                     "深度思考",
                     style = MaterialTheme.typography.labelMedium,
