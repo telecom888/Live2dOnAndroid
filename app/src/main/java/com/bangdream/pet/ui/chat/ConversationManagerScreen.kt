@@ -2,6 +2,7 @@
 
 package com.bangdream.pet.ui.chat
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -102,6 +103,13 @@ fun ConversationManagerScreen(
         showCharacterSettings -> 3
         openConversationId == null -> 1
         else -> 2
+    }
+    BackHandler(enabled = level != 0) {
+        when (level) {
+            3 -> showCharacterSettings = false
+            2 -> openConversationId = null
+            else -> selectedCharacter = null
+        }
     }
     AnimatedContent(
         targetState = level,
@@ -451,6 +459,11 @@ private fun ConversationDetailScreen(
     var renameDraft by remember { mutableStateOf("") }
     val input = remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    BackHandler(enabled = searchMode) {
+        searchMode = false
+        searchQuery = ""
+        scrollTarget = null
+    }
 
     LaunchedEffect(searchQuery, state.messages) {
         searchResults = if (searchQuery.isBlank()) {

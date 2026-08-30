@@ -319,6 +319,9 @@ impl RendererHandle {
                 state.render_scale,
             );
             state.pending_resize = true;
+            // 分辨率变化后重建 EGL 窗口 surface，确保新的 buffer 几何尺寸立即生效，
+            // 避免壁纸/模型在更改渲染分辨率后出现异常缩放。
+            state.pending_surface = Some(Arc::clone(&self.window));
             (state.width, state.height)
         };
         self.window

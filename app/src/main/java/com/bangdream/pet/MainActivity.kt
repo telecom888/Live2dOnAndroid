@@ -333,7 +333,7 @@ fun BangDreamPetApp(
                     }
                 }
             }
-            if (selectedScreen != Screen.Model) {
+            if (selectedScreen != Screen.Model && selectedScreen != Screen.Chat) {
                 AppTopBar(
                     selectedModel = selectedModel,
                     modifier = Modifier.align(Alignment.TopCenter).appLiquidGlass(hazeState, enabled = liquidGlass),

@@ -100,7 +100,12 @@ def parse(content: str):
 def qa(key: str, mp3_path: pathlib.Path, expected: str) -> dict:
     last = None
     for attempt in range(RETRIES):
-        res = qa_once(key, mp3_path, expected)
+        try:
+            res = qa_once(key, mp3_path, expected)
+        except Exception as exc:
+            last = {"ok": False, "verdict": "api_error", "actual": "", "err": repr(exc)[:200]}
+            time.sleep(2 * (attempt + 1))
+            continue
         if not res["ok"]:
             last = res
             time.sleep(2 * (attempt + 1))
