@@ -445,6 +445,16 @@ function __bp_transform(x, y, s)
     if renderer.set_scale then renderer:set_scale(scale) end
 end
 
+function __bp_dispose()
+    if renderer then
+        pcall(function() renderer:dispose() end)
+        renderer = nil
+    end
+    groups = {}
+    default_group = nil
+    active_motion_kind = nil
+end
+
 function __bp_clear()
     gl.glViewport(0, 0, width, height)
     gl.glClearColor(0.0, 0.0, 0.0, 0.0)

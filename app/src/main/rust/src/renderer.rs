@@ -697,4 +697,8 @@ fn render_loop(shared: &Arc<SharedState>, window: &ffi::NativeWindow, runtime_ro
         }
         shared.wait_for_frame(frame_started);
     }
+
+    // 渲染循环退出前显式释放 Lua 模型（GL 纹理等），此时 EGL context 仍为 current
+    lua.get_global(c"__bp_dispose");
+    report_result(shared, lua.call("__bp_dispose", 0));
 }

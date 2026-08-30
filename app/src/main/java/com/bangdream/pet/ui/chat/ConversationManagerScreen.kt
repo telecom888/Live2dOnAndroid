@@ -125,6 +125,8 @@ fun ConversationManagerScreen(
         modifier = modifier,
         label = "conversationLevel",
     ) { target ->
+        val character = selectedCharacter
+        if (target != 0 && character == null) return@AnimatedContent
         when (target) {
             0 -> CharacterListScreen(
                 appData = appData,
@@ -151,7 +153,7 @@ fun ConversationManagerScreen(
             )
             1 -> ConversationListScreen(
                 state = state,
-                character = selectedCharacter!!,
+                character = character!!,
                 topInset = topInset,
                 viewModel = viewModel,
                 onBack = { selectedCharacter = null },
@@ -167,13 +169,13 @@ fun ConversationManagerScreen(
                 onCharacterSettings = { showCharacterSettings = true },
             )
             3 -> CharacterSettingsScreen(
-                character = selectedCharacter!!,
+                character = character!!,
                 topInset = topInset,
                 onBack = { showCharacterSettings = false },
             )
             else -> ConversationDetailScreen(
                 state = state,
-                character = selectedCharacter!!,
+                character = character!!,
                 topInset = topInset,
                 viewModel = viewModel,
                 onBack = { openConversationId = null },
