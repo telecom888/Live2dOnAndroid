@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.bangdream.pet.VoiceSettings
 import com.bangdream.pet.data.ModelChoice
+import com.bangdream.pet.loadCharacterCustomPrompt
 import com.bangdream.pet.loadReplyVoiceEnabled
 import com.bangdream.pet.voice.VoiceCloneClient
 import com.bangdream.pet.voice.VoicePlayer
@@ -286,6 +287,10 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 return@launch
             }
             val characterPrompt = withContext(Dispatchers.IO) { prompts.buildSystemPrompt(model) }
+            val customPrompt = withContext(Dispatchers.IO) {
+                loadCharacterCustomPrompt(getApplication(), model.characterId)
+            }
+            val systemPrompt = customPrompt?.takeIf(String::isNotBlank) ?: characterPrompt.text
             val parser = ActionTagParser(characterPrompt.allowedActionTags)
             mutableState.value = mutableState.value.copy(isGenerating = true)
             lastFailedRequest = null
@@ -333,7 +338,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             }
 
             try {
-                client.streamCompletion(settings, characterPrompt.text, messages).collect { event ->
+                client.streamCompletion(settings, systemPrompt, messages).collect { event ->
                     if (!isActive(requestContext)) return@collect
                     when (event) {
                         is LlmStreamEvent.Content -> {

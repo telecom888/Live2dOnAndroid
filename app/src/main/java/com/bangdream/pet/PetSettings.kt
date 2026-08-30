@@ -549,6 +549,25 @@ fun saveBubbleEnabled(context: Context, enabled: Boolean) {
 }
 
 
+// ==================== 角色自定义系统提示词（覆盖内置人物设定） ====================
+const val KEY_CHARACTER_CUSTOM_PROMPT_PREFIX = "character_custom_prompt_"
+
+fun loadCharacterCustomPrompt(context: Context, characterId: String): String? =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getString(KEY_CHARACTER_CUSTOM_PROMPT_PREFIX + characterId, null)
+        ?.takeIf(String::isNotBlank)
+
+fun saveCharacterCustomPrompt(context: Context, characterId: String, prompt: String?) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().apply {
+            if (prompt.isNullOrBlank()) {
+                remove(KEY_CHARACTER_CUSTOM_PROMPT_PREFIX + characterId)
+            } else {
+                putString(KEY_CHARACTER_CUSTOM_PROMPT_PREFIX + characterId, prompt.trim())
+            }
+        }.apply()
+}
+
 // ==================== 回复后语音（对话回复 → 克隆 TTS 播放） ====================
 const val KEY_REPLY_VOICE_ENABLED = "reply_voice_enabled"
 

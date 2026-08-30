@@ -32,6 +32,7 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
@@ -94,9 +95,11 @@ fun ConversationManagerScreen(
     val scope = rememberCoroutineScope()
     var selectedCharacter by remember { mutableStateOf<ModelChoice?>(null) }
     var openConversationId by remember { mutableStateOf<String?>(null) }
+    var showCharacterSettings by remember { mutableStateOf(false) }
 
     val level = when {
         selectedCharacter == null -> 0
+        showCharacterSettings -> 3
         openConversationId == null -> 1
         else -> 2
     }
@@ -141,6 +144,7 @@ fun ConversationManagerScreen(
                         )
                         selectedCharacter = choice
                         openConversationId = null
+                        showCharacterSettings = false
                         viewModel.selectCharacter(choice, force = true)
                     }
                 },
@@ -151,11 +155,21 @@ fun ConversationManagerScreen(
                 topInset = topInset,
                 viewModel = viewModel,
                 onBack = { selectedCharacter = null },
-                onOpen = { id -> openConversationId = id },
+                onOpen = { id ->
+                    openConversationId = id
+                    showCharacterSettings = false
+                },
                 onNew = {
                     viewModel.startNewConversation(selectedCharacter!!.characterId)
                     openConversationId = "new"
+                    showCharacterSettings = false
                 },
+                onCharacterSettings = { showCharacterSettings = true },
+            )
+            3 -> CharacterSettingsScreen(
+                character = selectedCharacter!!,
+                topInset = topInset,
+                onBack = { showCharacterSettings = false },
             )
             else -> ConversationDetailScreen(
                 state = state,
@@ -260,6 +274,7 @@ private fun ConversationListScreen(
     onBack: () -> Unit,
     onOpen: (String) -> Unit,
     onNew: () -> Unit,
+    onCharacterSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -300,6 +315,9 @@ private fun ConversationListScreen(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f),
             )
+            IconButton(onClick = onCharacterSettings) {
+                Icon(Icons.Outlined.Tune, contentDescription = "角色设定")
+            }
             IconButton(onClick = onNew) {
                 Icon(Icons.Outlined.AddComment, contentDescription = "新建对话")
             }
