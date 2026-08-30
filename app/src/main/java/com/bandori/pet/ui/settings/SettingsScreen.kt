@@ -1063,6 +1063,7 @@ private fun WallpaperSettingsCard(
         persistBackgroundUri(context.applicationContext, uri)
         onBackgroundChanged(uri.toString())
     }
+    val wallpaperStatus = remember { WallpaperBackup.wallpaperStatus(context.applicationContext) }
 
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -1088,6 +1089,20 @@ private fun WallpaperSettingsCard(
                     )
                 }
                 Switch(checked = enabled, onCheckedChange = onEnabledChanged)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("当前壁纸状态", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        wallpaperStatus,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1238,10 +1253,13 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
                                 appContext,
                                 if (uri != null) {
                                     "已捕获原壁纸并设为背景"
-                                } else if (!WallpaperBackup.canReadSystemWallpaper(appContext)) {
-                                    "当前已是动态壁纸，无法读取原静态壁纸：请先切回静态壁纸再捕获，或选择一张图片作为背景"
                                 } else {
-                                    "捕获失败：请检查系统壁纸设置"
+                                    val info = WallpaperManager.getInstance(appContext).wallpaperInfo
+                                    if (info != null) {
+                                        "当前系统壁纸是动态壁纸（${info.component.flattenToShortString()}）。要恢复原静态壁纸：系统设置 → 壁纸 → 换成静态图片；或直接用「壁纸背景 → 选择照片」"
+                                    } else {
+                                        "系统限制无法读取壁纸，请直接用「壁纸背景 → 选择照片」"
+                                    }
                                 },
                                 Toast.LENGTH_LONG,
                             ).show()

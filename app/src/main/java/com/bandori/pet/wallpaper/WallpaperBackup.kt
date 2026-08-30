@@ -34,11 +34,22 @@ object WallpaperBackup {
         return uri
     }
 
-    /** 是否还能从系统读取到静态壁纸（动态壁纸时为 false）。 */
-    fun canReadSystemWallpaper(context: Context): Boolean = runCatching {
+    /** 当前系统壁纸状态：动态壁纸（含组件名） / 静态壁纸可捕获 / 静态壁纸但系统限制读取。 */
+    fun wallpaperStatus(context: Context): String {
         val wm = WallpaperManager.getInstance(context)
-        wm.drawable != null || wm.peekDrawable() != null
-    }.getOrDefault(false)
+        val info = wm.wallpaperInfo
+        return when {
+            info != null -> {
+                val label = runCatching { info.loadLabel(context.packageManager).toString() }
+                    .getOrNull()
+                    ?: info.component.flattenToShortString()
+                "动态壁纸：$label（${info.component.flattenToShortString()}）"
+            }
+            runCatching { wm.drawable != null || wm.peekDrawable() != null }.getOrDefault(false) ->
+                "静态壁纸（可捕获为背景）"
+            else -> "静态壁纸，但系统限制应用读取（可用「选择照片」作为背景）"
+        }
+    }
 
     private fun captureToFile(context: Context): File? {
         val bitmap = captureCurrentWallpaperBitmap(context)
