@@ -389,7 +389,7 @@ class Live2DWallpaperService : WallpaperService() {
                     val motion = baseMotionName(line.motion)
                     saveLastWallpaperAction(applicationContext, motion)
                     NativeLive2D.playAction(handle, motion)
-                    runCatching { line.wavFile?.readBytes()?.let { VoicePlayer.play(applicationContext, it) } }
+                    line.readWav(applicationContext)?.let { VoicePlayer.play(applicationContext, it) }
                     if (loadBubbleEnabled(applicationContext)) {
                         WallpaperBubbleService.show(applicationContext, line.text)
                     }

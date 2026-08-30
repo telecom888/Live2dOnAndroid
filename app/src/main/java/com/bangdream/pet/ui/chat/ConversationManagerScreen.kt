@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -87,7 +88,6 @@ import kotlinx.coroutines.withContext
 fun ConversationManagerScreen(
     appData: AppData?,
     repository: DataRepository,
-    topInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: Live2DChatViewModel = viewModel()
@@ -130,7 +130,6 @@ fun ConversationManagerScreen(
         when (target) {
             0 -> CharacterListScreen(
                 appData = appData,
-                topInset = topInset,
                 onCharacterClick = { character ->
                     scope.launch {
                         val model = withContext(Dispatchers.IO) {
@@ -154,7 +153,6 @@ fun ConversationManagerScreen(
             1 -> ConversationListScreen(
                 state = state,
                 character = character!!,
-                topInset = topInset,
                 viewModel = viewModel,
                 onBack = { selectedCharacter = null },
                 onOpen = { id ->
@@ -170,13 +168,11 @@ fun ConversationManagerScreen(
             )
             3 -> CharacterSettingsScreen(
                 character = character!!,
-                topInset = topInset,
                 onBack = { showCharacterSettings = false },
             )
             else -> ConversationDetailScreen(
                 state = state,
                 character = character!!,
-                topInset = topInset,
                 viewModel = viewModel,
                 onBack = { openConversationId = null },
             )
@@ -187,7 +183,6 @@ fun ConversationManagerScreen(
 @Composable
 private fun CharacterListScreen(
     appData: AppData?,
-    topInset: Dp,
     onCharacterClick: (CharacterInfo) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -203,9 +198,9 @@ private fun CharacterListScreen(
             characters.filter { it.display.contains(query, ignoreCase = true) }
         }
     }
-    Column(modifier.fillMaxSize().padding(top = topInset)) {
+    Column(modifier.fillMaxSize()) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -271,7 +266,6 @@ private fun CharacterListScreen(
 private fun ConversationListScreen(
     state: ChatUiState,
     character: ModelChoice,
-    topInset: Dp,
     viewModel: Live2DChatViewModel,
     onBack: () -> Unit,
     onOpen: (String) -> Unit,
@@ -303,9 +297,9 @@ private fun ConversationListScreen(
         }
     }
 
-    Column(modifier.fillMaxSize().padding(top = topInset)) {
+    Column(modifier.fillMaxSize()) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
@@ -445,7 +439,6 @@ private fun ConversationListScreen(
 private fun ConversationDetailScreen(
     state: ChatUiState,
     character: ModelChoice,
-    topInset: Dp,
     viewModel: Live2DChatViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -472,9 +465,9 @@ private fun ConversationDetailScreen(
         if (text.isNotEmpty() && viewModel.send(character, text)) input.value = ""
     }
 
-    Column(modifier.fillMaxSize().padding(top = topInset).imePadding()) {
+    Column(modifier.fillMaxSize().imePadding()) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {

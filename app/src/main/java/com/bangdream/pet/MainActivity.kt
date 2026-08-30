@@ -319,7 +319,6 @@ fun BangDreamPetApp(
                             Screen.Chat -> ConversationManagerScreen(
                                 appData = appData,
                                 repository = repository,
-                                topInset = topInset,
                             )
                             Screen.Settings -> SettingsScreen(
                                 selectedModel = selectedModel,

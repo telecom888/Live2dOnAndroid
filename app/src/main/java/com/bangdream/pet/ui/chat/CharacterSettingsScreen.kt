@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -56,7 +57,6 @@ import kotlinx.coroutines.withContext
 @Composable
 fun CharacterSettingsScreen(
     character: ModelChoice,
-    topInset: Dp = 0.dp,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -86,9 +86,9 @@ fun CharacterSettingsScreen(
         samples = VoiceSamples.listSamples(appContext, character.characterId)
     }
 
-    Column(modifier.fillMaxSize().padding(top = topInset)) {
+    Column(modifier.fillMaxSize()) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
