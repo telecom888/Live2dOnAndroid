@@ -781,6 +781,7 @@ private fun WallpaperSettingsCard(
     val scope = rememberCoroutineScope()
     val wallpaperStatus = remember { WallpaperBackup.wallpaperStatus(context.applicationContext) }
     var showAllFilesAccessDialog by remember { mutableStateOf(false) }
+    var showWallpaperDialog by remember { mutableStateOf(false) }
     val allFilesAccessLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         showAllFilesAccessDialog = false
     }
@@ -826,7 +827,9 @@ private fun WallpaperSettingsCard(
                                         WallpaperBackup.WallpaperCaptureResult.Failed -> Unit
                                     }
                                 }
-                                openLiveWallpaperPicker(context)
+                                if (!isLiveWallpaperActive(appContext)) {
+                                    showWallpaperDialog = true
+                                }
                             }
                         }
                     },
@@ -940,6 +943,30 @@ private fun WallpaperSettingsCard(
             )
         }
     }
+
+    if (showWallpaperDialog) {
+        AlertDialog(
+            onDismissRequest = { showWallpaperDialog = false },
+            title = { Text("动态壁纸服务未开启") },
+            text = {
+                Text(
+                    "「桌面渲染」已开启，但本应用还不是当前动态壁纸，桌面暂时不会显示模型。\n\n" +
+                        "点击「去开启」跳转到系统壁纸设置，选择 BangDream Pet 动态壁纸后，返回桌面即可显示。",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showWallpaperDialog = false
+                        openLiveWallpaperPicker(context)
+                    },
+                ) { Text("去开启") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWallpaperDialog = false }) { Text("取消") }
+            },
+        )
+    }
 }
 
 @Composable
@@ -1024,6 +1051,13 @@ private fun openLiveWallpaperPicker(context: android.content.Context) {
         Toast.LENGTH_LONG,
     ).show()
 }
+
+/** 判断本应用是否已是当前动态壁纸。 */
+private fun isLiveWallpaperActive(context: android.content.Context): Boolean = runCatching {
+    val info = WallpaperManager.getInstance(context).wallpaperInfo ?: return@runCatching false
+    val target = ComponentName(context, Live2DWallpaperService::class.java)
+    info.component.flattenToShortString() == target.flattenToShortString()
+}.getOrDefault(false)
 
 
 @Composable

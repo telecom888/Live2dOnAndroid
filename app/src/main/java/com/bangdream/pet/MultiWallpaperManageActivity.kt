@@ -20,11 +20,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -43,8 +49,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.bangdream.pet.data.Band
+import com.bangdream.pet.data.CharacterInfo
 import com.bangdream.pet.data.DataRepository
 import com.bangdream.pet.data.ModelChoice
 import com.bangdream.pet.live2d.MultiLive2DRenderView
@@ -84,11 +93,19 @@ private fun MultiWallpaperManageScreen(onClose: () -> Unit) {
     val hazeState = rememberLiquidGlassState()
     val glassEnabled = ThemeSettings.load(appContext).liquidGlassEnabled && VisualGuard.supportsLiquidGlass(appContext)
     var models by remember { mutableStateOf(WallpaperMultiModelSettings.load(appContext).models) }
-    var showPicker by remember { mutableStateOf(false) }
-    var availableChoices by remember { mutableStateOf<List<ModelChoice>>(emptyList()) }
     var status by remember { mutableStateOf<String?>(null) }
     val backgroundUri = remember { loadWallpaperBackgroundUri(appContext) }
     val renderSettings = remember { RenderSettings.load(appContext) }
+
+    // 参数面板折叠
+    var listExpanded by remember { mutableStateOf(true) }
+
+    // 添加模型选择器（两级：角色 -> 模型）
+    var showPicker by remember { mutableStateOf(false) }
+    var pickerCharacters by remember { mutableStateOf<List<Pair<Band, CharacterInfo>>>(emptyList()) }
+    var pickerCharacter by remember { mutableStateOf<CharacterInfo?>(null) }
+    var pickerModels by remember { mutableStateOf<List<ModelChoice>>(emptyList()) }
+    var pickerLoading by remember { mutableStateOf(false) }
 
     fun saveAndClose() {
         WallpaperMultiModelSettings(models).save(appContext)
@@ -112,7 +129,6 @@ private fun MultiWallpaperManageScreen(onClose: () -> Unit) {
             modifier = Modifier.fillMaxSize().statusBarsPadding().padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // 顶栏
             ElevatedCard(
                 Modifier
                     .fillMaxWidth()
@@ -176,47 +192,73 @@ private fun MultiWallpaperManageScreen(onClose: () -> Unit) {
                 }
             }
 
-            // 模型列表
+            // 模型参数面板（半透明 + 可折叠）
             if (models.isNotEmpty()) {
                 ElevatedCard(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(230.dp)
-                        .appLiquidGlass(hazeState, enabled = glassEnabled),
+                        .appLiquidGlass(hazeState, enabled = glassEnabled, backgroundAlpha = 0.42f),
                 ) {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(models, key = { it.id }) { placement ->
-                            val index = models.indexOfFirst { it.id == placement.id }
-                            PlacementRow(
-                                placement = placement,
-                                title = if (placement.characterName.isBlank()) placement.characterId else "${placement.characterName} / ${placement.costumeName}",
-                                modifier = Modifier.appEntrance(delayMillis = (index * 22).coerceAtMost(160)),
-                                onChanged = { updated -> models = models.mapIndexed { i, item -> if (i == index) updated else item } },
-                                onRemove = { models = models.filterNot { it.id == placement.id } },
+                    Column(Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "模型参数（${models.count { it.enabled }}/${models.size}）",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
                             )
+                            Text(
+                                if (listExpanded) "折叠" else "展开",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                            IconButton(onClick = { listExpanded = !listExpanded }) {
+                                Icon(
+                                    if (listExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                    contentDescription = if (listExpanded) "折叠" else "展开",
+                                )
+                            }
+                        }
+                        if (listExpanded) {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth().height(220.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                items(models, key = { it.id }) { placement ->
+                                    val index = models.indexOfFirst { it.id == placement.id }
+                                    PlacementRow(
+                                        placement = placement,
+                                        title = if (placement.characterName.isBlank()) placement.characterId else "${placement.characterName} / ${placement.costumeName}",
+                                        modifier = Modifier.appEntrance(delayMillis = (index * 22).coerceAtMost(160)),
+                                        onChanged = { updated -> models = models.mapIndexed { i, item -> if (i == index) updated else item } },
+                                        onRemove = { models = models.filterNot { it.id == placement.id } },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // 添加 + 操作
             FilledTonalButton(
                 modifier = Modifier.fillMaxWidth().appPressScale().appEntrance(delayMillis = 44),
                 onClick = {
                     scope.launch {
-                        availableChoices = withContext(Dispatchers.IO) {
-                            val repo = DataRepository(appContext)
-                            val data = repo.load()
-                            data.bands.flatMap { band ->
-                                band.characters.flatMap { cid ->
-                                    data.characters[cid]?.let { ch -> repo.availableModels(ch) } ?: emptyList()
-                                }
-                            }.distinctBy { it.modelAssetPath }
+                        val repo = DataRepository(appContext)
+                        val data = repo.load()
+                        val pairs = mutableListOf<Pair<Band, CharacterInfo>>()
+                        for (band in data.bands) {
+                            for (cid in band.characters) {
+                                data.characters[cid]?.let { ch -> pairs.add(band to ch) }
+                            }
                         }
+                        pickerCharacters = pairs.distinctBy { it.second.id }
+                        pickerCharacter = null
+                        pickerModels = emptyList()
                         showPicker = true
                     }
                 },
@@ -231,9 +273,25 @@ private fun MultiWallpaperManageScreen(onClose: () -> Unit) {
 
     if (showPicker) {
         ModelPickerDialog(
-            choices = availableChoices,
-            onDismiss = { showPicker = false },
-            onPick = { choice ->
+            characters = pickerCharacters,
+            selectedCharacter = pickerCharacter,
+            models = pickerModels,
+            loading = pickerLoading,
+            onPickCharacter = { character ->
+                pickerCharacter = character
+                pickerLoading = true
+                scope.launch {
+                    pickerModels = withContext(Dispatchers.IO) {
+                        DataRepository(appContext).availableModels(character)
+                    }
+                    pickerLoading = false
+                }
+            },
+            onBackToCharacters = {
+                pickerCharacter = null
+                pickerModels = emptyList()
+            },
+            onPickModel = { choice ->
                 models = models + WallpaperModelPlacement(
                     id = "m_${System.currentTimeMillis()}",
                     characterId = choice.characterId,
@@ -247,6 +305,7 @@ private fun MultiWallpaperManageScreen(onClose: () -> Unit) {
                 )
                 showPicker = false
             },
+            onDismiss = { showPicker = false },
         )
     }
 }
@@ -264,12 +323,12 @@ private fun PlacementRow(
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium),
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.9f)),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.72f)),
     ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         if (placement.enabled) "显示中" else "已隐藏",
                         color = if (placement.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -302,33 +361,86 @@ private fun PlacementRow(
 
 @Composable
 private fun ModelPickerDialog(
-    choices: List<ModelChoice>,
+    characters: List<Pair<Band, CharacterInfo>>,
+    selectedCharacter: CharacterInfo?,
+    models: List<ModelChoice>,
+    loading: Boolean,
+    onPickCharacter: (CharacterInfo) -> Unit,
+    onBackToCharacters: () -> Unit,
+    onPickModel: (ModelChoice) -> Unit,
     onDismiss: () -> Unit,
-    onPick: (ModelChoice) -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("选择桌面模型") },
-        text = {
-            if (choices.isEmpty()) {
-                Text("没有可用模型，请先在模型页下载/选择角色。")
+        title = {
+            if (selectedCharacter == null) {
+                Text("选择角色")
             } else {
-                LazyColumn(Modifier.height(360.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(choices, key = { it.modelAssetPath }) { choice ->
-                        TextButton(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = { onPick(choice) },
-                        ) {
-                            Text(
-                                "${choice.characterName} / ${choice.costumeName}",
-                                maxLines = 1,
-                                modifier = Modifier.weight(1f),
-                            )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBackToCharacters) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                    }
+                    Text("选择 ${selectedCharacter.display} 的模型", modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        },
+        text = {
+            if (selectedCharacter == null) {
+                if (characters.isEmpty()) {
+                    Text("没有可用角色。")
+                } else {
+                    LazyColumn(Modifier.height(380.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        items(characters, key = { it.second.id }) { (band, character) ->
+                            TextButton(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { onPickCharacter(character) },
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(character.display, fontWeight = FontWeight.Medium, maxLines = 1)
+                                    Text(
+                                        band.display,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                when {
+                    loading -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                        androidx.compose.material3.CircularProgressIndicator()
+                    }
+                    models.isEmpty() -> Text("该角色暂无可用模型，请先在模型页下载。")
+                    else -> LazyColumn(Modifier.height(360.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(models, key = { it.modelAssetPath }) { choice ->
+                            TextButton(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { onPickModel(choice) },
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(choice.costumeName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        choice.costumeId,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+        confirmButton = {
+            if (selectedCharacter == null) {
+                TextButton(onClick = onDismiss) { Text("关闭") }
+            } else {
+                TextButton(onClick = onBackToCharacters) { Text("返回") }
+            }
+        },
     )
 }
