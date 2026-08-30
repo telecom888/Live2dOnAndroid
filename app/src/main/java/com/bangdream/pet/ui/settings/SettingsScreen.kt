@@ -101,6 +101,8 @@ import com.bangdream.pet.isWallpaperEnabled
 import com.bangdream.pet.llm.ChatHistoryRepository
 import com.bangdream.pet.llm.LlmSettings
 import com.bangdream.pet.llm.ThinkingMode
+import com.bangdream.pet.loadWallpaperMode
+import com.bangdream.pet.saveWallpaperMode
 import com.bangdream.pet.loadIdleAnimationEnabled
 import com.bangdream.pet.loadMimoApiKey
 import com.bangdream.pet.loadIdleAnimations
@@ -143,6 +145,7 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     var wallpaperEnabled by remember { mutableStateOf(isWallpaperEnabled(appContext)) }
     var wallpaperBackgroundUri by remember { mutableStateOf(loadWallpaperBackgroundUri(appContext)) }
+    var wallpaperMode by remember { mutableStateOf(loadWallpaperMode(appContext)) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(top = topInset + 4.dp, bottom = 20.dp),
@@ -168,6 +171,11 @@ fun SettingsScreen(
             WallpaperSettingsCard(
                 enabled = wallpaperEnabled,
                 backgroundUri = wallpaperBackgroundUri,
+                mode = wallpaperMode,
+                onModeChanged = { mode ->
+                    wallpaperMode = mode
+                    saveWallpaperMode(appContext, mode)
+                },
                 onEnabledChanged = { enabled ->
                     wallpaperEnabled = enabled
                     setWallpaperEnabled(appContext, enabled)
@@ -177,7 +185,11 @@ fun SettingsScreen(
                     saveWallpaperBackgroundUri(appContext, uri)
                 },
                 onAdjustPosition = {
-                    context.startActivity(Intent(context, com.bangdream.pet.WallpaperAdjustActivity::class.java))
+                    if (wallpaperMode == com.bangdream.pet.WallpaperMode.MULTI) {
+                        context.startActivity(Intent(context, com.bangdream.pet.MultiWallpaperManageActivity::class.java))
+                    } else {
+                        context.startActivity(Intent(context, com.bangdream.pet.WallpaperAdjustActivity::class.java))
+                    }
                 },
             )
         }
@@ -753,6 +765,8 @@ private fun RenderSettingsCard(
 private fun WallpaperSettingsCard(
     enabled: Boolean,
     backgroundUri: String?,
+    mode: com.bangdream.pet.WallpaperMode,
+    onModeChanged: (com.bangdream.pet.WallpaperMode) -> Unit,
     onEnabledChanged: (Boolean) -> Unit,
     onBackgroundChanged: (String?) -> Unit,
     onAdjustPosition: () -> Unit,
@@ -824,6 +838,29 @@ private fun WallpaperSettingsCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("渲染模式", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (mode == com.bangdream.pet.WallpaperMode.MULTI) "多模型：桌面同时放置多个角色" else "单模型：沿用当前选择的一个角色",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                SingleChoiceSegmentedButtonRow {
+                    com.bangdream.pet.WallpaperMode.entries.forEachIndexed { index, option ->
+                        SegmentedButton(
+                            selected = mode == option,
+                            onClick = { onModeChanged(option) },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = com.bangdream.pet.WallpaperMode.entries.size),
+                        ) { Text(option.label) }
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("当前壁纸状态", fontWeight = FontWeight.SemiBold)
                     Text(
                         wallpaperStatus,
@@ -838,15 +875,18 @@ private fun WallpaperSettingsCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(I18n.t("settings_wallpaper_adjust"), fontWeight = FontWeight.SemiBold)
                     Text(
-                        I18n.t("settings_wallpaper_adjust_desc"),
+                        if (mode == com.bangdream.pet.WallpaperMode.MULTI) "管理桌面模型" else I18n.t("settings_wallpaper_adjust"),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        if (mode == com.bangdream.pet.WallpaperMode.MULTI) "添加/移除桌面角色，逐个调整位置与大小" else I18n.t("settings_wallpaper_adjust_desc"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
                 FilledTonalButton(onClick = onAdjustPosition) {
-                    Text(I18n.t("settings_wallpaper_adjust_btn"))
+                    Text(if (mode == com.bangdream.pet.WallpaperMode.MULTI) "管理" else I18n.t("settings_wallpaper_adjust_btn"))
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

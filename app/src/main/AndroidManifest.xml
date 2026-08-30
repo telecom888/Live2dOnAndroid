@@ -27,6 +27,14 @@
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false" />
         <activity
+            android:name=".MultiWallpaperManageActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false" />
+        <activity
+            android:name=".voice.VoiceListActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false" />
+        <activity
             android:name=".ui.settings.LlmSettingsActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"

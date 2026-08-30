@@ -52,15 +52,15 @@ struct ControlState {
     fps_display_enabled: bool,
     pending_resize: bool,
     pending_render_options: bool,
-    pending_model: Option<ModelRequest>,
-    pending_action: Option<String>,
+    pending_models: Vec<(i32, ModelRequest)>,
+    pending_unloads: Vec<i32>,
+    pending_actions: Vec<(i32, String)>,
     pending_background: Option<BackgroundRequest>,
-    pending_touch: Option<(f32, f32)>,
+    pending_touches: Vec<(i32, (f32, f32))>,
     pending_look_at: bool,
     look_at: (f32, f32),
     pending_surface: Option<Arc<ffi::NativeWindow>>,
-    pending_transform: bool,
-    transform: (f32, f32, f32),
+    pending_transforms: Vec<(i32, (f32, f32, f32))>,
     mouth_open: f32,
     mouth_form: f32,
     last_error: String,
@@ -91,15 +91,15 @@ impl ControlState {
             fps_display_enabled: false,
             pending_resize: false,
             pending_render_options: false,
-            pending_model: None,
-            pending_action: None,
+            pending_models: Vec::new(),
+            pending_unloads: Vec::new(),
+            pending_actions: Vec::new(),
             pending_background: None,
-            pending_touch: None,
+            pending_touches: Vec::new(),
             pending_look_at: false,
             look_at: (0.5, 0.5),
             pending_surface: None,
-            pending_transform: false,
-            transform: (0.0, 0.0, 1.0),
+            pending_transforms: Vec::new(),
             mouth_open: 0.0,
             mouth_form: 0.0,
             last_error: String::new(),
@@ -114,13 +114,14 @@ impl ControlState {
             should_update_render_options: self.pending_render_options,
             vsync_enabled: self.vsync_enabled,
             fps_display_enabled: self.fps_display_enabled,
-            model: self.pending_model.take(),
-            action: self.pending_action.take(),
+            model: std::mem::take(&mut self.pending_models),
+            unload: std::mem::take(&mut self.pending_unloads),
+            action: std::mem::take(&mut self.pending_actions),
             background: self.pending_background.take(),
-            touch: self.pending_touch.take(),
+            touch: std::mem::take(&mut self.pending_touches),
             should_look_at: self.pending_look_at,
             look_at: self.look_at,
-            transform: self.pending_transform.then_some(self.transform),
+            transform: std::mem::take(&mut self.pending_transforms),
             mouth_open: self.mouth_open,
             mouth_form: self.mouth_form,
             surface: self.pending_surface.take(),
@@ -128,7 +129,6 @@ impl ControlState {
         self.pending_resize = false;
         self.pending_render_options = false;
         self.pending_look_at = false;
-        self.pending_transform = false;
         commands
     }
 }
@@ -140,13 +140,14 @@ struct FrameCommands {
     should_update_render_options: bool,
     vsync_enabled: bool,
     fps_display_enabled: bool,
-    model: Option<ModelRequest>,
-    action: Option<String>,
+    model: Vec<(i32, ModelRequest)>,
+    unload: Vec<i32>,
+    action: Vec<(i32, String)>,
     background: Option<BackgroundRequest>,
-    touch: Option<(f32, f32)>,
+    touch: Vec<(i32, (f32, f32))>,
     should_look_at: bool,
     look_at: (f32, f32),
-    transform: Option<(f32, f32, f32)>,
+    transform: Vec<(i32, (f32, f32, f32))>,
     mouth_open: f32,
     mouth_form: f32,
     surface: Option<Arc<ffi::NativeWindow>>,
@@ -270,9 +271,19 @@ impl RendererHandle {
     }
 
     pub fn load_model(&self, path: String, resources: HashMap<String, Vec<u8>>) {
+        self.load_model_at(0, path, resources);
+    }
+
+    /// 在指定 slot 加载模型（多角色壁纸：slot 0..n）。
+    pub fn load_model_at(&self, slot: i32, path: String, resources: HashMap<String, Vec<u8>>) {
         let mut state = lock_unpoisoned(&self.shared.control);
-        state.pending_model = Some(ModelRequest { path, resources });
+        state.pending_models.push((slot, ModelRequest { path, resources }));
         state.last_error.clear();
+    }
+
+    /// 卸载指定 slot 的模型（释放该角色的 GL 实例，不影响其它 slot）。
+    pub fn unload_model_at(&self, slot: i32) {
+        lock_unpoisoned(&self.shared.control).pending_unloads.push(slot);
     }
 
     pub fn set_render_options(&self, fps_limit: i32, vsync_enabled: bool) {
@@ -319,9 +330,14 @@ impl RendererHandle {
     }
 
     pub fn set_transform(&self, offset_x: f32, offset_y: f32, scale: f32) {
+        self.set_transform_at(0, offset_x, offset_y, scale);
+    }
+
+    pub fn set_transform_at(&self, slot: i32, offset_x: f32, offset_y: f32, scale: f32) {
         let mut state = lock_unpoisoned(&self.shared.control);
-        state.transform = (offset_x, offset_y, scale);
-        state.pending_transform = true;
+        state
+            .pending_transforms
+            .push((slot, (offset_x, offset_y, scale)));
     }
 
     pub fn set_background(&self, pixels: Vec<u32>, width: i32, height: i32) {
@@ -333,8 +349,14 @@ impl RendererHandle {
     }
 
     pub fn touch(&self, x_ratio: f32, y_ratio: f32) {
-        lock_unpoisoned(&self.shared.control).pending_touch =
-            Some((x_ratio.clamp(0.0, 1.0), y_ratio.clamp(0.0, 1.0)));
+        self.touch_at(0, x_ratio, y_ratio);
+    }
+
+    pub fn touch_at(&self, slot: i32, x_ratio: f32, y_ratio: f32) {
+        lock_unpoisoned(&self.shared.control).pending_touches.push((
+            slot,
+            (x_ratio.clamp(0.0, 1.0), y_ratio.clamp(0.0, 1.0)),
+        ));
     }
 
     pub fn look_at(&self, x_ratio: f32, y_ratio: f32) {
@@ -344,7 +366,11 @@ impl RendererHandle {
     }
 
     pub fn play_action(&self, tag: String) {
-        lock_unpoisoned(&self.shared.control).pending_action = Some(tag);
+        self.play_action_at(0, tag);
+    }
+
+    pub fn play_action_at(&self, slot: i32, tag: String) {
+        lock_unpoisoned(&self.shared.control).pending_actions.push((slot, tag));
     }
 
     pub fn set_lip_sync(&self, open: f32, form: f32) {
@@ -616,29 +642,37 @@ fn render_loop(shared: &Arc<SharedState>, window: &ffi::NativeWindow, runtime_ro
             lua.push_number(commands.height as f64);
             report_result(shared, lua.call("__bp_resize", 2));
         }
-        if let Some(model) = commands.model {
+        for (slot, model) in &commands.model {
             if !model.path.is_empty() {
-                lua.set_resources(model.resources);
+                lua.set_resources(model.resources.clone());
                 look_at_active = false;
                 smoothed_look_at = (0.5, 0.5);
                 lua.get_global(c"__bp_load");
                 lua.push_bytes(model.path.as_bytes());
                 lua.push_number(commands.width as f64);
                 lua.push_number(commands.height as f64);
-                report_result(shared, lua.call("__bp_load", 3));
+                lua.push_number(*slot as f64);
+                report_result(shared, lua.call("__bp_load", 4));
             }
         }
-        if let Some((x, y)) = commands.touch {
-            lua.get_global(c"__bp_touch");
-            lua.push_number(x as f64);
-            lua.push_number(y as f64);
-            report_result(shared, lua.call("__bp_touch", 2));
+        for slot in &commands.unload {
+            lua.get_global(c"__bp_unload");
+            lua.push_number(*slot as f64);
+            report_result(shared, lua.call("__bp_unload", 1));
         }
-        if let Some(action) = commands.action {
+        for (slot, (x, y)) in &commands.touch {
+            lua.get_global(c"__bp_touch");
+            lua.push_number(*x as f64);
+            lua.push_number(*y as f64);
+            lua.push_number(*slot as f64);
+            report_result(shared, lua.call("__bp_touch", 3));
+        }
+        for (slot, action) in &commands.action {
             if !action.is_empty() {
                 lua.get_global(c"__bp_action");
                 lua.push_bytes(action.as_bytes());
-                report_result(shared, lua.call("__bp_action", 1));
+                lua.push_number(*slot as f64);
+                report_result(shared, lua.call("__bp_action", 2));
             }
         }
         if commands.should_look_at {
@@ -659,12 +693,13 @@ fn render_loop(shared: &Arc<SharedState>, window: &ffi::NativeWindow, runtime_ro
             lua.push_number(smoothed_look_at.1 as f64);
             report_result(shared, lua.call("__bp_look_at", 2));
         }
-        if let Some((offset_x, offset_y, scale)) = commands.transform {
+        for (slot, (offset_x, offset_y, scale)) in &commands.transform {
             lua.get_global(c"__bp_transform");
-            lua.push_number(offset_x as f64);
-            lua.push_number(offset_y as f64);
-            lua.push_number(scale as f64);
-            report_result(shared, lua.call("__bp_transform", 3));
+            lua.push_number(*offset_x as f64);
+            lua.push_number(*offset_y as f64);
+            lua.push_number(*scale as f64);
+            lua.push_number(*slot as f64);
+            report_result(shared, lua.call("__bp_transform", 4));
         }
 
         lua.get_global(c"__bp_clear");

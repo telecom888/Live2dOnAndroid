@@ -616,3 +616,115 @@ fun saveBuiltinVoiceLanguage(context: Context, language: BuiltinVoiceLanguage) {
     context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
         .edit().putString(KEY_BUILTIN_VOICE_LANGUAGE, language.value).apply()
 }
+
+// ==================== 壁纸渲染模式（单模型 / 多模型） ====================
+const val KEY_WALLPAPER_MODE = "wallpaper_mode"
+
+enum class WallpaperMode(val value: String, val label: String) {
+    SINGLE("single", "单模型"),
+    MULTI("multi", "多模型"),
+    ;
+
+    companion object {
+        fun fromValue(value: String?): WallpaperMode =
+            entries.firstOrNull { it.value == value } ?: SINGLE
+    }
+}
+
+fun loadWallpaperMode(context: Context): WallpaperMode =
+    WallpaperMode.fromValue(
+        context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_WALLPAPER_MODE, null)
+    )
+
+fun saveWallpaperMode(context: Context, mode: WallpaperMode) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putString(KEY_WALLPAPER_MODE, mode.value).apply()
+}
+
+// ==================== 壁纸多模型放置 ====================
+const val KEY_WALLPAPER_MODELS = "wallpaper_models"
+
+@Immutable
+data class WallpaperModelPlacement(
+    val id: String,
+    val characterId: String,
+    val characterName: String = "",
+    val costumeId: String = "",
+    val costumeName: String = "",
+    val modelAssetPath: String,
+    val offsetX: Float = 0f,
+    val offsetY: Float = 0f,
+    val scale: Float = 1f,
+    val enabled: Boolean = true,
+) {
+    fun toModelChoice(): ModelChoice =
+        ModelChoice(characterId, characterName, costumeId, costumeName, modelAssetPath)
+
+    fun toTransform(): Live2DTransform = Live2DTransform(offsetX, offsetY, scale)
+}
+
+@Immutable
+data class WallpaperMultiModelSettings(
+    val models: List<WallpaperModelPlacement> = emptyList(),
+) {
+    fun save(context: Context) {
+        context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_WALLPAPER_MODELS, encodeWallpaperModels(models)).apply()
+    }
+
+    companion object {
+        fun load(context: Context): WallpaperMultiModelSettings {
+            val prefs = context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+            return WallpaperMultiModelSettings(
+                models = decodeWallpaperModels(prefs.getString(KEY_WALLPAPER_MODELS, null)),
+            )
+        }
+    }
+}
+
+private fun encodeWallpaperModels(models: List<WallpaperModelPlacement>): String {
+    val array = JSONArray()
+    models.forEach { item ->
+        array.put(
+            JSONObject()
+                .put("id", item.id)
+                .put("characterId", item.characterId)
+                .put("characterName", item.characterName)
+                .put("costumeId", item.costumeId)
+                .put("costumeName", item.costumeName)
+                .put("modelAssetPath", item.modelAssetPath)
+                .put("offsetX", item.offsetX)
+                .put("offsetY", item.offsetY)
+                .put("scale", item.scale)
+                .put("enabled", item.enabled),
+        )
+    }
+    return array.toString()
+}
+
+private fun decodeWallpaperModels(value: String?): List<WallpaperModelPlacement> {
+    if (value.isNullOrBlank()) return emptyList()
+    return runCatching {
+        val array = JSONArray(value)
+        buildList {
+            for (index in 0 until array.length()) {
+                val item = array.getJSONObject(index)
+                add(
+                    WallpaperModelPlacement(
+                        id = item.optString("id", "${System.currentTimeMillis()}_$index"),
+                        characterId = item.getString("characterId"),
+                        characterName = item.optString("characterName", ""),
+                        costumeId = item.optString("costumeId", ""),
+                        costumeName = item.optString("costumeName", ""),
+                        modelAssetPath = item.getString("modelAssetPath"),
+                        offsetX = item.optDouble("offsetX", 0.0).toFloat(),
+                        offsetY = item.optDouble("offsetY", 0.0).toFloat(),
+                        scale = item.optDouble("scale", 1.0).toFloat().coerceIn(0.4f, 3f),
+                        enabled = item.optBoolean("enabled", true),
+                    ),
+                )
+            }
+        }
+    }.getOrDefault(emptyList())
+}

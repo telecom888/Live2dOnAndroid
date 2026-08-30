@@ -1,0 +1,1604 @@
+[
+  {
+    "ok": true,
+    "actual": "失敗したら、次にうまくいけばいいだけじゃん",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 0,
+    "expected": "失敗したら、次にうまくいけばいいだけじゃん？"
+  },
+  {
+    "ok": true,
+    "actual": "一回失敗してもやり直す自信があるからね",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 1,
+    "expected": "一回失敗しても、やり直す自信あるからね！"
+  },
+  {
+    "ok": true,
+    "actual": "失敗してもやり直せばいいんだよ。人生長いんだしね。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 2,
+    "expected": "失敗しても、やり直せばいいんだよ。人生長いんだし、ね？"
+  },
+  {
+    "ok": true,
+    "actual": "月の森の子って本当にご機拝ようって挨拶するのかな",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 3,
+    "expected": "月ノ森の子って、本当に「ごきげんよう」って挨拶するのかな？"
+  },
+  {
+    "ok": true,
+    "actual": "ななしこそ、これレベルアップ計画、失敗。まあ、今練習したってすぐにうまくならないし、ニャムちの配信でも見よう。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 4,
+    "expected": "楽しく速攻レベルアップ計画、失敗～。まあ、今練習したってすぐ上手くならないし、にゃむちの配信でも見よ"
+  },
+  {
+    "ok": true,
+    "actual": "ね、一緒に進めない？前後に並びながら、一緒にさ",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 5,
+    "expected": "ね～、一緒に進まない？迷子になりながら、一緒にさ！"
+  },
+  {
+    "ok": true,
+    "actual": "逃げてなんかないよ。いや、めっちゃ逃げたわ。",
+    "match": true,
+    "status": 200,
+    "char": "anon",
+    "index": 6,
+    "expected": "逃げてなんかないよ！…いや、めっちゃ逃げたわ"
+  },
+  {
+    "ok": true,
+    "actual": "迷っても進むんだよ",
+    "match": true,
+    "status": 200,
+    "char": "anon",
+    "index": 7,
+    "expected": "迷っても、進むんだよ！"
+  },
+  {
+    "ok": true,
+    "actual": "いたたた… ギターの練習で指しらっちゃった…",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 8,
+    "expected": "いたたた…ギターの練習で指、腫れちゃった…"
+  },
+  {
+    "ok": true,
+    "actual": "そういうよりはおすすめのアロマ、リラックス効果は抜群だけど",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 9,
+    "expected": "そよりんおすすめのアロマ、リラックス効果やばいんだけど～"
+  },
+  {
+    "ok": true,
+    "actual": "前に友達と、歴史を学んだ時、2時間56分31秒も待ったんだよ",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 10,
+    "expected": "前にともりんと、りっきーを待ったとき、2時間56分31秒も待ったんだよ～"
+  },
+  {
+    "ok": true,
+    "actual": "作業場なら得意なんだから",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 11,
+    "expected": "作文なら得意なんだから～！"
+  },
+  {
+    "ok": true,
+    "actual": "ラナちゃんと…すごくない、猫",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 12,
+    "expected": "らなちゃんと…すごく長い猫！？"
+  },
+  {
+    "ok": true,
+    "actual": "会場めっちゃ熱キアル。みんな可愛いステージ衣装で、うらやましい",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 13,
+    "expected": "会場、めっちゃ熱気ある～！みんな可愛いステージ衣装で、うらやましい～"
+  },
+  {
+    "ok": true,
+    "actual": "ステージからみんなのことちゃんと見えてるよ",
+    "match": true,
+    "status": 200,
+    "char": "anon",
+    "index": 14,
+    "expected": "ステージからみんなのこと、ちゃんと見えてるよ～"
+  },
+  {
+    "ok": true,
+    "actual": "そよりん、あんなに優しいし、きっと許してくれるよ！",
+    "match": true,
+    "status": 200,
+    "char": "anon",
+    "index": 15,
+    "expected": "そよりん、あんなに優しいし、きっと許してくれるよ！"
+  },
+  {
+    "ok": true,
+    "actual": "もう、ともりのせいだよ",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 16,
+    "expected": "もう、ともりんのせいだよ～！"
+  },
+  {
+    "ok": true,
+    "actual": "それよりも家って高級ホテルみたいで生活感ゼロなんだよ",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 17,
+    "expected": "そよりんの家って、高級ホテルみたいで生活感ゼロなんだよ～"
+  },
+  {
+    "ok": true,
+    "actual": "そういえばホンネット固めが有り過ぎて腹黒いんだから",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 18,
+    "expected": "そよりんってば、本音と建前がありすぎて、腹黒いんだから～！"
+  },
+  {
+    "ok": true,
+    "actual": "私やめないよ。それよりもやめないでね。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 19,
+    "expected": "私、辞めないよ。そよりんも辞めないでね～"
+  },
+  {
+    "ok": true,
+    "actual": "日記って言えばいいとだなー。もう私のこと無視するの？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 20,
+    "expected": "りっきーってば一途だなあ。もう私のこと無視するの？"
+  },
+  {
+    "ok": true,
+    "actual": "九条冠霖に縛られるのは良くないと思うな。表現の仕方だって色々あるし。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 21,
+    "expected": "固定観念に縛られるのってよくないと思うんだ～表現の仕方だっていろいろあるし！"
+  },
+  {
+    "ok": true,
+    "actual": "ねぇ、この景色すごく綺麗じゃない？みんなで写真撮ろうよ。あとでSNSに乗せるから。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 22,
+    "expected": "ねえ、この夜景すごく綺麗じゃない？みんなで写真撮ろうよ！あとでSNSに載せるから～"
+  },
+  {
+    "ok": true,
+    "actual": "",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 23,
+    "expected": "らなちゃんのギター、いつになったらああなるのかな…？"
+  },
+  {
+    "ok": true,
+    "actual": "私のエフェクター　それよりに埋まった　私自身だって埋まったことないのに",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 24,
+    "expected": "私のエフェクター、そよりんに踏まれた…私自身だって踏んだことないのに…"
+  },
+  {
+    "ok": true,
+    "actual": "水族館の年間パス、私も作っちゃおうかな？",
+    "match": true,
+    "status": 200,
+    "char": "anon",
+    "index": 25,
+    "expected": "水族館の年間パス、私も作っちゃおうかな…？"
+  },
+  {
+    "ok": true,
+    "actual": "スミミのウイタちゃん、優しすぎない？どうしよう、嬉しい…",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 26,
+    "expected": "すみみのういかちゃん、優しすぎない？どうしよう、嬉しい！"
+  },
+  {
+    "ok": true,
+    "actual": "ねえねえ、できしも私のこと可愛いって言ってよ",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 27,
+    "expected": "ねえねえ、りっきーも私のこと可愛いって言ってよ～"
+  },
+  {
+    "ok": true,
+    "actual": "リッキー、何書いてるの？ アフターグロウの曲？ アフターグロウの先輩たちの素敵な曲だよね。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 28,
+    "expected": "りっきー、何聴いてるの？アフターグロウの曲？…Afterglowの先輩たちの、素敵な曲だよね？"
+  },
+  {
+    "ok": true,
+    "actual": "そよりんとりきーだけが昔のともりを知ってるなんてずるいよもっとともりのことを教えてよ",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 29,
+    "expected": "そよりんとりっきーだけが昔のともりんを知ってるなんて、ずるいよ！もっとともりんのこと教えてよ！"
+  },
+  {
+    "ok": true,
+    "actual": "抱歉，我无法处理音频文件。如果您能提供音频文件或相关链接，我可以尝试帮助您进行转录。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 30,
+    "expected": "ええ～、そよりん、家に入れてくれないの～？"
+  },
+  {
+    "ok": true,
+    "actual": "怪しい人じゃないよ。ここに住んでる四十五階の長崎さんのお友達だから。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 31,
+    "expected": "怪しい人じゃないよ～ここに住んでる45階の長崎さんのお友達だから！"
+  },
+  {
+    "ok": true,
+    "actual": "あらアニメの季節のメニューおしゃれだよね",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 32,
+    "expected": "RiNGの季節のメニュー、おしゃれだよね～"
+  },
+  {
+    "ok": true,
+    "actual": "ピック、そろそろなくなるから買いに行こう\nともり、何かいるものある？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 33,
+    "expected": "ピック、そろそろなくなるから買いに行こう。ともりん、何かいるものある？"
+  },
+  {
+    "ok": true,
+    "actual": "ねえねえ、そよりん、月の森って生徒同士でパーティーに誘い合ったりするの？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 34,
+    "expected": "ねえねえ、そよりん、月ノ森って生徒同士でパーティーに誘い合ったりするの？"
+  },
+  {
+    "ok": true,
+    "actual": "ライブハウスでバイトするのって、なんかかっこよくない？私もライエヌジェでバイトしようかな",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 35,
+    "expected": "ライブハウスでバイトするのって、なんかカッコよくない？私もRiNGでバイトしちゃおうかな～"
+  },
+  {
+    "ok": true,
+    "actual": "いっぱいあったししばらく買い物はくないな。ああっちのワンピース前に売り切れたやつじゃん。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 36,
+    "expected": "いっぱい買ったし、しばらく買い物欲ないな…あ！？あっちのワンピース…前に売り切れたやつじゃん…！"
+  },
+  {
+    "ok": true,
+    "actual": "え、マジ？最後にしてたの？これって運命じゃない？いやいや、今月はもう買えないし。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 37,
+    "expected": "え、まじ？再入荷したの？これって運命じゃない！？…いやいや、今月はもう買えないし…"
+  },
+  {
+    "ok": true,
+    "actual": "あのトレンチコート、フードに猫耳ついてるんだけど、ななちゃんに似合いそうじゃない？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 38,
+    "expected": "あのトレンチコート、フードに猫耳ついてるんだけど、らなちゃんに似合いそうじゃない？"
+  },
+  {
+    "ok": true,
+    "actual": "こういうのって人からもらったほうが嬉しいんだよ",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 39,
+    "expected": "こういうのって、人からもらったほうが嬉しいんだよ？"
+  },
+  {
+    "ok": true,
+    "actual": "チーズバーガーとポテトのセットにしようかな。トモリはなにする？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 40,
+    "expected": "チーズバーガーとポテトのセットにしようかな～ともりんは何にする？"
+  },
+  {
+    "ok": true,
+    "actual": "じゃあさ、私がボカロバーガーで、とおりんがフィッシュバーガーにしない？半分こしようよ",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 41,
+    "expected": "じゃあさ、私がアボカドバーガーで、ともりんがフィッシュバーガーにしない？半分こしようよ！"
+  },
+  {
+    "ok": true,
+    "actual": "ビューティーピートは电晕下巴的缩写啊。是从日文的「霞んだ顎」来的吧？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 42,
+    "expected": "BLTってベーコン・レタス・トマトの略なんだよ！長いから略したんじゃないかな？"
+  },
+  {
+    "ok": true,
+    "actual": "ねぇねぇ、そよりん、今回の練習なんだけどさ。て、何その顔？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 43,
+    "expected": "ねえねえ、そよりん～今回の練習なんだけどさ…って、なにその顔！"
+  },
+  {
+    "ok": true,
+    "actual": "え、そよリンが嫌なら、そよ助とか、そよピンチとかどう？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 44,
+    "expected": "え～、「そよりん」が嫌なら、そよすけとか、そよピンチとかどう？"
+  },
+  {
+    "ok": true,
+    "actual": "ディッキーッ！こっちにエージェントフォースの事件があって、こっちはエージェントフォース、エージェントフォアズバーガまであるよ",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 45,
+    "expected": "りっきー～！こっちに杏仁豆腐スムージーがあって、こっちは杏仁豆腐アイス！杏仁豆腐バーガーまであるよ！"
+  },
+  {
+    "ok": true,
+    "actual": "トモリンってプラネタリウム好きだよね。でもまあ、都会じゃ星あんまり見えないしね。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 46,
+    "expected": "ともりんってプラネタリウム好きだよね～でもまあ、都会じゃ星あんまり見えないしね"
+  },
+  {
+    "ok": true,
+    "actual": "ていうかさ　ななちゃんって　かっこいいっていうイメージないんだけど",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 47,
+    "expected": "ていうかさ…らなちゃんって、学校行ってるイメージないんだけど…？"
+  },
+  {
+    "ok": true,
+    "actual": "うーん、いばいよ、ねえしゅつらい。でもやめるって言った覚はないからね",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 48,
+    "expected": "うう…指痛いよ～練習つらい～…でも、辞めるって言った覚えはないからね！"
+  },
+  {
+    "ok": true,
+    "actual": "わあ、びっくりした。練習の日間違えるなんて思わなかったよ。",
+    "match": true,
+    "status": 200,
+    "char": "anon",
+    "index": 49,
+    "expected": "わあ～びっくりした。練習の日、間違えるなんて思わなかったよ～"
+  },
+  {
+    "ok": true,
+    "actual": "カロリーは気になるけど　その分　何度の練習で消費すれば問題ないし",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 50,
+    "expected": "カロリーは気になるけど…その分、バンドの練習で消費すれば問題なし！"
+  },
+  {
+    "ok": true,
+    "actual": "いや、中学でバンドやっててよかった。サンキュー、当時の私。",
+    "match": true,
+    "status": 200,
+    "char": "anon",
+    "index": 51,
+    "expected": "いや～、中学でバンドやっててよかった～サンキュー、当時の私！"
+  },
+  {
+    "ok": true,
+    "actual": "このあたり、なんか大人っぽい格好の人ばかりだよね",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 52,
+    "expected": "この辺り、なんか大人っぽい格好の人ばっかりだよね…"
+  },
+  {
+    "ok": true,
+    "actual": "ここにいても歌えないってことは、私も彼女たちに負けてないってことだよね",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 53,
+    "expected": "ここにいても浮かないってことは、私も彼女たちに負けてないってことだよね！"
+  },
+  {
+    "ok": true,
+    "actual": "あれ？ぬいぐるみ落ちてる。バックアカウントでもちましょう、探してあげよう。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 54,
+    "expected": "あれ、ぬいぐるみ落ちてる…MyGO!!!!!のアカウントで持ち主を探してあげよ！"
+  },
+  {
+    "ok": true,
+    "actual": "ええ？こっちは新作ワンピース、あっちは話題のスイーツ店のポップアップ",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 55,
+    "expected": "え、こっちは新作ワンピース！？あっちは話題のスイーツ店のポップアップ！？"
+  },
+  {
+    "ok": true,
+    "actual": "隅のCDも新作出たの？ もう流行追いのって大変なんだから。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 56,
+    "expected": "すみみのCDも新作出たの～！もう、流行を追うのって大変なんだから～"
+  },
+  {
+    "ok": true,
+    "actual": "ともり、あっちにカチャカチャいっぱいあるよ、そういうの好きなんじゃない？見に行く？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 57,
+    "expected": "ともりん、あっちにガチャガチャいっぱいあるよ～そういうの好きなんじゃない？見に行く？"
+  },
+  {
+    "ok": true,
+    "actual": "今日はちゃんと練習したからイチゴの贅沢クレープ買った",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 58,
+    "expected": "今日はちゃんと練習したから、イチゴの贅沢クレープ買っちゃった～♪"
+  },
+  {
+    "ok": true,
+    "actual": "この駅の近く、月の森の生徒よく見かけるんだけど、みんな車で通学されてるんじゃないの？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 59,
+    "expected": "この駅の近く、月ノ森の生徒よく見かけるんだけど…みんな車で送迎されてるんじゃないの？"
+  },
+  {
+    "ok": true,
+    "actual": "ねぇねぇ、マイゴ。のりだって、結局誰だと思お？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 60,
+    "expected": "ねえねえ、MyGO!!!!!のリーダーって、結局誰だと思う？"
+  },
+  {
+    "ok": true,
+    "actual": "せ、みんなを魅了したとperl;もりんを私が誘わなかったら、麻衣子は生まれてなかったんだよ",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 61,
+    "expected": "みんなを魅了したともりんを私が誘わなかったら、MyGO!!!!!は生まれてなかったんだよ？"
+  },
+  {
+    "ok": true,
+    "actual": "ていうか、IORケーブルってどんなの？色？艶？張り？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 62,
+    "expected": "ていうか、いいオーディオケーブルってどんなの？色？ツヤ？ハリ？"
+  },
+  {
+    "ok": true,
+    "actual": "あ、今流れれてるのはスミレの新曲だ。いつか誰かが、こんな風に私たちの曲を流してくれたらいいな。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 63,
+    "expected": "あ、今流れてるのすみみの新曲だ。いつか誰かが、こんなふうに私たちの曲を流してくれたらいいな"
+  },
+  {
+    "ok": true,
+    "actual": "かっこいいティック買えたら後で写真撮ってSNSに載せよ",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 64,
+    "expected": "かっこいいピック買えた～♪あとで写真撮ってSNSに載せよ！"
+  },
+  {
+    "ok": true,
+    "actual": "えっ、リップここに入れてたはずなんだけどな。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 65,
+    "expected": "え～？リップ、ここに入れたはずなんだけどな～？"
+  },
+  {
+    "ok": true,
+    "actual": "それより、今日はあまり見ないでよ。前髪、どうやっても決まらないんだから。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 66,
+    "expected": "そよりん、今日はあんまり見ないでよ～！前髪、どうやっても決まらないんだから！"
+  },
+  {
+    "ok": true,
+    "actual": "羽ざコーヒー、確かアフタークロノの\nなるほどね、リッキーが緊張してるなら付きそうか",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 67,
+    "expected": "羽沢コーヒー…確かAfterglowの…なるほどね～りっきーが緊張してるなら、付き添おうか？"
+  },
+  {
+    "ok": true,
+    "actual": "ねえねえ、そより、今日の私、いつもと違うなぁ。昨日メイク動画見たんだけど、どこか間違えた？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 68,
+    "expected": "ねえねえ、そよりん。今日の私、いつもと違わない？昨日メイク動画見たんだけど…どこか間違えた？"
+  },
+  {
+    "ok": true,
+    "actual": "昨日変な夢見ったんだ。シライチックのギタリストになってて、そういうより無視される夢。",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 69,
+    "expected": "昨日変な夢見たんだ～CRYCHICのギタリストになってて、そよりんに無視される夢！"
+  },
+  {
+    "ok": true,
+    "actual": "最近、音楽室で咲ちゃんもピアノを聴いてる夢ばかり見るんだよね。何か意味あるのかな？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 70,
+    "expected": "最近、音楽室でさきちゃんのピアノを聴いてる夢ばっかり見るんだよね…何か意味あるのかな…？"
+  },
+  {
+    "ok": true,
+    "actual": "阿部むじかの仮免許会 チケット2枚も当たっちゃった 奇跡じゃない？",
+    "match": false,
+    "status": 200,
+    "char": "anon",
+    "index": 71,
+    "expected": "Ave Mujicaの仮面舞踏会、チケット2枚も当たっちゃった…奇跡じゃない？"
+  },
+  {
+    "ok": true,
+    "actual": "面白い女",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 0,
+    "expected": "おもしれー女"
+  },
+  {
+    "ok": true,
+    "actual": "おもしれおんなのこ",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 1,
+    "expected": "おもしれー女の子"
+  },
+  {
+    "ok": true,
+    "actual": "セット、抹茶パフェ",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 2,
+    "expected": "抹茶パフェ"
+  },
+  {
+    "ok": true,
+    "actual": "これはおばあちゃんのギター",
+    "match": true,
+    "status": 200,
+    "char": "rana",
+    "index": 3,
+    "expected": "これは、おばあちゃんのギター"
+  },
+  {
+    "ok": true,
+    "actual": "バンド",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 4,
+    "expected": "始めないの？バンド"
+  },
+  {
+    "ok": true,
+    "actual": "なっかさん",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 5,
+    "expected": "私、中3"
+  },
+  {
+    "ok": true,
+    "actual": "色々なところで引いてる。思いついたフレーズ",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 6,
+    "expected": "いろんなところで弾いてる。思い付いたフレーズ"
+  },
+  {
+    "ok": true,
+    "actual": "コンビニで、そば買った。",
+    "match": true,
+    "status": 200,
+    "char": "rana",
+    "index": 7,
+    "expected": "コンビニで、そば買った"
+  },
+  {
+    "ok": true,
+    "actual": "マイライブハウスやってた スペース",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 8,
+    "expected": "おばあちゃん、前ライブハウスやってた。SPACE"
+  },
+  {
+    "ok": true,
+    "actual": "消える場所は誰かが作るって言ってた",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 9,
+    "expected": "おばあちゃん、帰る場所は、誰かが作るって言ってた"
+  },
+  {
+    "ok": true,
+    "actual": "服着る",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 10,
+    "expected": "何これ。服、切る"
+  },
+  {
+    "ok": true,
+    "actual": "まだ始まらないの",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 11,
+    "expected": "ライブ…まだ始まらないの？"
+  },
+  {
+    "ok": true,
+    "actual": "食べた",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 12,
+    "expected": "飴。食べた"
+  },
+  {
+    "ok": true,
+    "actual": "探してる",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 13,
+    "expected": "昼寝するところ、探してる"
+  },
+  {
+    "ok": true,
+    "actual": "こいない",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 14,
+    "expected": "ここ、猫いない"
+  },
+  {
+    "ok": true,
+    "actual": "猫の店でできないかな",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 15,
+    "expected": "ショッピングモールに、猫の店できないかな"
+  },
+  {
+    "ok": true,
+    "actual": "頑張る",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 16,
+    "expected": "がんばる"
+  },
+  {
+    "ok": true,
+    "actual": "猫だった",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 17,
+    "expected": "ラッキーセットのおまけ。猫だった"
+  },
+  {
+    "ok": true,
+    "actual": "おいしそう",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 18,
+    "expected": "まだ熱いけど、おいしそう"
+  },
+  {
+    "ok": true,
+    "actual": "面白い。服がくるくる回る。見てると楽しい。",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 19,
+    "expected": "洗濯機、おもしろい。服がぐるぐる回る。見てると、楽しい"
+  },
+  {
+    "ok": true,
+    "actual": "かっこいってますさそうって言われる",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 20,
+    "expected": "よく、学校行ってなさそうって言われる"
+  },
+  {
+    "ok": true,
+    "actual": "チョーリーティッシュ　サンダイーチ　スギナモノハサメル　ナニハサモウ　ショバ",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 21,
+    "expected": "調理実習、サンドイッチ。好きなもの挟める。何挟もう…そば？"
+  },
+  {
+    "ok": true,
+    "actual": "忘れた 明日提出 デキ 切全然手伝ってくれない",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 22,
+    "expected": "英語の宿題、忘れた。明日提出。りっきー、全然手伝ってくれない"
+  },
+  {
+    "ok": true,
+    "actual": "ここ、日当たり、風通し、寝起き、完璧、チルダウンできる",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 23,
+    "expected": "うん、ここ…日当たり、風通し、におい…！完璧。昼寝できる"
+  },
+  {
+    "ok": true,
+    "actual": "メッセージ来た。見た？送信。",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 24,
+    "expected": "……メッセージ来た…………「見」…………「た」。送信"
+  },
+  {
+    "ok": true,
+    "actual": "待って、デッキーがくれるの？ うん。 今行く",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 25,
+    "expected": "…………抹茶アイス？りっきーがくれるの？うん。今行く"
+  },
+  {
+    "ok": true,
+    "actual": "いっぱいある どれもいいよ とっても おばあちゃんの 一番かっこいい",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 26,
+    "expected": "ギター、いっぱいある。どれもいい音。でも…おばあちゃんの、いちばんかっこいい"
+  },
+  {
+    "ok": true,
+    "actual": "揚げたポテで美味しそう…でも、熱くて食べられない",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 27,
+    "expected": "ポテト…揚げたてで、おいしそう。でも、熱くて食べられない"
+  },
+  {
+    "ok": true,
+    "actual": "",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 28,
+    "expected": "噴水…魚、いない"
+  },
+  {
+    "ok": true,
+    "actual": "マスク got いっぱいくれた。だから、バッグにつけた。",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 29,
+    "expected": "手芸部の人…マスコット、いっぱいくれた。だから、バッグに付けた"
+  },
+  {
+    "ok": true,
+    "actual": "抹茶キャラメルに抹茶クリームと抹茶アイスと抹茶チョコ。仕上げにたっぷり抹茶ソース。",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 30,
+    "expected": "抹茶生地に抹茶クリームと抹茶アイスと抹茶チョコ。仕上げにたっぷり抹茶ソース"
+  },
+  {
+    "ok": true,
+    "actual": "フタ、電車の乱内、手開ける時、歩く",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 31,
+    "expected": "ふだん、電車乗らない。出かけるとき、歩く"
+  },
+  {
+    "ok": true,
+    "actual": "いい場所、知ってる？ あそこのベンチ、こっちの木、屋上の鉄壁。 他にもいっぱいある。",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 32,
+    "expected": "寝たい？いい場所、知ってる。あそこのベンチ、こっちの木、屋上のてっぺん…ほかにも、いっぱいある"
+  },
+  {
+    "ok": true,
+    "actual": "なされてけてーとで遊んでおやつをもらっただけ",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 33,
+    "expected": "手芸部に餌付けされてるわけじゃない。撫でられて、毛糸で遊んで、おやつもらっただけ"
+  },
+  {
+    "ok": true,
+    "actual": "全部覚えて あ、すみの切った ない",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 34,
+    "expected": "店のギター、全部覚えてる…あ、隅のギター、ない"
+  },
+  {
+    "ok": true,
+    "actual": "にゃー",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 35,
+    "expected": "抹茶も、苦い"
+  },
+  {
+    "ok": true,
+    "actual": "かっこいい",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 36,
+    "expected": "ギターの傷、かっこいい"
+  },
+  {
+    "ok": true,
+    "actual": "いい男が照れる",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 37,
+    "expected": "いい匂いの弦は、いい音が出る"
+  },
+  {
+    "ok": true,
+    "actual": "会いたかった",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 38,
+    "expected": "お腹、空いた"
+  },
+  {
+    "ok": true,
+    "actual": "メンチカツ、また食べたい",
+    "match": true,
+    "status": 200,
+    "char": "rana",
+    "index": 39,
+    "expected": "メンチカツ、また食べたい"
+  },
+  {
+    "ok": true,
+    "actual": "猫が、猫缶くれたらそうさせてくれると言った",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 40,
+    "expected": "猫が、猫缶くれたら触らせてくれるって言った"
+  },
+  {
+    "ok": true,
+    "actual": "抜け出しておろろして、めっちゃ怒られた",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 41,
+    "expected": "学校、抜け出してうろうろして、めっちゃ怒られた"
+  },
+  {
+    "ok": true,
+    "actual": "いい匂い　美味しそう",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 42,
+    "expected": "そよ、いい匂い。おいしそう"
+  },
+  {
+    "ok": true,
+    "actual": "たまねぎ　きらい　つらいの　すっぱいの　あついの",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 43,
+    "expected": "ニラ、山芋、玉ねぎ…嫌い。辛いの、酸っぱいの、熱いの…"
+  },
+  {
+    "ok": true,
+    "actual": "散歩行く",
+    "match": true,
+    "status": 200,
+    "char": "rana",
+    "index": 44,
+    "expected": "散歩、行く"
+  },
+  {
+    "ok": true,
+    "actual": "つまんない",
+    "match": true,
+    "status": 200,
+    "char": "rana",
+    "index": 45,
+    "expected": "つまんない"
+  },
+  {
+    "ok": true,
+    "actual": "シーアワセ",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 46,
+    "expected": "食べたいときに食べる。幸せ"
+  },
+  {
+    "ok": true,
+    "actual": "丸まって寝る時、ちょうどいい大きさ",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 47,
+    "expected": "いいベンチ。丸まって寝るとき、ちょうどいい大きさ"
+  },
+  {
+    "ok": true,
+    "actual": "行く",
+    "match": false,
+    "status": 200,
+    "char": "rana",
+    "index": 48,
+    "expected": "おお～、抹茶ドリンクのフェア。行く"
+  },
+  {
+    "ok": true,
+    "actual": "春の日差しみたい。大切で、特別で、代わりがない。私の帰る場所。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 0,
+    "expected": "あったかい感じ。春の日差しみたい。大切で、特別で、代わりがいない…私の帰る場所"
+  },
+  {
+    "ok": true,
+    "actual": "うん、ね。なんだか、誰か教えてくれないかしら。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 1,
+    "expected": "運命って、なんなのかしら…？誰か教えてくれないかしら"
+  },
+  {
+    "ok": true,
+    "actual": "私の心を読んでみたように、意地悪な神様がプレゼントを持ってきてくれたの",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 2,
+    "expected": "……私の心を読んだみたいに、意地悪な神様が、プレゼントを持ってきてくれたの"
+  },
+  {
+    "ok": true,
+    "actual": "抱歉，我无法处理音频文件。作为AI助手，我没有接收或播放音频的能力。\n\n如果您需要将这段日语内容转录成文字，您可以：\n\n1. **自己写下您听到的内容**，我可以帮您检查或提供反馈\n2. **使用专门的语音转文字工具**（如Google的语音识别、语音听写软件等）\n3. **将音频转换为文字后再发给我**，我可以帮您翻译或解释\n\n如果您有其他方式提供文字内容，我很乐意为您提供帮助！",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 3,
+    "expected": "きっと、一生忘れない。私にとって、それが出会いだったの"
+  },
+  {
+    "ok": true,
+    "actual": "あの日、さきちゃんが番号を脱げって言ったとき、もっと引き止めればよかった",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 4,
+    "expected": "あの日、さきちゃんがバンドを抜けるって言ったとき…もっと引き止めればよかった"
+  },
+  {
+    "ok": true,
+    "actual": "ちょっと眠いわ\n昨夜、本を読むのが遅くなっちゃって",
+    "match": true,
+    "status": 200,
+    "char": "soyo",
+    "index": 5,
+    "expected": "ちょっと眠いわ。昨夜、本を読むのが遅くなっちゃって"
+  },
+  {
+    "ok": true,
+    "actual": "友達は先生の子供なのね",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 6,
+    "expected": "ともりちゃんは、繊細な子だものね…"
+  },
+  {
+    "ok": true,
+    "actual": "さくらぎあるきであそばないで",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 7,
+    "expected": "そこで自販機で遊ばないで～"
+  },
+  {
+    "ok": true,
+    "actual": "このままだと、また同じことの繰り返しになるのかしら",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 8,
+    "expected": "このままだと、また同じことの繰り返しになるのかしら…？"
+  },
+  {
+    "ok": true,
+    "actual": "大切なことって 言い出せないのかしら\nシラクレ家のみんなは それでお互いを失ったのに",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 9,
+    "expected": "どうして大切な言葉って、言い出せないのかしら…CRYCHICのみんなは、それでお互いを失ったのに"
+  },
+  {
+    "ok": true,
+    "actual": "今日は六日目のピアノの練習日じゃなかったはず",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 10,
+    "expected": "今日は、むつみちゃんのピアノの練習日じゃなかったはず…"
+  },
+  {
+    "ok": true,
+    "actual": "どうして春日影を演奏するの？歌わないって約束したでしょ？",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 11,
+    "expected": "どうして「春日影」を演奏するの？弾かないって約束したでしょ"
+  },
+  {
+    "ok": true,
+    "actual": "さきちゃんは、間道は運命を奇跡だって言ってた。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 12,
+    "expected": "さきちゃんは、バンドは運命共同体だって言ってた…"
+  },
+  {
+    "ok": true,
+    "actual": "本当に大切に思ってる。好きよ。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 13,
+    "expected": "みんなのこと、本当に大切に思ってる。好きよ…"
+  },
+  {
+    "ok": true,
+    "actual": "そんなこと、ないわよ",
+    "match": true,
+    "status": 200,
+    "char": "soyo",
+    "index": 14,
+    "expected": "そんなこと、ないわよ～"
+  },
+  {
+    "ok": true,
+    "actual": "抱歉，我无法处理音频文件或听取语音内容。我没有看到您上传的任何音频文件。\n\n如果您需要日语语音转录，您可以：\n1. 将音频文件上传给我（如果平台支持）\n2. 或者使用专业的语音识别工具进行转录\n\n请问您能否重新上传音频文件，或者告诉我具体需要什么帮助？",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 15,
+    "expected": "あのんちゃんは、最初は目立ちたいだけだったのに…"
+  },
+  {
+    "ok": true,
+    "actual": "あのちゃん、またアフターをつけてきたのね。はぁ…。はい、に入ってなさい。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 16,
+    "expected": "あのんちゃん、また後をつけてきたのね…はあ…入ってきなさい"
+  },
+  {
+    "ok": true,
+    "actual": "抱歉，我无法处理音频文件。我只能阅读和处理文字内容，无法听取或转录音频。\n\n如果您有需要转录的日语文本内容，我可以帮您核对或处理。如果您是想让我转录一段语音，请您提供音频的文字描述或其他我能够处理的格式。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 17,
+    "expected": "吹奏楽部の子と、楽器屋さんに行ってみようかしら…"
+  },
+  {
+    "ok": true,
+    "actual": "あのじゃ、聞いたたくさん練習したのね。来なかった日も、ちゃんと練習してたでしょう。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 18,
+    "expected": "あのんちゃん、ギターたくさん練習したのね？来なかった日も、ちゃんと練習してたでしょ？"
+  },
+  {
+    "ok": true,
+    "actual": "とにかく、私はハルトカゲは嫌がるわ",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 19,
+    "expected": "とにかく、私は「春日影」は弾かないわ"
+  },
+  {
+    "ok": true,
+    "actual": "私たち、ともりちゃんに振り回されちゃってるわね",
+    "match": true,
+    "status": 200,
+    "char": "soyo",
+    "index": 20,
+    "expected": "私たち、ともりちゃんに振り回されちゃってるわね～"
+  },
+  {
+    "ok": true,
+    "actual": "この女の子で、本当にせっついてるのね？てれても。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 21,
+    "expected": "あのんちゃんって、ほんとにセンスないのね"
+  },
+  {
+    "ok": true,
+    "actual": "そういう拈りって呼ばれるの、ちょっと嫌だわ",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 22,
+    "expected": "「そよりん」って呼ばれるの、ちょっと嫌だわ～"
+  },
+  {
+    "ok": true,
+    "actual": "私は夕暮し不思議なの。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 23,
+    "expected": "私は、夜更かししない主義なの"
+  },
+  {
+    "ok": true,
+    "actual": "私の服、切られてる",
+    "match": true,
+    "status": 200,
+    "char": "soyo",
+    "index": 24,
+    "expected": "私の服…切られてる！"
+  },
+  {
+    "ok": true,
+    "actual": "あのちゃんは、そういう細かいところが好きなのね",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 25,
+    "expected": "あのんちゃんは、そういう細かいところが好きなのね…"
+  },
+  {
+    "ok": true,
+    "actual": "酒はもういらないわ",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 26,
+    "expected": "このきゅうり、もういらないわ"
+  },
+  {
+    "ok": true,
+    "actual": "みんな、体には気をつけてね。気をつけてね。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 27,
+    "expected": "みんな、体調には気をつけてね～"
+  },
+  {
+    "ok": true,
+    "actual": "たもりちゃんのカキは、きっと私の叫びでもあるの",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 28,
+    "expected": "ともりちゃんの歌詞は、きっと私の叫びでもあるの"
+  },
+  {
+    "ok": true,
+    "actual": "私は、きっと一生洗い恰度を忘れないわ",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 29,
+    "expected": "私は、きっと一生CRYCHICを忘れないわ"
+  },
+  {
+    "ok": true,
+    "actual": "な...なななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななななな",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 30,
+    "expected": "らなちゃん、前足で顔を洗ってる…今日は傘を持ってこなかったから、早めに帰りましょう…"
+  },
+  {
+    "ok": true,
+    "actual": "ベースもギターも手はしっかりケアしないとダメよ",
+    "match": true,
+    "status": 200,
+    "char": "soyo",
+    "index": 31,
+    "expected": "ベースもギターも、手はしっかりケアしないとダメよ…"
+  },
+  {
+    "ok": true,
+    "actual": "配上の野菜ジュースまずすぎてもうのみたくないわ",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 32,
+    "expected": "8種の野菜ジュース…まずすぎて、もう飲みたくないわ"
+  },
+  {
+    "ok": true,
+    "actual": "誰かさんが、一生バンドやってなんて重いこと言うから、健康に気を付けてるの。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 33,
+    "expected": "誰かさんが「一生バンドやって」なんて重いこと言うから、健康に気をつけてるの"
+  },
+  {
+    "ok": true,
+    "actual": "パーティーって、花音ちゃんが思うよりずっと大変なのよ。ドレスだと動きづらいし、メイナムも気にしなきゃいけないし。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 34,
+    "expected": "パーティーって、あのんちゃんが思うよりずっと大変なのよ？ドレスだと動きづらいし、マナーも気にしないといけないし…"
+  },
+  {
+    "ok": true,
+    "actual": "の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の の",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 35,
+    "expected": "らなちゃん、練習に時間通り来てほしいって、何度も言ってるわ。らなちゃんには怒りたくないの"
+  },
+  {
+    "ok": true,
+    "actual": "月詠の皆、バイトはお金のためじゃなくて、社会を知るためなんだって。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 36,
+    "expected": "月ノ森のみんな、バイトはお金のためじゃなくて、社会を知るためなんだって…"
+  },
+  {
+    "ok": true,
+    "actual": "あのんちゃん、喉飴をそんなに買って、風なの？",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 37,
+    "expected": "あのんちゃん、のど飴をそんなに買って…風邪なの？"
+  },
+  {
+    "ok": true,
+    "actual": "たべちゃん、さっきから落ち着かないけど、あーAfterglowのいてけさんね。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 38,
+    "expected": "たきちゃん、さっきから落ち着かないけど…？……ああ、Afterglowの美竹さんね…"
+  },
+  {
+    "ok": true,
+    "actual": "すみません、ごちそうさま、明日は本当に続けるつもりなのかしら",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 39,
+    "expected": "「そよりん」って呼び方、あのんちゃんは本当に続けるつもりなのかしら…？"
+  },
+  {
+    "ok": true,
+    "actual": "熱いものが食べられないなら、やなちゃんは他のお店を選べばいいじゃない",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 40,
+    "expected": "……熱いものが食べられないなら、らなちゃんはほかのお店を選べばいいじゃない…"
+  },
+  {
+    "ok": true,
+    "actual": "Pちゃんが来ないなら、私たちからナちゃんのところへ行って練習するのはどう？",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 41,
+    "expected": "らなちゃんが来ないなら、私たちがらなちゃんのところへ行って練習するのはどう？"
+  },
+  {
+    "ok": true,
+    "actual": "ともりちゃん、パンとケーキをあげる。今日は自作で作ったの。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 42,
+    "expected": "ともりちゃん、パウンドケーキをあげる。今日、授業で作ったの"
+  },
+  {
+    "ok": true,
+    "actual": "まだ眠りを見ているのに、お客さんが入ってきたら、たきちゃんが店員さんと一緒にいらっしゃいませって",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 43,
+    "expected": "まだメニューを見てるのに、お客さんが入ってきたら、たきちゃんが店員さんと一緒に「いらっしゃいませ～」って…"
+  },
+  {
+    "ok": true,
+    "actual": "はあ、あのんちゃんからメッセージ？3人記録で返信なし、あのんちゃんスタンプ連打してる",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 44,
+    "expected": "……あら、あのんちゃんからメッセージ。3人既読で、返事なし。あのんちゃん、スタンプ連打してる…"
+  },
+  {
+    "ok": true,
+    "actual": "申し訳ありませんが、私はテキストベースのAIなので、音声ファイルを聞くことができません。音声を文字起こしすることはできません。\n\n音声の内容をテキストとして貼り付けていただければ、内容についてお手伝いできるかもしれません。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 45,
+    "expected": "バンドメンバー募集の紙、いっぱい貼ってあるわね。ギターボーカルは、やっぱり少ないのね"
+  },
+  {
+    "ok": true,
+    "actual": "変わった目標もあるのね\nDJ、オーケストラ、あとは\nダンサー",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 46,
+    "expected": "変わった募集もあるのね…DJ、オーケストラ、あとは…ダンサー？"
+  },
+  {
+    "ok": true,
+    "actual": "たまには何もしないで、のんびり過ごすのもいいわよね",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 47,
+    "expected": "たまには何もしないで、のんびり過ごすのもいいわよね？"
+  },
+  {
+    "ok": true,
+    "actual": "あのねちゃん　今日も舞伎顔のアカウントで投稿してたの\n　思い出が増えていくのは　嬉しいわね",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 48,
+    "expected": "あのんちゃん、今日もMyGO!!!!!のアカウントで投稿してたの。思い出が増えていくのは、嬉しいわね"
+  },
+  {
+    "ok": true,
+    "actual": "",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 49,
+    "expected": "あら、あっちにベンチがあるわ。ともりちゃん、少し休んでいく？"
+  },
+  {
+    "ok": true,
+    "actual": "あのちゃんは知らないかもしれないけど、そういう家は総係の生もんスタッフがいるのよ。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 50,
+    "expected": "あのんちゃんは知らないかもしれないけど、そういう家は送迎も専門のスタッフがいるのよ"
+  },
+  {
+    "ok": true,
+    "actual": "抱歉，我无法处理或听音频文件，因此无法进行语音转录。\n\n如果您已经有转录好的日语文本，我可以帮助您翻译成中文或进行其他处理。或者如果您能以其他方式提供音频内容（比如通过链接），请告诉我更多细节。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 51,
+    "expected": "らなちゃん、髪の毛ボサボサよ。リボンももうすぐ取れそうだし、制服に葉っぱもくっついてるわ"
+  },
+  {
+    "ok": true,
+    "actual": "たけちゃん、パンダが好きななのよね。",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 52,
+    "expected": "たきちゃん、パンダが好きなのよね？"
+  },
+  {
+    "ok": true,
+    "actual": "あら、あげてなのころってたっていく",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 53,
+    "expected": "あら、揚げたてのコロッケ。買っていく？"
+  },
+  {
+    "ok": true,
+    "actual": "鳥狩りのおばあさんに寝癖で、呆れて立ち笑ったわ",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 54,
+    "expected": "通りがかりのおばあさんに「大学生？」って聞かれて、つい笑っちゃったわ"
+  },
+  {
+    "ok": true,
+    "actual": "あっちのカフェで何か飲んでいかない？このあと練習だし、みんなに差し入れていきましょう",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 55,
+    "expected": "あっちのカフェで何か飲んでいかない？このあと練習だし、みんなに差し入れしていきましょう"
+  },
+  {
+    "ok": true,
+    "actual": "さきちゃんがオブリビオンに立ったなんて嘘でしょ？",
+    "match": false,
+    "status": 200,
+    "char": "soyo",
+    "index": 56,
+    "expected": "さきちゃんがOblivionisだったなんて…嘘でしょ…？"
+  }
+]

@@ -43,3 +43,15 @@ jniLibs/
 *.pem
 *.p12
 *.pfx
+
+
+# --- tools temp artifacts ---
+tools/gen_tmp/
+tools/__pycache__/
+tools/_*.py
+*.err
+*.wav
+regenerate_flagged.log
+regenerate_flagged.err
+_fix3.log
+_fix3.err

@@ -213,6 +213,53 @@ pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_loadModel(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_loadModelAt(
+    mut env: JNIEnv<'_>,
+    _this: JObject<'_>,
+    handle: jlong,
+    slot: jint,
+    model_path: JString<'_>,
+    resource_paths: JObjectArray<'_>,
+    resource_bytes: JObjectArray<'_>,
+) -> jboolean {
+    jni_catch(JNI_FALSE, || {
+        let Some(renderer) = renderer(handle) else {
+            return JNI_FALSE;
+        };
+        let model_path = match java_string(&mut env, &model_path) {
+            Ok(path) => path,
+            Err(error) => {
+                renderer.set_error(error);
+                return JNI_FALSE;
+            }
+        };
+        let resources = match collect_resources(&mut env, &resource_paths, &resource_bytes) {
+            Ok(resources) => resources,
+            Err(error) => {
+                renderer.set_error(error);
+                return JNI_FALSE;
+            }
+        };
+        renderer.load_model_at(slot, model_path, resources);
+        JNI_TRUE
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_unloadModelAt(
+    _env: JNIEnv<'_>,
+    _this: JObject<'_>,
+    handle: jlong,
+    slot: jint,
+) {
+    jni_catch((), || {
+        if let Some(renderer) = renderer(handle) {
+            renderer.unload_model_at(slot);
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_setRenderOptions(
     _env: JNIEnv<'_>,
     _this: JObject<'_>,
@@ -312,6 +359,23 @@ pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_setTransform(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_setTransformAt(
+    _env: JNIEnv<'_>,
+    _this: JObject<'_>,
+    handle: jlong,
+    slot: jint,
+    offset_x: jfloat,
+    offset_y: jfloat,
+    scale: jfloat,
+) {
+    jni_catch((), || {
+        if let Some(renderer) = renderer(handle) {
+            renderer.set_transform_at(slot, offset_x, offset_y, scale);
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_setBackgroundPixels(
     mut env: JNIEnv<'_>,
     _this: JObject<'_>,
@@ -364,6 +428,22 @@ pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_touch(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_touchAt(
+    _env: JNIEnv<'_>,
+    _this: JObject<'_>,
+    handle: jlong,
+    slot: jint,
+    x_ratio: jfloat,
+    y_ratio: jfloat,
+) {
+    jni_catch((), || {
+        if let Some(renderer) = renderer(handle) {
+            renderer.touch_at(slot, x_ratio, y_ratio);
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_lookAt(
     _env: JNIEnv<'_>,
     _this: JObject<'_>,
@@ -394,6 +474,28 @@ pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_playAction(
         }
         match java_string(&mut env, &tag) {
             Ok(tag) => renderer.play_action(tag),
+            Err(error) => renderer.set_error(error),
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_playActionAt(
+    mut env: JNIEnv<'_>,
+    _this: JObject<'_>,
+    handle: jlong,
+    slot: jint,
+    tag: JString<'_>,
+) {
+    jni_catch((), || {
+        let Some(renderer) = renderer(handle) else {
+            return;
+        };
+        if tag.is_null() {
+            return;
+        }
+        match java_string(&mut env, &tag) {
+            Ok(tag) => renderer.play_action_at(slot, tag),
             Err(error) => renderer.set_error(error),
         }
     });

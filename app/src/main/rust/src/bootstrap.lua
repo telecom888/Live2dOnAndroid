@@ -3,9 +3,11 @@ package.cpath = __bp_runtime_root .. "/?.so;" .. package.cpath
 local gl = require("live2d.gl_loader")
 if gl.ensureExtensions then gl.ensureExtensions() end
 local raw_io_open = io.open
-local renderer = nil
 local width = 1
 local height = 1
+local models = {}
+local model_order = {}
+local renderer = nil
 local groups = {}
 local group_index = 1
 local default_group = nil
@@ -224,11 +226,11 @@ local function motion_matches_tag(name, tag)
     return base == tag_base
 end
 
-local function candidates_for_tags(tags)
+local function candidates_for_tags(model, tags)
     local result = {}
     local seen = {}
     for _, tag in ipairs(tags or {}) do
-        for _, group in ipairs(groups) do
+        for _, group in ipairs(model.groups) do
             if not seen[group] and motion_matches_tag(group, tag) then
                 seen[group] = true
                 result[#result + 1] = group
@@ -249,13 +251,13 @@ local function any_hit_is_head_or_face(hit_parts)
     return false
 end
 
-local function classify_touch_region(x_ratio, y_ratio)
+local function classify_touch_region(model, x_ratio, y_ratio)
     x_ratio = clamp01(x_ratio)
     y_ratio = clamp01(y_ratio)
 
     local hit_parts = nil
-    if renderer and renderer.hit_test then
-        local ok, result = pcall(function() return renderer:hit_test(x_ratio * width, y_ratio * height) end)
+    if model.renderer and model.renderer.hit_test then
+        local ok, result = pcall(function() return model.renderer:hit_test(x_ratio * width, y_ratio * height) end)
         if ok then hit_parts = result end
     end
     if any_hit_is_head_or_face(hit_parts) or y_ratio < 0.38 then
@@ -269,190 +271,249 @@ local function classify_touch_region(x_ratio, y_ratio)
     return "lower_body_" .. column
 end
 
-local function try_start_from_candidates(candidates, key)
+local function try_start_from_candidates(model, candidates, key)
     if #candidates == 0 then return false end
-    local start_index = touch_bucket_indices[key] or 1
+    local start_index = model.touch_bucket_indices[key] or 1
     for offset = 0, #candidates - 1 do
         local index = ((start_index + offset - 1) % #candidates) + 1
         local group = candidates[index]
-        local ok, started = pcall(function() return start_motion(group, false, 3) end)
+        local ok, started = pcall(function() return start_motion(model, group, false, 3) end)
         if ok and started then
-            touch_bucket_indices[key] = index % #candidates + 1
-            active_motion_kind = "action"
+            model.touch_bucket_indices[key] = index % #candidates + 1
+            model.active_motion_kind = "action"
             return true
         end
     end
     return false
 end
 
-local function collect_moc3_groups()
-    groups = {}
-    default_group = nil
+local function collect_moc3_groups(model)
+    model.groups = {}
+    model.default_group = nil
     local motions = {}
-    if renderer.model_info then
-        motions = renderer:model_info().motions or {}
-    elseif renderer.get_model_data then
-        local refs = renderer:get_model_data() and renderer:get_model_data().file_references
+    if model.renderer.model_info then
+        motions = model.renderer:model_info().motions or {}
+    elseif model.renderer.get_model_data then
+        local refs = model.renderer:get_model_data() and model.renderer:get_model_data().file_references
         motions = (refs and refs.motions) or {}
     end
     local names = {}
     for name, _ in pairs(motions) do
         names[#names + 1] = name
     end
-    default_group = choose_default_group(names)
-    groups = build_action_groups(names)
+    model.default_group = choose_default_group(names)
+    model.groups = build_action_groups(names)
 end
 
-local function collect_moc_groups()
-    groups = {}
-    default_group = nil
+local function collect_moc_groups(model)
+    model.groups = {}
+    model.default_group = nil
     local names = {}
-    local model = renderer.get_model and renderer:get_model() or nil
-    local model_setting = model and model.modelSetting or nil
+    local m = model.renderer.get_model and model.renderer:get_model() or nil
+    local model_setting = m and m.modelSetting or nil
     if model_setting and model_setting.getMotionNames then
         names = model_setting:getMotionNames() or {}
     end
-    default_group = choose_default_group(names)
-    groups = build_action_groups(names)
-    if #groups == 0 then
-        groups = {"tap_body", "tap_head", "angry01", "bye01", "kime01", "smile01", "nf01", "nnf01"}
+    model.default_group = choose_default_group(names)
+    model.groups = build_action_groups(names)
+    if #model.groups == 0 then
+        model.groups = {"tap_body", "tap_head", "angry01", "bye01", "kime01", "smile01", "nf01", "nnf01"}
     end
 end
 
-local function is_motion_finished()
-    if not renderer then return true end
-    if renderer.is_motion_finished then return renderer:is_motion_finished() end
-    local model = renderer.get_model and renderer:get_model() or nil
-    local manager = model and model.mainMotionManager or nil
+local function is_motion_finished(model)
+    if not model.renderer then return true end
+    if model.renderer.is_motion_finished then return model.renderer:is_motion_finished() end
+    local m = model.renderer.get_model and model.renderer:get_model() or nil
+    local manager = m and m.mainMotionManager or nil
     return manager == nil or manager:isFinished()
 end
 
-function start_motion(group, loop, priority)
-    if not renderer or group == nil then return false end
-    if model_is_moc3 then
-        renderer:start_motion(group, 0, priority, loop)
+function start_motion(model, group, loop, priority)
+    if not model.renderer or group == nil then return false end
+    if model.model_is_moc3 then
+        model.renderer:start_motion(group, 0, priority, loop)
         return true
     end
 
-    local model = renderer.get_model and renderer:get_model() or nil
-    if model and model.modelSetting and model.modelSetting.getMotionFile then
-        local file = model.modelSetting:getMotionFile(group, 0)
+    local m = model.renderer.get_model and model.renderer:get_model() or nil
+    if m and m.modelSetting and m.modelSetting.getMotionFile then
+        local file = m.modelSetting:getMotionFile(group, 0)
         if file == nil or file == "" then return false end
-        model:StartMotion(group, 0, priority or 3)
-        local motion = model.motions and model.motions[tostring(group) .. "#0"] or nil
+        m:StartMotion(group, 0, priority or 3)
+        local motion = m.motions and m.motions[tostring(group) .. "#0"] or nil
         if motion ~= nil then motion.loop = loop == true end
         return true
     end
 
-    renderer:start_motion(group, 0, priority)
+    model.renderer:start_motion(group, 0, priority)
     return true
 end
 
-local function start_default_motion()
-    if default_group == nil then
-        if renderer and renderer.clear_motions then renderer:clear_motions() end
-        active_motion_kind = nil
+local function start_default_motion(model)
+    if model.default_group == nil then
+        if model.renderer and model.renderer.clear_motions then model.renderer:clear_motions() end
+        model.active_motion_kind = nil
         return
     end
-    if start_motion(default_group, true, 1) then
-        active_motion_kind = "default"
+    if start_motion(model, model.default_group, true, 1) then
+        model.active_motion_kind = "default"
     end
 end
 
-function __bp_load(path, w, h)
+local function new_model_state()
+    return {
+        renderer = nil,
+        groups = {},
+        default_group = nil,
+        active_motion_kind = nil,
+        touch_bucket_indices = {},
+        group_index = 1,
+        model_is_moc3 = false,
+        offset_x = 0,
+        offset_y = 0,
+        scale = 1,
+    }
+end
+
+function __bp_load(path, w, h, slot)
     width = w
     height = h
-    active_motion_kind = nil
-    touch_bucket_indices = {}
-    group_index = 1
+    local index = tonumber(slot) or 0
+    local model = models[index]
+    if model == nil then
+        model = new_model_state()
+        models[index] = model
+        model_order[#model_order + 1] = index
+    end
+    if model.renderer ~= nil then
+        pcall(function() model.renderer:dispose() end)
+        model.renderer = nil
+    end
+    model.active_motion_kind = nil
+    model.touch_bucket_indices = {}
+    model.group_index = 1
     if ends_with(path, ".model3.json") then
-        model_is_moc3 = true
+        model.model_is_moc3 = true
         local embed = require("live2d_moc3_pet_embed")
-        renderer = embed.new(width, height)
-        renderer:load_model(path, width, height, is_archive_path(path) and resource_options() or nil)
-        collect_moc3_groups()
+        model.renderer = embed.new(width, height)
+        model.renderer:load_model(path, width, height, is_archive_path(path) and resource_options() or nil)
+        collect_moc3_groups(model)
     else
-        model_is_moc3 = false
+        model.model_is_moc3 = false
         local embed = require("live2d_embed")
-        renderer = embed.new(width, height)
+        model.renderer = embed.new(width, height)
         local opts = { center = false }
         if is_archive_path(path) then opts = resource_options(opts) end
-        renderer:load_model(path, width, height, opts)
-        collect_moc_groups()
+        model.renderer:load_model(path, width, height, opts)
+        collect_moc_groups(model)
     end
-    if renderer.set_offset then renderer:set_offset(offset_x, offset_y) end
-    if renderer.set_scale then renderer:set_scale(scale) end
-    start_default_motion()
+    if model.renderer.set_offset then model.renderer:set_offset(model.offset_x, model.offset_y) end
+    if model.renderer.set_scale then model.renderer:set_scale(model.scale) end
+    start_default_motion(model)
     return true
 end
 
 function __bp_resize(w, h)
     width = w
     height = h
-    if renderer and renderer.resize then renderer:resize(width, height) end
+    for _, model in pairs(models) do
+        if model and model.renderer and model.renderer.resize then
+            model.renderer:resize(width, height)
+        end
+    end
 end
 
-function __bp_touch(x_ratio, y_ratio)
-    if not renderer or #groups == 0 then return end
-    local region = classify_touch_region(x_ratio, y_ratio)
+function __bp_touch(x_ratio, y_ratio, slot)
+    local model = models[tonumber(slot) or 0]
+    if not model or not model.renderer or #model.groups == 0 then return end
+    local region = classify_touch_region(model, x_ratio, y_ratio)
     local buckets = TOUCH_BUCKETS[region] or TOUCH_BUCKETS.head
     for bucket_index, tags in ipairs(buckets) do
-        local candidates = candidates_for_tags(tags)
-        if try_start_from_candidates(candidates, region .. ":" .. tostring(bucket_index)) then
+        local candidates = candidates_for_tags(model, tags)
+        if try_start_from_candidates(model, candidates, region .. ":" .. tostring(bucket_index)) then
             return
         end
     end
 
-    for _ = 1, #groups do
-        local group = groups[group_index]
-        group_index = group_index % #groups + 1
-        local ok, started = pcall(function() return start_motion(group, false, 3) end)
+    for _ = 1, #model.groups do
+        local group = model.groups[model.group_index]
+        model.group_index = model.group_index % #model.groups + 1
+        local ok, started = pcall(function() return start_motion(model, group, false, 3) end)
         if ok and started then
-            active_motion_kind = "action"
+            model.active_motion_kind = "action"
             return
         end
     end
 end
 
-function __bp_action(tag)
-    if not renderer then return false end
+function __bp_action(tag, slot)
+    local model = models[tonumber(slot) or 0]
+    if not model or not model.renderer then return false end
     tag = string.lower(tostring(tag or "")):gsub("^%[", ""):gsub("%]$", "")
     if tag == "" then return false end
-    if ends_with(tag, ".exp") and renderer.set_expression then
-        local ok = pcall(function() renderer:set_expression(tag) end)
+    if ends_with(tag, ".exp") and model.renderer.set_expression then
+        local ok = pcall(function() model.renderer:set_expression(tag) end)
         if ok then return true end
         local name = tag:sub(1, -5)
-        return pcall(function() renderer:set_expression(name) end)
+        return pcall(function() model.renderer:set_expression(name) end)
     end
-    local candidates = candidates_for_tags({ tag })
-    if try_start_from_candidates(candidates, "llm:" .. tag) then return true end
+    local candidates = candidates_for_tags(model, { tag })
+    if try_start_from_candidates(model, candidates, "llm:" .. tag) then return true end
     return false
 end
 
 function __bp_look_at(x_ratio, y_ratio)
-    if not renderer or renderer.drag == nil then return end
     x_ratio = clamp01(x_ratio)
     y_ratio = clamp01(y_ratio)
-    renderer:drag(x_ratio * width, y_ratio * height)
+    for _, model in pairs(models) do
+        if model and model.renderer and model.renderer.drag then
+            model.renderer:drag(x_ratio * width, y_ratio * height)
+        end
+    end
 end
 
-function __bp_transform(x, y, s)
-    offset_x = tonumber(x) or 0
-    offset_y = tonumber(y) or 0
-    scale = tonumber(s) or 1
-    if not renderer then return end
-    if renderer.set_offset then renderer:set_offset(offset_x, offset_y) end
-    if renderer.set_scale then renderer:set_scale(scale) end
+function __bp_transform(x, y, s, slot)
+    local index = tonumber(slot) or 0
+    local model = models[index]
+    if model == nil then
+        model = new_model_state()
+        models[index] = model
+    end
+    model.offset_x = tonumber(x) or 0
+    model.offset_y = tonumber(y) or 0
+    model.scale = tonumber(s) or 1
+    if model.renderer then
+        if model.renderer.set_offset then model.renderer:set_offset(model.offset_x, model.offset_y) end
+        if model.renderer.set_scale then model.renderer:set_scale(model.scale) end
+    end
+end
+
+function __bp_unload(slot)
+    local index = tonumber(slot) or 0
+    local model = models[index]
+    if model == nil then return end
+    if model.renderer ~= nil then
+        pcall(function() model.renderer:dispose() end)
+        model.renderer = nil
+    end
+    models[index] = nil
+    for i = #model_order, 1, -1 do
+        if model_order[i] == index then
+            table.remove(model_order, i)
+        end
+    end
 end
 
 function __bp_dispose()
-    if renderer then
-        pcall(function() renderer:dispose() end)
-        renderer = nil
+    for _, model in pairs(models) do
+        if model and model.renderer then
+            pcall(function() model.renderer:dispose() end)
+            model.renderer = nil
+        end
     end
-    groups = {}
-    default_group = nil
-    active_motion_kind = nil
+    models = {}
+    model_order = {}
 end
 
 function __bp_clear()
@@ -462,22 +523,28 @@ function __bp_clear()
 end
 
 function __bp_draw(time_msec, mouth_open, mouth_form)
-    if not renderer then return end
     gl.glViewport(0, 0, width, height)
-    local parameters
-    if model_is_moc3 then
-        parameters = {
-            { id = "ParamMouthOpenY", value = tonumber(mouth_open) or 0, weight = 1 },
-            { id = "ParamMouthForm", value = tonumber(mouth_form) or 0, weight = 1 },
-        }
-    else
-        parameters = {
-            { id = "PARAM_MOUTH_OPEN_Y", value = tonumber(mouth_open) or 0, weight = 1 },
-            { id = "PARAM_MOUTH_FORM", value = tonumber(mouth_form) or 0, weight = 1 },
-        }
-    end
-    renderer:draw({ clear = false, time_msec = time_msec, parameters = parameters })
-    if active_motion_kind == "action" and is_motion_finished() then
-        start_default_motion()
+    for _, index in ipairs(model_order) do
+        local model = models[index]
+        if not model or not model.renderer then
+            -- 跳过空槽位
+        else
+            local parameters
+            if model.model_is_moc3 then
+                parameters = {
+                    { id = "ParamMouthOpenY", value = tonumber(mouth_open) or 0, weight = 1 },
+                    { id = "ParamMouthForm", value = tonumber(mouth_form) or 0, weight = 1 },
+                }
+            else
+                parameters = {
+                    { id = "PARAM_MOUTH_OPEN_Y", value = tonumber(mouth_open) or 0, weight = 1 },
+                    { id = "PARAM_MOUTH_FORM", value = tonumber(mouth_form) or 0, weight = 1 },
+                }
+            end
+            model.renderer:draw({ clear = false, time_msec = time_msec, parameters = parameters })
+            if model.active_motion_kind == "action" and is_motion_finished(model) then
+                start_default_motion(model)
+            end
+        end
     end
 end

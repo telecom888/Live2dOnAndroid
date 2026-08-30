@@ -16,11 +16,17 @@ import com.bangdream.pet.KEY_SELECTED_MODEL_ASSET_PATH
 import com.bangdream.pet.KEY_VSYNC_ENABLED
 import com.bangdream.pet.KEY_WALLPAPER_BACKGROUND_URI
 import com.bangdream.pet.KEY_WALLPAPER_ENABLED
+import com.bangdream.pet.KEY_WALLPAPER_MODE
+import com.bangdream.pet.KEY_WALLPAPER_MODELS
 import com.bangdream.pet.KEY_WALLPAPER_OFFSET_X
 import com.bangdream.pet.KEY_WALLPAPER_OFFSET_Y
 import com.bangdream.pet.KEY_WALLPAPER_SCALE
 import com.bangdream.pet.SETTINGS_PREFS
+import com.bangdream.pet.WallpaperMode
+import com.bangdream.pet.WallpaperModelPlacement
+import com.bangdream.pet.WallpaperMultiModelSettings
 import com.bangdream.pet.isWallpaperEnabled
+import com.bangdream.pet.loadWallpaperMode
 import android.widget.Toast
 import com.bangdream.pet.chat.PetRuntime
 import com.bangdream.pet.chat.WallpaperBubbleService
@@ -41,6 +47,7 @@ import com.bangdream.pet.loadPersistedModelChoice
 import com.bangdream.pet.loadWallpaperBackgroundUri
 import com.bangdream.pet.loadWallpaperTransform
 import com.bangdream.pet.live2d.AssetSync
+import com.bangdream.pet.live2d.PreparedModel
 import com.bangdream.pet.voice.BuiltinVoiceManager
 import com.bangdream.pet.voice.VoicePlayer
 import com.bangdream.pet.live2d.NativeLive2D
@@ -58,6 +65,14 @@ import kotlin.math.max
 class Live2DWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = Live2DEngine()
 
+    /** 多模型模式：单个 slot 的活动模型。 */
+    private data class ActiveSlotModel(
+        val placement: WallpaperModelPlacement,
+        val prepared: PreparedModel,
+        val canvas: WallpaperHitArea.ModelCanvas?,
+        val hitArea: RectF?,
+    )
+
     private inner class Live2DEngine : Engine(), SurfaceHolder.Callback {
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         private var handle = 0L
@@ -72,8 +87,15 @@ class Live2DWallpaperService : WallpaperService() {
         private var settingsPreferences: SharedPreferences? = null
         private var restartJob: Job? = null
         private var gestureHandler: WallpaperGestureHandler? = null
+        private var wallpaperMode = WallpaperMode.SINGLE
+
+        // 单模型模式字段（复用既有实现）
         private var modelCanvas: WallpaperHitArea.ModelCanvas? = null
         private var hitArea: RectF? = null
+
+        // 多模型模式字段：slot -> 活动模型
+        private val slotModels = mutableMapOf<Int, ActiveSlotModel>()
+
         private var touchDownX = 0f
         private var touchDownY = 0f
         private var idleJob: Job? = null
@@ -98,7 +120,11 @@ class Live2DWallpaperService : WallpaperService() {
                         val settings = RenderSettings.load(applicationContext)
                         NativeLive2D.setRenderOptions(handle, settings.fpsLimit, settings.vsyncEnabled)
                     }
-                    KEY_WALLPAPER_OFFSET_X, KEY_WALLPAPER_OFFSET_Y, KEY_WALLPAPER_SCALE -> applyWallpaperTransform()
+                    KEY_WALLPAPER_OFFSET_X, KEY_WALLPAPER_OFFSET_Y, KEY_WALLPAPER_SCALE -> {
+                        if (wallpaperMode == WallpaperMode.SINGLE) applyWallpaperTransform()
+                    }
+                    KEY_WALLPAPER_MODE,
+                    KEY_WALLPAPER_MODELS,
                     KEY_SELECTED_CHARACTER_ID,
                     KEY_SELECTED_MODEL_ASSET_PATH,
                     KEY_WALLPAPER_BACKGROUND_URI -> scheduleRendererRestart()
@@ -125,26 +151,28 @@ class Live2DWallpaperService : WallpaperService() {
                 },
                 onTap = { x, y ->
                     lookAtTouch(x, y)
-                    if (isInModelArea(x, y) && loadTouchAnimationEnabled(applicationContext)) {
-                        sendWallpaperTouch(x, y)
-                        playRandomTouchAction()
+                    val slot = findHitSlot(x, y)
+                    if (slot != null && loadTouchAnimationEnabled(applicationContext)) {
+                        sendWallpaperTouch(slot, x, y)
+                        playRandomTouchAction(slot)
                     }
                 },
                 onSwipe = { x, y ->
                     lookAtTouch(x, y)
-                    if (isInModelArea(touchDownX, touchDownY) && loadSwipeAnimationEnabled(applicationContext)) {
-                        sendWallpaperTouch(x, y)
-                        playRandomTouchAction()
+                    val startSlot = findHitSlot(touchDownX, touchDownY)
+                    if (startSlot != null && loadSwipeAnimationEnabled(applicationContext)) {
+                        sendWallpaperTouch(startSlot, x, y)
+                        playRandomTouchAction(startSlot)
                     }
                 },
                 onDoubleTap = { x, y ->
                     lookAtTouch(x, y)
-                    if (isInModelArea(x, y)) {
+                    if (findHitSlot(x, y) != null) {
                         openChatInput()
                     }
                 },
                 onLongPress = { x, y ->
-                    if (isInModelArea(x, y)) {
+                    if (findHitSlot(x, y) != null) {
                         PetRuntime.stopAll()
                         WallpaperBubbleService.hide(applicationContext)
                         Toast.makeText(applicationContext, "已停止", Toast.LENGTH_SHORT).show()
@@ -189,7 +217,7 @@ class Live2DWallpaperService : WallpaperService() {
         override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
             this.width = width.coerceAtLeast(1)
             this.height = height.coerceAtLeast(1)
-            refreshHitArea()
+            refreshAllHitAreas()
             if (handle != 0L) {
                 NativeLive2D.resize(handle, this.width, this.height)
                 if (visible) NativeLive2D.setPaused(handle, false)
@@ -240,65 +268,163 @@ class Live2DWallpaperService : WallpaperService() {
             loading = true
             scope.launch {
                 try {
-                    val model = loadStep("Failed to load wallpaper model") {
-                        withContext(Dispatchers.IO) { loadPersistedModelChoice(applicationContext) }
-                    } ?: return@launch
-                    val prepared = loadStep("Failed to prepare wallpaper model") {
-                        AssetSync.prepareModel(applicationContext, model.modelAssetPath)
-                    } ?: return@launch
-                    val wallpaperBackgroundUri = withContext(Dispatchers.IO) {
-                        loadWallpaperBackgroundUri(applicationContext)
-                    }
-                    val background = NativeLive2D.loadBackground(applicationContext, wallpaperBackgroundUri)
-                    val activeSurface = surfaceHolderRef?.surface
-                    if (
-                        generation != loadGeneration ||
-                        !visible ||
-                        !surfaceReady ||
-                        activeSurface?.isValid != true
-                    ) return@launch
-
-                    val settings = RenderSettings.load(applicationContext)
-                    if (handle == 0L || runtimeRoot != prepared.runtimeRoot) {
-                        destroyHandle()
-                        runtimeRoot = prepared.runtimeRoot
-                        Live2DWallpaperService.activeHandle = 0L
-                        handle = NativeLive2D.create(
-                            activeSurface,
-                            prepared.runtimeRoot,
-                            width,
-                            height,
-                            settings.fpsLimit,
-                            settings.vsyncEnabled,
-                            settings.renderResolution.scale,
-                        )
-                        NativeLive2D.setBackground(handle, background)
-                        applyWallpaperTransform()
+                    wallpaperMode = loadWallpaperMode(applicationContext)
+                    if (wallpaperMode == WallpaperMode.MULTI) {
+                        ensureMultiRenderer(generation)
                     } else {
-                        NativeLive2D.setRenderOptions(handle, settings.fpsLimit, settings.vsyncEnabled)
-                        NativeLive2D.setBackground(handle, background)
-                    }
-                    if (handle != 0L) {
-                        NativeLive2D.setFpsDisplayEnabled(handle, settings.fpsDisplayEnabled)
-                        NativeLive2D.loadModel(
-                            handle,
-                            prepared.modelPath,
-                            prepared.resourcePaths.toTypedArray(),
-                            prepared.resourceBytes.toTypedArray(),
-                        )
-                        val canvas = withContext(Dispatchers.IO) {
-                            WallpaperHitArea.resolveCanvas(prepared)
-                        }
-                        if (generation == loadGeneration) {
-                            modelCanvas = canvas
-                            refreshHitArea()
-                        }
-                        replayRecentAction()
-                        startIdleLoop()
+                        ensureSingleRenderer(generation)
                     }
                 } finally {
                     if (generation == loadGeneration) loading = false
                 }
+            }
+        }
+
+        // ==================== 单模型模式（既有实现） ====================
+        private suspend fun ensureSingleRenderer(generation: Int) {
+            val model = loadStep("Failed to load wallpaper model") {
+                withContext(Dispatchers.IO) { loadPersistedModelChoice(applicationContext) }
+            } ?: return
+            val prepared = loadStep("Failed to prepare wallpaper model") {
+                AssetSync.prepareModel(applicationContext, model.modelAssetPath)
+            } ?: return
+            val wallpaperBackgroundUri = withContext(Dispatchers.IO) {
+                loadWallpaperBackgroundUri(applicationContext)
+            }
+            val background = NativeLive2D.loadBackground(applicationContext, wallpaperBackgroundUri)
+            val activeSurface = surfaceHolderRef?.surface
+            if (
+                generation != loadGeneration ||
+                !visible ||
+                !surfaceReady ||
+                activeSurface?.isValid != true
+            ) return
+
+            val settings = RenderSettings.load(applicationContext)
+            if (handle == 0L || runtimeRoot != prepared.runtimeRoot) {
+                destroyHandle()
+                runtimeRoot = prepared.runtimeRoot
+                Live2DWallpaperService.activeHandle = 0L
+                handle = NativeLive2D.create(
+                    activeSurface,
+                    prepared.runtimeRoot,
+                    width,
+                    height,
+                    settings.fpsLimit,
+                    settings.vsyncEnabled,
+                    settings.renderResolution.scale,
+                )
+                NativeLive2D.setBackground(handle, background)
+                applyWallpaperTransform()
+            } else {
+                NativeLive2D.setRenderOptions(handle, settings.fpsLimit, settings.vsyncEnabled)
+                NativeLive2D.setBackground(handle, background)
+            }
+            if (handle != 0L) {
+                NativeLive2D.setFpsDisplayEnabled(handle, settings.fpsDisplayEnabled)
+                NativeLive2D.loadModel(
+                    handle,
+                    prepared.modelPath,
+                    prepared.resourcePaths.toTypedArray(),
+                    prepared.resourceBytes.toTypedArray(),
+                )
+                val canvas = withContext(Dispatchers.IO) {
+                    WallpaperHitArea.resolveCanvas(prepared)
+                }
+                if (generation == loadGeneration) {
+                    modelCanvas = canvas
+                    refreshSingleHitArea()
+                }
+                replayRecentAction()
+                startIdleLoop()
+            }
+        }
+
+        // ==================== 多模型模式 ====================
+        private suspend fun ensureMultiRenderer(generation: Int) {
+            val placements = withContext(Dispatchers.IO) {
+                WallpaperMultiModelSettings.load(applicationContext).models.filter { it.enabled }
+            }
+            val wallpaperBackgroundUri = withContext(Dispatchers.IO) {
+                loadWallpaperBackgroundUri(applicationContext)
+            }
+            val background = NativeLive2D.loadBackground(applicationContext, wallpaperBackgroundUri)
+            val activeSurface = surfaceHolderRef?.surface
+            if (
+                generation != loadGeneration ||
+                !visible ||
+                !surfaceReady ||
+                activeSurface?.isValid != true
+            ) return
+
+            // 逐个准备模型（各自可能有独立的资源树）
+            val preparedList = mutableListOf<Pair<WallpaperModelPlacement, PreparedModel>>()
+            for (placement in placements) {
+                val prepared = loadStep("Failed to prepare wallpaper model ${placement.id}") {
+                    AssetSync.prepareModel(applicationContext, placement.modelAssetPath)
+                } ?: continue
+                preparedList.add(placement to prepared)
+            }
+
+            val settings = RenderSettings.load(applicationContext)
+            val firstPrepared = preparedList.firstOrNull()?.second
+            if (handle == 0L || runtimeRoot != (firstPrepared?.runtimeRoot ?: runtimeRoot)) {
+                destroyHandle()
+                slotModels.clear()
+                if (firstPrepared != null) {
+                    runtimeRoot = firstPrepared.runtimeRoot
+                    Live2DWallpaperService.activeHandle = 0L
+                    handle = NativeLive2D.create(
+                        activeSurface,
+                        firstPrepared.runtimeRoot,
+                        width,
+                        height,
+                        settings.fpsLimit,
+                        settings.vsyncEnabled,
+                        settings.renderResolution.scale,
+                    )
+                    NativeLive2D.setBackground(handle, background)
+                }
+            } else {
+                NativeLive2D.setRenderOptions(handle, settings.fpsLimit, settings.vsyncEnabled)
+                NativeLive2D.setBackground(handle, background)
+            }
+            if (handle == 0L) return
+
+            // 增量同步：保留相同模型路径的 slot，卸载消失的 slot，加载新增/变更的 slot
+            val newSlots = preparedList.mapIndexed { index, (placement, prepared) -> index to (placement to prepared) }.toMap()
+            val oldSlots = slotModels.keys.toSet()
+            for (slot in oldSlots - newSlots.keys) {
+                NativeLive2D.unloadModelAt(handle, slot)
+                slotModels.remove(slot)
+            }
+            val canvases = withContext(Dispatchers.IO) {
+                preparedList.associate { (placement, prepared) -> placement.id to WallpaperHitArea.resolveCanvas(prepared) }
+            }
+            val newSlotModels = mutableMapOf<Int, ActiveSlotModel>()
+            for ((slot, pair) in newSlots) {
+                val (placement, prepared) = pair
+                val existing = slotModels[slot]
+                if (existing?.placement?.modelAssetPath != placement.modelAssetPath) {
+                    NativeLive2D.loadModelAt(
+                        handle,
+                        slot,
+                        prepared.modelPath,
+                        prepared.resourcePaths.toTypedArray(),
+                        prepared.resourceBytes.toTypedArray(),
+                    )
+                }
+                val canvas = canvases[placement.id]
+                val rect = canvas?.let { WallpaperHitArea.computeRect(width, height, placement.toTransform(), it) }
+                newSlotModels[slot] = ActiveSlotModel(placement, prepared, canvas, rect)
+                NativeLive2D.setTransformAt(handle, slot, placement.offsetX, placement.offsetY, placement.scale)
+            }
+            slotModels.clear()
+            slotModels.putAll(newSlotModels)
+            NativeLive2D.setFpsDisplayEnabled(handle, settings.fpsDisplayEnabled)
+            if (generation == loadGeneration) {
+                replayRecentAction()
+                startIdleLoop()
             }
         }
 
@@ -321,19 +447,23 @@ class Live2DWallpaperService : WallpaperService() {
         }
 
         private fun applyWallpaperTransform() {
-            refreshHitArea()
+            refreshSingleHitArea()
             if (handle == 0L) return
             val transform = loadWallpaperTransform(applicationContext)
             NativeLive2D.setTransform(handle, transform.offsetX, transform.offsetY, transform.scale)
         }
 
-        private fun playRandomTouchAction() {
+        private fun playRandomTouchAction(slot: Int?) {
             if (handle == 0L || !visible) return
             val choices = loadTouchAnimations(applicationContext)
             if (choices.isEmpty()) return
             val action = choices.random()
             saveLastWallpaperAction(applicationContext, action)
-            NativeLive2D.playAction(handle, action)
+            if (wallpaperMode == WallpaperMode.MULTI && slot != null) {
+                NativeLive2D.playActionAt(handle, slot, action)
+            } else {
+                NativeLive2D.playAction(handle, action)
+            }
         }
 
         /** surface 被系统销毁重建后，若刚播放过动作则在窗口期内重放，避免回到桌面动作被重置。 */
@@ -342,7 +472,13 @@ class Live2DWallpaperService : WallpaperService() {
             val (action, at) = loadLastWallpaperAction(applicationContext)
             if (action.isBlank()) return
             if (System.currentTimeMillis() - at > LAST_ACTION_REPLAY_WINDOW_MS) return
-            NativeLive2D.playAction(handle, action)
+            if (wallpaperMode == WallpaperMode.MULTI) {
+                for (slot in slotModels.keys) {
+                    NativeLive2D.playActionAt(handle, slot, action)
+                }
+            } else {
+                NativeLive2D.playAction(handle, action)
+            }
         }
 
         /** 视线跟随：全屏任意触摸都响应（不限定模型区域）。 */
@@ -354,12 +490,31 @@ class Live2DWallpaperService : WallpaperService() {
             NativeLive2D.lookAt(handle, nx, ny)
         }
 
-        /** 动作类交互（单击/滑动/双击/长按）只允许落在模型显示区域内。 */
-        private fun isInModelArea(x: Float, y: Float): Boolean =
-            hitArea?.contains(x, y) == true
+        /** 动作类交互（单击/滑动/双击/长按）只允许落在模型显示区域内。单模型返回 0 或 null。 */
+        private fun findHitSlot(x: Float, y: Float): Int? {
+            if (wallpaperMode == WallpaperMode.MULTI) {
+                for ((slot, active) in slotModels) {
+                    if (active.hitArea?.contains(x, y) == true) return slot
+                }
+                return null
+            }
+            return if (hitArea?.contains(x, y) == true) 0 else null
+        }
 
-        /** 根据 surface 尺寸、模型画布与用户变换重新计算模型显示区域。 */
-        private fun refreshHitArea() {
+        private fun refreshAllHitAreas() {
+            if (wallpaperMode == WallpaperMode.MULTI) {
+                val rebuilt = slotModels.mapValues { (_, active) ->
+                    val rect = active.canvas?.let { WallpaperHitArea.computeRect(width, height, active.placement.toTransform(), it) }
+                    active.copy(hitArea = rect)
+                }
+                slotModels.clear()
+                slotModels.putAll(rebuilt)
+            } else {
+                refreshSingleHitArea()
+            }
+        }
+
+        private fun refreshSingleHitArea() {
             hitArea = WallpaperHitArea.computeRect(
                 surfaceWidth = width,
                 surfaceHeight = height,
@@ -369,17 +524,31 @@ class Live2DWallpaperService : WallpaperService() {
         }
 
         /** 把桌面触摸坐标（surface 像素）归一化后发送给 native，触发区域化触摸动作（摸头/拍肩等）。 */
-        private fun sendWallpaperTouch(x: Float, y: Float) {
+        private fun sendWallpaperTouch(slot: Int, x: Float, y: Float) {
             if (handle == 0L || !visible) return
             val nx = (x / width).coerceIn(0f, 1f)
             val ny = (y / height).coerceIn(0f, 1f)
-            NativeLive2D.touch(handle, nx, ny)
+            if (wallpaperMode == WallpaperMode.MULTI) {
+                NativeLive2D.touchAt(handle, slot, nx, ny)
+            } else {
+                NativeLive2D.touch(handle, nx, ny)
+            }
         }
 
         private fun playIdleAction() {
             if (handle == 0L || !visible) return
-            if (loadBuiltinVoiceEnabled(applicationContext)) {
-                val charId = loadSelectedCharacterId(applicationContext)
+            val slot = if (wallpaperMode == WallpaperMode.MULTI) {
+                slotModels.keys.randomOrNull()
+            } else {
+                0
+            }
+            if (slot == null) return
+            val charId = if (wallpaperMode == WallpaperMode.MULTI) {
+                slotModels[slot]?.placement?.characterId
+            } else {
+                loadSelectedCharacterId(applicationContext)
+            }
+            if (loadBuiltinVoiceEnabled(applicationContext) && charId != null) {
                 val line = BuiltinVoiceManager.randomLineWithVoice(
                         applicationContext,
                         charId,
@@ -388,10 +557,14 @@ class Live2DWallpaperService : WallpaperService() {
                 if (line != null) {
                     val motion = baseMotionName(line.motion)
                     saveLastWallpaperAction(applicationContext, motion)
-                    NativeLive2D.playAction(handle, motion)
+                    if (wallpaperMode == WallpaperMode.MULTI) {
+                        NativeLive2D.playActionAt(handle, slot, motion)
+                    } else {
+                        NativeLive2D.playAction(handle, motion)
+                    }
                     line.readWav(applicationContext)?.let { VoicePlayer.play(applicationContext, it) }
                     if (loadBubbleEnabled(applicationContext)) {
-                        WallpaperBubbleService.show(applicationContext, line.text)
+                        WallpaperBubbleService.show(applicationContext, line.display)
                     }
                     return
                 }
@@ -400,7 +573,11 @@ class Live2DWallpaperService : WallpaperService() {
             if (choices.isEmpty()) return
             val action = choices.random()
             saveLastWallpaperAction(applicationContext, action)
-            NativeLive2D.playAction(handle, action)
+            if (wallpaperMode == WallpaperMode.MULTI) {
+                NativeLive2D.playActionAt(handle, slot, action)
+            } else {
+                NativeLive2D.playAction(handle, action)
+            }
         }
 
         private fun baseMotionName(name: String): String = name.replace(Regex("\\d+$"), "")
@@ -428,6 +605,7 @@ class Live2DWallpaperService : WallpaperService() {
             loading = false
             modelCanvas = null
             hitArea = null
+            slotModels.clear()
             destroyHandle()
         }
 
@@ -451,4 +629,3 @@ class Live2DWallpaperService : WallpaperService() {
         const val LAST_ACTION_REPLAY_WINDOW_MS = 10_000L
     }
 }
-

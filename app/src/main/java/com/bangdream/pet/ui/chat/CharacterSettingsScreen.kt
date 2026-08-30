@@ -182,6 +182,16 @@ fun CharacterSettingsScreen(
             }
             FilledTonalButton(
                 modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    context.startActivity(
+                        android.content.Intent(context, com.bangdream.pet.voice.VoiceListActivity::class.java)
+                            .putExtra(com.bangdream.pet.voice.VoiceListActivity.EXTRA_CHARACTER_ID, character.characterId)
+                            .putExtra(com.bangdream.pet.voice.VoiceListActivity.EXTRA_CHARACTER_NAME, character.characterName)
+                    )
+                },
+            ) { Text("内置语音列表（试听）") }
+            FilledTonalButton(
+                modifier = Modifier.fillMaxWidth(),
                 onClick = { importLauncher.launch("audio/*") },
             ) { Text("导入音色样本") }
             Text(

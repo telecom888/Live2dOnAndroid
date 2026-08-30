@@ -15,6 +15,7 @@ data class BuiltinLine(
     val language: BuiltinVoiceLanguage,
     val index: Int,
     val text: String,
+    val display: String,
     val motion: String,
 ) {
     fun hasWav(context: Context): Boolean = runCatching {
@@ -41,7 +42,7 @@ object BuiltinVoiceManager {
         return buildList {
             for (i in 0 until tips.length()) {
                 val item = tips.optJSONObject(i) ?: continue
-                add(BuiltinLine(characterId, language, i, item.optString("text"), item.optString("motion")))
+                add(BuiltinLine(characterId, language, i, item.optString("text"), item.optString("display", item.optString("text")), item.optString("motion")))
             }
         }
     }

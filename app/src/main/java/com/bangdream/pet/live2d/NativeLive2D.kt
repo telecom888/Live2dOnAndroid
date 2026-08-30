@@ -28,6 +28,10 @@ object NativeLive2D {
     ): Long
     external fun resize(handle: Long, width: Int, height: Int)
     external fun loadModel(handle: Long, modelPath: String, resourcePaths: Array<String>, resourceBytes: Array<ByteArray>): Boolean
+    /** 多角色壁纸：在指定 slot 加载模型（slot 0..n），可同时放置多个模型。 */
+    external fun loadModelAt(handle: Long, slot: Int, modelPath: String, resourcePaths: Array<String>, resourceBytes: Array<ByteArray>): Boolean
+    /** 多角色壁纸：卸载指定 slot 的模型实例（释放 GL 资源，不影响其它 slot）。 */
+    external fun unloadModelAt(handle: Long, slot: Int)
     external fun setRenderOptions(handle: Long, fpsLimit: Int, vsyncEnabled: Boolean)
     external fun setPaused(handle: Long, paused: Boolean)
     /** surface 被系统销毁重建后，把渲染器重新绑定到新 Surface（保留模型/动作状态）。 */
@@ -35,10 +39,13 @@ object NativeLive2D {
     external fun setRenderScale(handle: Long, scale: Float)
     external fun setFpsDisplayEnabled(handle: Long, enabled: Boolean)
     external fun setTransform(handle: Long, offsetX: Float, offsetY: Float, scale: Float)
+    external fun setTransformAt(handle: Long, slot: Int, offsetX: Float, offsetY: Float, scale: Float)
     external fun setBackgroundPixels(handle: Long, pixels: IntArray?, width: Int, height: Int)
     external fun touch(handle: Long, x: Float, y: Float)
+    external fun touchAt(handle: Long, slot: Int, x: Float, y: Float)
     external fun lookAt(handle: Long, x: Float, y: Float)
     external fun playAction(handle: Long, tag: String)
+    external fun playActionAt(handle: Long, slot: Int, tag: String)
     external fun setLipSync(handle: Long, open: Float, form: Float)
     external fun lastError(handle: Long): String
     external fun destroy(handle: Long)
