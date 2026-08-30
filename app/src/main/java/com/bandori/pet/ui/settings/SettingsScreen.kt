@@ -4,6 +4,7 @@ import android.app.WallpaperManager
 import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -127,6 +128,7 @@ import com.bandori.pet.voice.BuiltinVoiceManager
 import com.bandori.pet.voice.VoiceSamples
 import com.bandori.pet.wallpaper.Live2DWallpaperService
 import com.bandori.pet.wallpaper.WallpaperBackup
+import com.bandori.pet.wallpaper.WallpaperUtils
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -203,17 +205,6 @@ fun SettingsScreen(
                 onEnabledChanged = { enabled ->
                     wallpaperEnabled = enabled
                     setWallpaperEnabled(appContext, enabled)
-                    if (enabled) {
-                        scope.launch {
-                            if (loadWallpaperBackgroundUri(appContext).isNullOrBlank()) {
-                                val uri = withContext(Dispatchers.IO) {
-                                    WallpaperBackup.captureAndUseAsBackground(appContext)
-                                }
-                                if (uri != null) wallpaperBackgroundUri = uri
-                            }
-                            openLiveWallpaperPicker(context)
-                        }
-                    }
                 },
                 onBackgroundChanged = { uri ->
                     wallpaperBackgroundUri = uri
@@ -1058,12 +1049,18 @@ private fun WallpaperSettingsCard(
     onAdjustPosition: () -> Unit,
 ) {
     val context = LocalContext.current
+    val appContext = context.applicationContext
     val backgroundPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
-        persistBackgroundUri(context.applicationContext, uri)
+        persistBackgroundUri(appContext, uri)
         onBackgroundChanged(uri.toString())
     }
+    val scope = rememberCoroutineScope()
     val wallpaperStatus = remember { WallpaperBackup.wallpaperStatus(context.applicationContext) }
+    var showAllFilesAccessDialog by remember { mutableStateOf(false) }
+    val allFilesAccessLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        showAllFilesAccessDialog = false
+    }
 
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -1088,7 +1085,29 @@ private fun WallpaperSettingsCard(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                Switch(checked = enabled, onCheckedChange = onEnabledChanged)
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = { newEnabled ->
+                        onEnabledChanged(newEnabled)
+                        if (newEnabled) {
+                            scope.launch {
+                                if (loadWallpaperBackgroundUri(appContext).isNullOrBlank()) {
+                                    val result = withContext(Dispatchers.IO) {
+                                        WallpaperBackup.captureAndUseAsBackgroundResult(appContext)
+                                    }
+                                    when (result) {
+                                        is WallpaperBackup.WallpaperCaptureResult.Success ->
+                                            onBackgroundChanged(result.uri)
+                                        WallpaperBackup.WallpaperCaptureResult.NeedAllFilesAccess ->
+                                            showAllFilesAccessDialog = true
+                                        WallpaperBackup.WallpaperCaptureResult.Failed -> Unit
+                                    }
+                                }
+                                openLiveWallpaperPicker(context)
+                            }
+                        }
+                    },
+                )
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1151,6 +1170,25 @@ private fun WallpaperSettingsCard(
                     }
                 }
             }
+        }
+        if (showAllFilesAccessDialog) {
+            AllFilesAccessPermissionDialog(
+                onDismiss = { showAllFilesAccessDialog = false },
+                onGrant = {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                        .setData(Uri.parse("package:${appContext.packageName}"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    runCatching { allFilesAccessLauncher.launch(intent) }
+                        .onFailure {
+                            showAllFilesAccessDialog = false
+                            Toast.makeText(
+                                appContext,
+                                "无法打开授权页，请到：系统设置 → 应用 → 权限 → 所有文件访问",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                },
+            )
         }
     }
 }
@@ -1233,6 +1271,10 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
     val context = LocalContext.current
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
+    var showAllFilesAccessDialog by remember { mutableStateOf(false) }
+    val allFilesAccessLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        showAllFilesAccessDialog = false
+    }
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("保留系统原壁纸", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -1245,24 +1287,37 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
                 FilledTonalButton(
                     onClick = {
                         scope.launch {
-                            val uri = withContext(Dispatchers.IO) {
-                                WallpaperBackup.captureAndUseAsBackground(appContext)
+                            val result = withContext(Dispatchers.IO) {
+                                WallpaperBackup.captureAndUseAsBackgroundResult(appContext)
                             }
-                            onCaptured(uri)
-                            Toast.makeText(
-                                appContext,
-                                if (uri != null) {
-                                    "已捕获原壁纸并设为背景"
-                                } else {
+                            when (result) {
+                                is WallpaperBackup.WallpaperCaptureResult.Success -> {
+                                    onCaptured(result.uri)
+                                    Toast.makeText(
+                                        appContext,
+                                        if (result.fromBackup) {
+                                            "已复用旧备份作为背景（本次未能读取当前壁纸）"
+                                        } else {
+                                            "已捕获原壁纸并设为背景"
+                                        },
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
+                                WallpaperBackup.WallpaperCaptureResult.NeedAllFilesAccess ->
+                                    showAllFilesAccessDialog = true
+                                WallpaperBackup.WallpaperCaptureResult.Failed -> {
                                     val info = WallpaperManager.getInstance(appContext).wallpaperInfo
-                                    if (info != null) {
-                                        "当前系统壁纸是动态壁纸（${info.component.flattenToShortString()}）。要恢复原静态壁纸：系统设置 → 壁纸 → 换成静态图片；或直接用「壁纸背景 → 选择照片」"
-                                    } else {
-                                        "系统限制无法读取壁纸，请直接用「壁纸背景 → 选择照片」"
-                                    }
-                                },
-                                Toast.LENGTH_LONG,
-                            ).show()
+                                    Toast.makeText(
+                                        appContext,
+                                        if (info != null) {
+                                            "当前系统壁纸是动态壁纸（${info.component.flattenToShortString()}）。要恢复原静态壁纸：系统设置 → 壁纸 → 换成静态图片；或直接用「壁纸背景 → 选择照片」"
+                                        } else {
+                                            "系统限制无法读取壁纸，请直接用「壁纸背景 → 选择照片」"
+                                        },
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
+                            }
                         }
                     },
                 ) {
@@ -1277,8 +1332,48 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
                     Text("恢复系统壁纸")
                 }
             }
+            if (showAllFilesAccessDialog) {
+                AllFilesAccessPermissionDialog(
+                    onDismiss = { showAllFilesAccessDialog = false },
+                    onGrant = {
+                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                            .setData(Uri.parse("package:${appContext.packageName}"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        runCatching { allFilesAccessLauncher.launch(intent) }
+                            .onFailure {
+                                showAllFilesAccessDialog = false
+                                Toast.makeText(
+                                    appContext,
+                                    "无法打开授权页，请到：系统设置 → 应用 → 权限 → 所有文件访问",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                    },
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun AllFilesAccessPermissionDialog(onDismiss: () -> Unit, onGrant: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("需要「所有文件访问」权限") },
+        text = {
+            Text(
+                "Android 13 及以上系统限制普通应用读取系统壁纸。\n\n" +
+                    "请授予「所有文件访问」权限，" +
+                    "授权返回后重新点击「使用原壁纸为背景」即可捕获当前壁纸。",
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onGrant) { Text("去授权") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }
 
 @Composable
