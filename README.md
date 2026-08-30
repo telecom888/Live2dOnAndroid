@@ -16,3 +16,7 @@
 模型目录：live2d-widget-mygo/public/model/
 
 注意：模型来自 BanG Dream! 游戏数据包，仅供学习交流，请勿商用。
+
+## 参考文档
+
+- docs/BiliPai-技术栈与UI参考.md：BiliPai 参考项目的技术栈、UI 风格与动效设计说明
