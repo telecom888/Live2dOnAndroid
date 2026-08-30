@@ -8,16 +8,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,6 +27,7 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,20 +40,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.bangdream.pet.data.DataRepository
 import com.bangdream.pet.data.ModelChoice
+import com.bangdream.pet.live2d.MultiLive2DRenderView
 import com.bangdream.pet.ui.design.VisualGuard
 import com.bangdream.pet.ui.design.appEntrance
 import com.bangdream.pet.ui.design.appHazeSource
 import com.bangdream.pet.ui.design.appLiquidGlass
 import com.bangdream.pet.ui.design.appPressScale
 import com.bangdream.pet.ui.design.rememberLiquidGlassState
+import com.bangdream.pet.ui.live2d.ContentUriImage
 import com.bangdream.pet.ui.theme.BangDreamPetTheme
-import com.bangdream.pet.wallpaper.WallpaperHitArea
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -85,6 +86,10 @@ private fun MultiWallpaperManageScreen(onClose: () -> Unit) {
     var models by remember { mutableStateOf(WallpaperMultiModelSettings.load(appContext).models) }
     var showPicker by remember { mutableStateOf(false) }
     var availableChoices by remember { mutableStateOf<List<ModelChoice>>(emptyList()) }
+    var status by remember { mutableStateOf<String?>(null) }
+    val backgroundUri = remember { loadWallpaperBackgroundUri(appContext) }
+    val renderSettings = remember { RenderSettings.load(appContext) }
+
     fun saveAndClose() {
         WallpaperMultiModelSettings(models).save(appContext)
         onClose()
@@ -103,80 +108,123 @@ private fun MultiWallpaperManageScreen(onClose: () -> Unit) {
                 ),
             ),
     ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        Column(
+            modifier = Modifier.fillMaxSize().statusBarsPadding().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item {
-                ElevatedCard(
-                    Modifier
-                        .fillMaxWidth()
-                        .appEntrance()
-                        .appLiquidGlass(hazeState, enabled = glassEnabled),
-                ) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("桌面模型管理", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text(
-                            "开启「多模型」模式后，这里摆放的角色会同时显示在桌面上。",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            }
-            if (models.isNotEmpty()) {
-                item {
-                    SchematicPreview(models)
-                }
-            }
-            item {
-                FilledTonalButton(
-                    modifier = Modifier.fillMaxWidth().appPressScale().appEntrance(delayMillis = 44),
-                    onClick = {
-                        scope.launch {
-                            availableChoices = withContext(Dispatchers.IO) {
-                                val repo = DataRepository(appContext)
-                                val data = repo.load()
-                                data.bands.flatMap { band ->
-                                    band.characters.flatMap { cid ->
-                                        data.characters[cid]?.let { ch -> repo.availableModels(ch) } ?: emptyList()
-                                    }
-                                }.distinctBy { it.modelAssetPath }
-                            }
-                            showPicker = true
-                        }
-                    },
-                ) { Text("添加模型") }
-            }
-            if (models.isEmpty()) {
-                item {
+            // 顶栏
+            ElevatedCard(
+                Modifier
+                    .fillMaxWidth()
+                    .appEntrance()
+                    .appLiquidGlass(hazeState, enabled = glassEnabled),
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("桌面模型管理", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        "还没有桌面模型。点击「添加模型」选择角色与服装。",
+                        "预览中可直接拖动模型调整位置、双指缩放大小；下方列表可添加/移除/启停。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(8.dp),
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
             }
-            items(models, key = { it.id }) { placement ->
-                val index = models.indexOfFirst { it.id == placement.id }
-                PlacementCard(
-                    modifier = Modifier.appEntrance(delayMillis = (index * 22).coerceAtMost(160)),
-                    placement = placement,
-                    title = if (placement.characterName.isBlank()) placement.characterId else "${placement.characterName} / ${placement.costumeName}",
-                    onChanged = { updated ->
-                        models = models.mapIndexed { i, item -> if (i == index) updated else item }
-                    },
-                    onRemove = {
-                        models = models.filterNot { it.id == placement.id }
-                    },
-                )
-            }
-            item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TextButton(modifier = Modifier.weight(1f).appPressScale(), onClick = onClose) { Text("取消") }
-                    Button(modifier = Modifier.weight(1f).appPressScale(), onClick = { saveAndClose() }) { Text("保存") }
+
+            // 实时预览
+            ElevatedCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .clip(MaterialTheme.shapes.large),
+                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            ) {
+                Box(Modifier.fillMaxSize()) {
+                    ContentUriImage(
+                        uri = backgroundUri,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { viewContext ->
+                            MultiLive2DRenderView(viewContext).apply {
+                                statusChanged = { status = it }
+                                placementsChanged = { list -> models = list }
+                                setRenderOptions(renderSettings.fpsLimit, renderSettings.vsyncEnabled)
+                                setRenderResolution(renderSettings.renderResolution)
+                                setPlacements(models)
+                            }
+                        },
+                        update = { view ->
+                            view.statusChanged = { status = it }
+                            view.placementsChanged = { list -> models = list }
+                            view.setRenderOptions(renderSettings.fpsLimit, renderSettings.vsyncEnabled)
+                            view.setRenderResolution(renderSettings.renderResolution)
+                            view.setPlacements(models)
+                        },
+                        onRelease = MultiLive2DRenderView::release,
+                    )
+                    status?.let { message ->
+                        Surface(
+                            modifier = Modifier.align(Alignment.Center),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                            shape = RoundedCornerShape(18.dp),
+                            tonalElevation = 6.dp,
+                        ) {
+                            Text(text = message, modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp))
+                        }
+                    }
                 }
+            }
+
+            // 模型列表
+            if (models.isNotEmpty()) {
+                ElevatedCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(230.dp)
+                        .appLiquidGlass(hazeState, enabled = glassEnabled),
+                ) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(models, key = { it.id }) { placement ->
+                            val index = models.indexOfFirst { it.id == placement.id }
+                            PlacementRow(
+                                placement = placement,
+                                title = if (placement.characterName.isBlank()) placement.characterId else "${placement.characterName} / ${placement.costumeName}",
+                                modifier = Modifier.appEntrance(delayMillis = (index * 22).coerceAtMost(160)),
+                                onChanged = { updated -> models = models.mapIndexed { i, item -> if (i == index) updated else item } },
+                                onRemove = { models = models.filterNot { it.id == placement.id } },
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 添加 + 操作
+            FilledTonalButton(
+                modifier = Modifier.fillMaxWidth().appPressScale().appEntrance(delayMillis = 44),
+                onClick = {
+                    scope.launch {
+                        availableChoices = withContext(Dispatchers.IO) {
+                            val repo = DataRepository(appContext)
+                            val data = repo.load()
+                            data.bands.flatMap { band ->
+                                band.characters.flatMap { cid ->
+                                    data.characters[cid]?.let { ch -> repo.availableModels(ch) } ?: emptyList()
+                                }
+                            }.distinctBy { it.modelAssetPath }
+                        }
+                        showPicker = true
+                    }
+                },
+            ) { Text(if (models.isEmpty()) "还没有桌面模型，点击添加" else "添加模型") }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                TextButton(modifier = Modifier.weight(1f).appPressScale(), onClick = onClose) { Text("取消") }
+                Button(modifier = Modifier.weight(1f).appPressScale(), onClick = { saveAndClose() }) { Text("保存") }
             }
         }
     }
@@ -204,113 +252,50 @@ private fun MultiWallpaperManageScreen(onClose: () -> Unit) {
 }
 
 @Composable
-private fun SchematicPreview(models: List<WallpaperModelPlacement>) {
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("摆放示意图", fontWeight = FontWeight.SemiBold)
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(240.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF0F1720)),
-            ) {
-                val scaleX = maxWidth.value / 1080f
-                val scaleY = maxHeight.value / 2400f
-                models.filter { it.enabled }.forEach { placement ->
-                    val rect = WallpaperHitArea.computeRect(
-                        surfaceWidth = 1080,
-                        surfaceHeight = 2400,
-                        transform = placement.toTransform(),
-                        canvas = null,
-                    )
-                    Box(
-                        modifier = Modifier
-                            .offset(x = (rect.left * scaleX).dp, y = (rect.top * scaleY).dp)
-                            .size(width = (rect.width() * scaleX).dp, height = (rect.height() * scaleY).dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
-                            .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            (if (placement.characterName.isBlank()) placement.characterId else placement.characterName).take(2),
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
-                }
-            }
-            Text(
-                "预览为示意图（位置/大小近似），实际以桌面渲染为准。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-    }
-}
-
-@Composable
-private fun PlacementCard(
-    modifier: Modifier = Modifier,
+private fun PlacementRow(
     placement: WallpaperModelPlacement,
     title: String,
+    modifier: Modifier = Modifier,
     onChanged: (WallpaperModelPlacement) -> Unit,
     onRemove: () -> Unit,
 ) {
     ElevatedCard(
         modifier = modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.large),
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.94f)),
+            .clip(MaterialTheme.shapes.medium)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.9f)),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1)
                     Text(
                         if (placement.enabled) "显示中" else "已隐藏",
                         color = if (placement.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.labelSmall,
                     )
                 }
                 Switch(checked = placement.enabled, onCheckedChange = { onChanged(placement.copy(enabled = it)) })
                 TextButton(modifier = Modifier.appPressScale(), onClick = onRemove) { Text("移除") }
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("左右", modifier = Modifier.width(44.dp), style = MaterialTheme.typography.bodySmall)
-                Slider(
-                    modifier = Modifier.weight(1f),
-                    value = placement.offsetX,
-                    onValueChange = { onChanged(placement.copy(offsetX = it)) },
-                    valueRange = -1.2f..1.2f,
-                )
-                Text("%.2f".format(placement.offsetX), modifier = Modifier.width(44.dp), style = MaterialTheme.typography.bodySmall)
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("上下", modifier = Modifier.width(44.dp), style = MaterialTheme.typography.bodySmall)
-                Slider(
-                    modifier = Modifier.weight(1f),
-                    value = placement.offsetY,
-                    onValueChange = { onChanged(placement.copy(offsetY = it)) },
-                    valueRange = -1.2f..1.2f,
-                )
-                Text("%.2f".format(placement.offsetY), modifier = Modifier.width(44.dp), style = MaterialTheme.typography.bodySmall)
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("大小", modifier = Modifier.width(44.dp), style = MaterialTheme.typography.bodySmall)
+                Text("大小", modifier = Modifier.width(40.dp), style = MaterialTheme.typography.labelSmall)
                 Slider(
                     modifier = Modifier.weight(1f),
                     value = placement.scale,
                     onValueChange = { onChanged(placement.copy(scale = it)) },
                     valueRange = 0.4f..2.5f,
                 )
-                Text("%.2f".format(placement.scale), modifier = Modifier.width(44.dp), style = MaterialTheme.typography.bodySmall)
+                Text("%.2f".format(placement.scale), modifier = Modifier.width(40.dp), style = MaterialTheme.typography.labelSmall)
             }
-            TextButton(
-                onClick = { onChanged(placement.copy(offsetX = 0f, offsetY = 0f, scale = 1f)) },
-            ) { Text("重置位置") }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("重置", modifier = Modifier.width(40.dp), style = MaterialTheme.typography.labelSmall)
+                TextButton(
+                    onClick = { onChanged(placement.copy(offsetX = 0f, offsetY = 0f, scale = 1f)) },
+                ) { Text("恢复居中") }
+                Spacer(Modifier.weight(1f))
+            }
         }
     }
 }
