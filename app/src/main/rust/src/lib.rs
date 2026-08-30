@@ -242,6 +242,32 @@ pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_setPaused(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_attachSurface(
+    mut env: JNIEnv<'_>,
+    _this: JObject<'_>,
+    handle: jlong,
+    surface: JObject<'_>,
+) -> jboolean {
+    jni_catch(JNI_FALSE, || {
+        let Some(renderer) = renderer(handle) else {
+            return JNI_FALSE;
+        };
+        if surface.is_null() {
+            return JNI_FALSE;
+        }
+        let window = match unsafe { ffi::NativeWindow::from_surface(env.get_raw(), surface.as_raw()) } {
+            Ok(window) => window,
+            Err(error) => {
+                renderer.set_error(error);
+                return JNI_FALSE;
+            }
+        };
+        renderer.set_surface(window);
+        JNI_TRUE
+    })
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_bangdream_pet_live2d_NativeLive2D_setRenderScale(
     _env: JNIEnv<'_>,
     _this: JObject<'_>,

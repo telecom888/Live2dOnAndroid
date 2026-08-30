@@ -30,6 +30,8 @@ object NativeLive2D {
     external fun loadModel(handle: Long, modelPath: String, resourcePaths: Array<String>, resourceBytes: Array<ByteArray>): Boolean
     external fun setRenderOptions(handle: Long, fpsLimit: Int, vsyncEnabled: Boolean)
     external fun setPaused(handle: Long, paused: Boolean)
+    /** surface 被系统销毁重建后，把渲染器重新绑定到新 Surface（保留模型/动作状态）。 */
+    external fun attachSurface(handle: Long, surface: Surface): Boolean
     external fun setRenderScale(handle: Long, scale: Float)
     external fun setFpsDisplayEnabled(handle: Long, enabled: Boolean)
     external fun setTransform(handle: Long, offsetX: Float, offsetY: Float, scale: Float)

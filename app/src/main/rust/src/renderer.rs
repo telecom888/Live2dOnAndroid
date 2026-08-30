@@ -58,6 +58,7 @@ struct ControlState {
     pending_touch: Option<(f32, f32)>,
     pending_look_at: bool,
     look_at: (f32, f32),
+    pending_surface: Option<Arc<ffi::NativeWindow>>,
     pending_transform: bool,
     transform: (f32, f32, f32),
     mouth_open: f32,
@@ -96,6 +97,7 @@ impl ControlState {
             pending_touch: None,
             pending_look_at: false,
             look_at: (0.5, 0.5),
+            pending_surface: None,
             pending_transform: false,
             transform: (0.0, 0.0, 1.0),
             mouth_open: 0.0,
@@ -121,6 +123,7 @@ impl ControlState {
             transform: self.pending_transform.then_some(self.transform),
             mouth_open: self.mouth_open,
             mouth_form: self.mouth_form,
+            surface: self.pending_surface.take(),
         };
         self.pending_resize = false;
         self.pending_render_options = false;
@@ -146,6 +149,7 @@ struct FrameCommands {
     transform: Option<(f32, f32, f32)>,
     mouth_open: f32,
     mouth_form: f32,
+    surface: Option<Arc<ffi::NativeWindow>>,
 }
 
 struct SharedState {
@@ -283,6 +287,17 @@ impl RendererHandle {
         self.shared.wake.notify_all();
     }
 
+    /// 绑定新的 ANativeWindow（surface 被系统销毁重建后调用），保留模型/动作状态。
+    pub fn set_surface(&self, window: ffi::NativeWindow) {
+        {
+            let mut state = lock_unpoisoned(&self.shared.control);
+            let window = Arc::new(window);
+            window.set_buffers_geometry(state.width.max(1), state.height.max(1));
+            state.pending_surface = Some(window);
+        }
+        self.shared.wake.notify_all();
+    }
+
     pub fn set_render_scale(&self, scale: f32) {
         let (render_width, render_height) = {
             let mut state = lock_unpoisoned(&self.shared.control);
@@ -380,6 +395,7 @@ struct EglSession {
     display: ffi::EGLDisplay,
     surface: ffi::EGLSurface,
     context: ffi::EGLContext,
+    config: ffi::EGLConfig,
 }
 
 impl EglSession {
@@ -388,6 +404,7 @@ impl EglSession {
             display: ptr::null_mut(),
             surface: ptr::null_mut(),
             context: ptr::null_mut(),
+            config: ptr::null_mut(),
         };
         session.display = unsafe { ffi::eglGetDisplay(ptr::null_mut()) };
         if session.display.is_null()
@@ -434,6 +451,7 @@ impl EglSession {
         {
             return Err("找不到支持 OpenGL ES 2.0 的 EGLConfig".to_owned());
         }
+        session.config = config;
 
         session.surface = unsafe {
             ffi::eglCreateWindowSurface(session.display, config, window.as_ptr(), ptr::null())
@@ -476,6 +494,38 @@ impl EglSession {
     fn swap_buffers(&self) -> bool {
         unsafe { ffi::eglSwapBuffers(self.display, self.surface) == ffi::EGL_TRUE }
     }
+
+    /// surface 被系统销毁后重绑新的 ANativeWindow：保留 display/context/GL 资源与 Lua 状态，
+    /// 只销毁旧 EGL surface 并用新 window 重建，随后重新激活同一 context。
+    fn rebind(&mut self, window: &ffi::NativeWindow) -> Result<(), String> {
+        unsafe {
+            if !self.surface.is_null() {
+                ffi::eglMakeCurrent(
+                    self.display,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                );
+                ffi::eglDestroySurface(self.display, self.surface);
+                self.surface = ptr::null_mut();
+            }
+            self.surface = ffi::eglCreateWindowSurface(
+                self.display,
+                self.config,
+                window.as_ptr(),
+                ptr::null(),
+            );
+            if self.surface.is_null() {
+                return Err("EGL 窗口 Surface 重绑失败".to_owned());
+            }
+            if ffi::eglMakeCurrent(self.display, self.surface, self.surface, self.context)
+                != ffi::EGL_TRUE
+            {
+                return Err("EGL Surface 重绑后上下文激活失败".to_owned());
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Drop for EglSession {
@@ -508,7 +558,7 @@ fn report_result(shared: &SharedState, result: Result<(), String>) {
 
 fn render_loop(shared: &Arc<SharedState>, window: &ffi::NativeWindow, runtime_root: &str) {
     let initial_vsync = lock_unpoisoned(&shared.control).vsync_enabled;
-    let egl = match EglSession::create(window, initial_vsync) {
+    let mut egl = match EglSession::create(window, initial_vsync) {
         Ok(egl) => egl,
         Err(error) => {
             shared.set_error(error);
@@ -549,6 +599,11 @@ fn render_loop(shared: &Arc<SharedState>, window: &ffi::NativeWindow, runtime_ro
             .clamp(0.0, 0.1);
         previous_frame_start = frame_started;
 
+        if let Some(new_window) = commands.surface {
+            if let Err(error) = egl.rebind(new_window.as_ref()) {
+                shared.set_error(error);
+            }
+        }
         if commands.should_update_render_options {
             egl.set_vsync(commands.vsync_enabled);
         }

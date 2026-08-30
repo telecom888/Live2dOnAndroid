@@ -171,28 +171,48 @@ class Live2DWallpaperService : WallpaperService() {
 
         override fun surfaceCreated(holder: SurfaceHolder) {
             surfaceReady = true
-            ensureRenderer()
+            if (handle != 0L) {
+                // surface 被系统销毁重建：重绑新 Surface，保留 Lua 模型/动作状态，不重新加载模型
+                if (NativeLive2D.attachSurface(handle, holder.surface)) {
+                    NativeLive2D.resize(handle, width, height)
+                    if (visible) NativeLive2D.setPaused(handle, false)
+                } else {
+                    Log.e(TAG, "attachSurface failed, recreate renderer")
+                    stopRenderer()
+                    ensureRenderer()
+                }
+            } else {
+                ensureRenderer()
+            }
         }
 
         override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
             this.width = width.coerceAtLeast(1)
             this.height = height.coerceAtLeast(1)
-            if (handle != 0L) NativeLive2D.resize(handle, this.width, this.height)
             refreshHitArea()
-            ensureRenderer()
+            if (handle != 0L) {
+                NativeLive2D.resize(handle, this.width, this.height)
+                if (visible) NativeLive2D.setPaused(handle, false)
+            } else {
+                ensureRenderer()
+            }
         }
 
         override fun surfaceDestroyed(holder: SurfaceHolder) {
             surfaceReady = false
-            stopRenderer()
+            // 不销毁 renderer：暂停并保留模型/动作状态，surfaceCreated 后重绑新 Surface 继续播放
+            if (handle != 0L) NativeLive2D.setPaused(handle, true)
         }
 
         override fun onVisibilityChanged(visible: Boolean) {
             this.visible = visible
             if (visible) {
-                // 恢复渲染但不重建：保留当前模型/动作状态
-                if (handle != 0L) NativeLive2D.setPaused(handle, false)
-                ensureRenderer()
+                // 恢复渲染但不重建、不重新加载模型：保留当前模型/动作状态
+                if (handle != 0L) {
+                    NativeLive2D.setPaused(handle, false)
+                } else if (surfaceReady) {
+                    ensureRenderer()
+                }
             } else {
                 // 被覆盖时只暂停（模型/动作状态保留在 native 侧），回到桌面立即恢复，不重置动作
                 idleJob?.cancel()
