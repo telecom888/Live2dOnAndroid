@@ -8,6 +8,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -39,6 +42,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -54,6 +60,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,6 +68,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.bandori.pet.DarkModeSetting
 import com.bandori.pet.FloatingLive2DItem
@@ -68,6 +76,12 @@ import com.bandori.pet.FloatingOverlaySettings
 import com.bandori.pet.I18n
 import com.bandori.pet.RenderResolution
 import com.bandori.pet.RenderSettings
+import com.bandori.pet.ui.design.VisualGuard
+import com.bandori.pet.ui.design.appEntrance
+import com.bandori.pet.ui.design.appHazeSource
+import com.bandori.pet.ui.design.appLiquidGlass
+import com.bandori.pet.ui.design.appPressScale
+import com.bandori.pet.ui.design.rememberLiquidGlassState
 import com.bandori.pet.ThemeSettings
 import android.widget.Toast
 import com.bandori.pet.ANIMATION_CHOICES
@@ -75,7 +89,10 @@ import com.bandori.pet.VOICE_PROVIDER_CUSTOM
 import com.bandori.pet.VOICE_PROVIDER_MIMO
 import com.bandori.pet.VoiceSettings
 import com.bandori.pet.loadBubbleEnabled
+import com.bandori.pet.BuiltinVoiceLanguage
 import com.bandori.pet.loadBuiltinVoiceEnabled
+import com.bandori.pet.loadBuiltinVoiceLanguage
+import com.bandori.pet.saveBuiltinVoiceLanguage
 import com.bandori.pet.saveBuiltinVoiceEnabled
 import com.bandori.pet.saveBubbleEnabled
 import com.bandori.pet.addFloatingLive2DItem
@@ -122,6 +139,7 @@ fun SettingsScreen(
     onThemeSettingsChanged: (ThemeSettings) -> Unit,
     renderSettings: RenderSettings,
     onRenderSettingsChanged: (RenderSettings) -> Unit,
+    topInset: Dp = 0.dp,
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
@@ -149,7 +167,7 @@ fun SettingsScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 4.dp, bottom = 20.dp),
+        contentPadding = PaddingValues(top = topInset + 4.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item(key = "theme") {
@@ -231,7 +249,7 @@ private fun CompanionSettingsEntryCard() {
     }
     Card(
         onClick = { launcher.launch(Intent(context, CompanionSettingsActivity::class.java)) },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().appPressScale(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
@@ -266,7 +284,7 @@ private fun LlmSettingsEntryCard() {
         onClick = {
             launcher.launch(Intent(context, LlmSettingsActivity::class.java))
         },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().appPressScale(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
@@ -303,41 +321,17 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
     var clearAllFailed by remember { mutableStateOf(false) }
     var mimoKey by remember { mutableStateOf(loadMimoApiKey(appContext)) }
     val scope = rememberCoroutineScope()
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(I18n.t("settings_llm_title"), style = MaterialTheme.typography.titleLarge)
-                        Text(
-                            I18n.t("settings_llm_desc"),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Outlined.ArrowBack, contentDescription = I18n.t("back"))
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
-        },
-    ) { scaffoldPadding ->
+    val hazeState = rememberLiquidGlassState()
+    val glassEnabled = ThemeSettings.load(appContext).liquidGlassEnabled && VisualGuard.supportsLiquidGlass(appContext)
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    Box(Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(scaffoldPadding),
+                .appHazeSource(hazeState),
             contentPadding = PaddingValues(
                 start = 16.dp,
-                top = 8.dp,
+                top = topInset + 72.dp,
                 end = 16.dp,
                 bottom = 20.dp,
             ),
@@ -483,7 +477,6 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
                 }
             }
         }
-    }
 
     if (confirmClearAll) {
         AlertDialog(
@@ -513,6 +506,31 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
             confirmButton = {
                 TextButton(onClick = { clearAllFailed = false }) { Text(I18n.t("confirm")) }
             },
+        )
+    }
+
+    CenterAlignedTopAppBar(
+            modifier = Modifier.align(Alignment.TopCenter).appLiquidGlass(hazeState, enabled = glassEnabled),
+            title = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(I18n.t("settings_llm_title"), style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        I18n.t("settings_llm_desc"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            },
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Outlined.ArrowBack, contentDescription = I18n.t("back"))
+                }
+            },
+            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                containerColor = Color.Transparent,
+            ),
         )
     }
 }
@@ -557,6 +575,26 @@ private fun ThemeSettingsCard(
                     checked = settings.dynamicColorEnabled,
                     onCheckedChange = { enabled ->
                         onSettingsChanged(settings.copy(dynamicColorEnabled = enabled))
+                    },
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("液态玻璃（毛玻璃）", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (settings.liquidGlassEnabled) "已开启，低配设备自动降级" else "已关闭",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                Switch(
+                    checked = settings.liquidGlassEnabled,
+                    onCheckedChange = { enabled ->
+                        onSettingsChanged(settings.copy(liquidGlassEnabled = enabled))
                     },
                 )
             }
@@ -1107,7 +1145,7 @@ private fun SettingsSectionCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().appEntrance(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1456,10 +1494,12 @@ private fun VoiceSamplesCard(selectedModel: ModelChoice?) {
 }
 
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BuiltinVoiceCard(selectedModel: ModelChoice?) {
     val context = LocalContext.current
     val appContext = context.applicationContext
+    var language by remember { mutableStateOf(loadBuiltinVoiceLanguage(appContext)) }
     var generated by remember { mutableStateOf(0) }
     var busy by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf("") }
@@ -1468,24 +1508,38 @@ private fun BuiltinVoiceCard(selectedModel: ModelChoice?) {
     var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(selectedModel?.characterId, refreshTick) {
+    LaunchedEffect(selectedModel?.characterId, language, refreshTick) {
         if (selectedModel != null) {
-            generated = BuiltinVoiceManager.generatedCount(appContext, selectedModel.characterId)
+            generated = BuiltinVoiceManager.generatedCount(appContext, selectedModel.characterId, language)
         }
     }
 
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("内置语音（台词转语音）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                BuiltinVoiceLanguage.entries.forEachIndexed { index, option ->
+                    SegmentedButton(
+                        selected = language == option,
+                        onClick = {
+                            language = option
+                            saveBuiltinVoiceLanguage(appContext, option)
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = BuiltinVoiceLanguage.entries.size),
+                    ) { Text(option.label) }
+                }
+            }
             Text(
-                selectedModel?.let { "使用 ${it.characterName} 的参考项目台词（${it.characterName} 共 ${BuiltinVoiceManager.loadLines(appContext, it.characterId).size} 条）批量合成缓存" } ?: "请先选择角色",
+                selectedModel?.let {
+                    "使用 ${it.characterName} 的${if (language == BuiltinVoiceLanguage.JA) "日语" else "中文"}台词（共 ${BuiltinVoiceManager.loadLines(appContext, it.characterId, language).size} 条）批量合成缓存"
+                } ?: "请先选择角色",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
             if (busy) {
                 Text("生成中：$progress", color = MaterialTheme.colorScheme.primary)
             } else {
-                Text("已生成 $generated 条语音", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("已生成 $generated 条语音（${language.label}）", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 FilledTonalButton(
@@ -1495,13 +1549,13 @@ private fun BuiltinVoiceCard(selectedModel: ModelChoice?) {
                         busy = true
                         progress = "准备中…"
                         job = scope.launch {
-                            val done = BuiltinVoiceManager.generate(appContext, charId, 30) { d, t ->
+                            val done = BuiltinVoiceManager.generate(appContext, charId, 30, language) { d, t ->
                                 progress = "$d/$t"
                             }
                             busy = false
                             progress = ""
                             refreshTick++
-                            Toast.makeText(appContext, if (done > 0) "已生成 $done 条内置语音" else "生成失败：请检查语音设置/样本/网络", Toast.LENGTH_LONG).show()
+                            Toast.makeText(appContext, if (done > 0) "已生成 $done 条${language.label}语音" else "生成失败：请检查语音设置/样本/网络", Toast.LENGTH_LONG).show()
                         }
                     },
                 ) { Text(if (generated > 0) "再生成 30 条" else "生成前 30 条") }
@@ -1511,9 +1565,9 @@ private fun BuiltinVoiceCard(selectedModel: ModelChoice?) {
                 TextButton(
                     enabled = selectedModel != null && !busy && generated > 0,
                     onClick = {
-                        BuiltinVoiceManager.clear(appContext, selectedModel!!.characterId)
+                        BuiltinVoiceManager.clear(appContext, selectedModel!!.characterId, language)
                         refreshTick++
-                        Toast.makeText(appContext, "已清空", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(appContext, "已清空（${language.label}）", Toast.LENGTH_SHORT).show()
                     },
                 ) { Text("清空") }
             }
@@ -1525,10 +1579,11 @@ private fun BuiltinVoiceCard(selectedModel: ModelChoice?) {
                 Switch(checked = builtinEnabled, onCheckedChange = { builtinEnabled = it; saveBuiltinVoiceEnabled(appContext, it) })
             }
             Text(
-                "提示：生成使用「语音合成」卡片配置的服务商与「语音样本」卡片选择的音色。",
+                "提示：中文/日本語缓存相互独立，切换语言后需分别生成。生成使用「语音合成」卡片配置的服务商与「语音样本」卡片选择的音色。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
     }
 }
+

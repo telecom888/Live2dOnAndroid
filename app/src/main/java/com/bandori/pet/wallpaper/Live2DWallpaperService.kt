@@ -26,6 +26,7 @@ import com.bandori.pet.chat.WallpaperBubbleService
 import com.bandori.pet.chat.WallpaperChatActivity
 import com.bandori.pet.loadBubbleEnabled
 import com.bandori.pet.loadBuiltinVoiceEnabled
+import com.bandori.pet.loadBuiltinVoiceLanguage
 import com.bandori.pet.loadIdleAnimationEnabled
 import com.bandori.pet.loadSelectedCharacterId
 import com.bandori.pet.loadIdleAnimations
@@ -279,7 +280,11 @@ class Live2DWallpaperService : WallpaperService() {
             if (handle == 0L || !visible) return
             if (loadBuiltinVoiceEnabled(applicationContext)) {
                 val charId = loadSelectedCharacterId(applicationContext)
-                val line = BuiltinVoiceManager.randomLineWithVoice(applicationContext, charId)
+                val line = BuiltinVoiceManager.randomLineWithVoice(
+                        applicationContext,
+                        charId,
+                        loadBuiltinVoiceLanguage(applicationContext),
+                    )
                 if (line != null) {
                     NativeLive2D.playAction(handle, baseMotionName(line.motion))
                     runCatching { line.wavFile?.readBytes()?.let { VoicePlayer.play(applicationContext, it) } }

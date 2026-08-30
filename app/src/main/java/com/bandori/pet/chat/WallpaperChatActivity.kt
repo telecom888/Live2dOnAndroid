@@ -114,7 +114,7 @@ private fun WallpaperChatPanel(onDismiss: () -> Unit) {
                 .fillMaxWidth(0.94f)
                 .padding(bottom = 24.dp),
             shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
             tonalElevation = 6.dp,
             shadowElevation = 12.dp,
         ) {

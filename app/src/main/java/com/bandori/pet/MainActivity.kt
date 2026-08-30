@@ -14,6 +14,9 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -45,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,6 +56,14 @@ import com.bandori.pet.data.AppData
 import com.bandori.pet.data.DataRepository
 import com.bandori.pet.data.ModelChoice
 import com.bandori.pet.data.ZstModelArchive
+import com.bandori.pet.ui.design.VisualGuard
+import com.bandori.pet.ui.design.appHazeSource
+import com.bandori.pet.ui.design.appLiquidGlass
+import com.bandori.pet.ui.design.appShimmer
+import com.bandori.pet.ui.design.emphasizedTween
+import com.bandori.pet.ui.design.expressiveTween
+import com.bandori.pet.ui.design.rememberLiquidGlassState
+import com.bandori.pet.ui.design.standardTween
 import com.bandori.pet.ui.live2d.Live2DScreen
 import com.bandori.pet.ui.model.ModelScreen
 import com.bandori.pet.ui.settings.SettingsScreen
@@ -206,15 +218,20 @@ fun BandoriPetApp(
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         val data = appData
         if (data == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+            modifier = Modifier.fillMaxSize().appShimmer(),
+            contentAlignment = Alignment.Center,
+        ) {
                 CircularProgressIndicator()
             }
         } else {
+            val hazeState = rememberLiquidGlassState()
+            val liquidGlass = themeSettings.liquidGlassEnabled && VisualGuard.supportsLiquidGlass(appContext)
+            val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp
+            Box(Modifier.fillMaxSize()) {
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
-                topBar = {
-                    AppTopBar(selectedModel = selectedModel)
-                },
+                topBar = {},
                 bottomBar = {
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -242,16 +259,17 @@ fun BandoriPetApp(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .appHazeSource(hazeState),
                 ) {
                     AnimatedContent(
                         targetState = selectedScreen,
                         transitionSpec = {
                             val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
-                            (slideInHorizontally(animationSpec = tween(240)) { width -> direction * width / 12 } +
-                                fadeIn(animationSpec = tween(200))) togetherWith
-                                (slideOutHorizontally(animationSpec = tween(180)) { width -> -direction * width / 12 } +
-                                    fadeOut(animationSpec = tween(140)))
+                            (slideInHorizontally(animationSpec = standardTween()) { width -> direction * width / 12 } +
+                                fadeIn(animationSpec = emphasizedTween())) togetherWith
+                                (slideOutHorizontally(animationSpec = expressiveTween()) { width -> -direction * width / 12 } +
+                                    fadeOut(animationSpec = expressiveTween()))
                         },
                         contentKey = { it },
                         label = "screen",
@@ -268,40 +286,48 @@ fun BandoriPetApp(
                                     }
                                 },
                             )
-                            Screen.Model -> ModelScreen(
-                                data = data,
-                                selectedBandId = selectedBandId,
-                                selectedCharacterId = selectedCharacterId,
-                                selectedModel = selectedModel,
-                                modelAssetsVersion = modelAssetsVersion,
-                                onBandSelected = { band ->
-                                    selectedBandId = band.id
-                                    band.characters.firstOrNull()?.let { characterId ->
-                                        selectCharacter(characterId)
-                                    }
-                                },
-                                onCharacterSelected = { character ->
-                                    selectCharacter(character.id)
-                                },
-                                onModelSelected = {
-                                    modelSelectionGeneration.incrementAndGet()
-                                    selectCharacterModel(it.characterId, it)
-                                },
-                                onModelAssetsChanged = {
-                                    modelAssetsVersion += 1
-                                    DataRepository.invalidateCache()
-                                },
-                            )
+                            Screen.Model -> Box(Modifier.fillMaxSize().padding(top = topInset)) {
+                                ModelScreen(
+                                    data = data,
+                                    selectedBandId = selectedBandId,
+                                    selectedCharacterId = selectedCharacterId,
+                                    selectedModel = selectedModel,
+                                    modelAssetsVersion = modelAssetsVersion,
+                                    onBandSelected = { band ->
+                                        selectedBandId = band.id
+                                        band.characters.firstOrNull()?.let { characterId ->
+                                            selectCharacter(characterId)
+                                        }
+                                    },
+                                    onCharacterSelected = { character ->
+                                        selectCharacter(character.id)
+                                    },
+                                    onModelSelected = {
+                                        modelSelectionGeneration.incrementAndGet()
+                                        selectCharacterModel(it.characterId, it)
+                                    },
+                                    onModelAssetsChanged = {
+                                        modelAssetsVersion += 1
+                                        DataRepository.invalidateCache()
+                                    },
+                                )
+                            }
                             Screen.Settings -> SettingsScreen(
                                 selectedModel = selectedModel,
                                 themeSettings = themeSettings,
                                 onThemeSettingsChanged = onThemeSettingsChanged,
                                 renderSettings = renderSettings,
                                 onRenderSettingsChanged = updateRenderSettings,
+                                topInset = topInset,
                             )
                         }
                     }
                 }
+            }
+            AppTopBar(
+                selectedModel = selectedModel,
+                modifier = Modifier.align(Alignment.TopCenter).appLiquidGlass(hazeState, enabled = liquidGlass),
+            )
             }
         }
     }
@@ -309,8 +335,14 @@ fun BandoriPetApp(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppTopBar(selectedModel: ModelChoice?) {
+private fun AppTopBar(
+    selectedModel: ModelChoice?,
+    modifier: Modifier = Modifier,
+) {
+    val appContext = LocalContext.current.applicationContext
+    val glassEnabled = ThemeSettings.load(appContext).liquidGlassEnabled && VisualGuard.supportsLiquidGlass(appContext)
     CenterAlignedTopAppBar(
+        modifier = modifier,
         title = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
@@ -328,8 +360,8 @@ private fun AppTopBar(selectedModel: ModelChoice?) {
             }
         },
         colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-            scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            containerColor = if (glassEnabled) Color.Transparent else MaterialTheme.colorScheme.surface,
+            scrolledContainerColor = if (glassEnabled) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer,
         ),
     )
 }

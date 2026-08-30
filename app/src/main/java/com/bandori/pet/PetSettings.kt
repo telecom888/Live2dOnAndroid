@@ -26,6 +26,7 @@ const val KEY_WALLPAPER_OFFSET_Y = "wallpaper_offset_y"
 const val KEY_WALLPAPER_SCALE = "wallpaper_scale"
 const val KEY_DYNAMIC_COLOR_ENABLED = "dynamic_color_enabled"
 const val KEY_DARK_MODE = "dark_mode"
+const val KEY_LIQUID_GLASS_ENABLED = "liquid_glass_enabled"
 const val KEY_FLOATING_OVERLAY_ENABLED = "floating_overlay_enabled"
 const val KEY_FLOATING_OVERLAY_LOCKED = "floating_overlay_locked"
 const val KEY_FLOATING_OVERLAY_TOUCH_THROUGH = "floating_overlay_touch_through"
@@ -105,12 +106,14 @@ enum class DarkModeSetting(val value: String) {
 data class ThemeSettings(
     val dynamicColorEnabled: Boolean = false,
     val darkMode: DarkModeSetting = DarkModeSetting.System,
+    val liquidGlassEnabled: Boolean = true,
 ) {
     fun save(context: Context) {
         context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_DYNAMIC_COLOR_ENABLED, dynamicColorEnabled)
             .putString(KEY_DARK_MODE, darkMode.value)
+            .putBoolean(KEY_LIQUID_GLASS_ENABLED, liquidGlassEnabled)
             .apply()
     }
 
@@ -120,6 +123,7 @@ data class ThemeSettings(
             return ThemeSettings(
                 dynamicColorEnabled = prefs.getBoolean(KEY_DYNAMIC_COLOR_ENABLED, false),
                 darkMode = DarkModeSetting.fromValue(prefs.getString(KEY_DARK_MODE, null)),
+                liquidGlassEnabled = prefs.getBoolean(KEY_LIQUID_GLASS_ENABLED, true),
             )
         }
     }
@@ -537,4 +541,29 @@ fun loadBuiltinVoiceEnabled(context: Context): Boolean =
 fun saveBuiltinVoiceEnabled(context: Context, enabled: Boolean) {
     context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
         .edit().putBoolean(KEY_BUILTIN_VOICE_ENABLED, enabled).apply()
+}
+
+// ==================== 内置语音语言（中文 / 日本語） ====================
+const val KEY_BUILTIN_VOICE_LANGUAGE = "builtin_voice_language"
+
+enum class BuiltinVoiceLanguage(val value: String, val label: String) {
+    ZH("zh", "中文"),
+    JA("ja", "日本語"),
+    ;
+
+    companion object {
+        fun fromValue(value: String?): BuiltinVoiceLanguage =
+            entries.firstOrNull { it.value == value } ?: ZH
+    }
+}
+
+fun loadBuiltinVoiceLanguage(context: Context): BuiltinVoiceLanguage =
+    BuiltinVoiceLanguage.fromValue(
+        context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_BUILTIN_VOICE_LANGUAGE, null)
+    )
+
+fun saveBuiltinVoiceLanguage(context: Context, language: BuiltinVoiceLanguage) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putString(KEY_BUILTIN_VOICE_LANGUAGE, language.value).apply()
 }
