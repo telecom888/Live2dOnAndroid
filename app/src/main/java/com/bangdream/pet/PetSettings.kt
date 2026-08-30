@@ -458,6 +458,14 @@ fun saveLastWallpaperAction(context: Context, action: String) {
         .apply()
 }
 
+fun clearLastWallpaperAction(context: Context) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .remove(KEY_LAST_WALLPAPER_ACTION)
+        .remove(KEY_LAST_WALLPAPER_ACTION_AT)
+        .apply()
+}
+
 fun loadLastWallpaperAction(context: Context): Pair<String, Long> {
     val prefs = context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
     return (prefs.getString(KEY_LAST_WALLPAPER_ACTION, null) ?: "") to

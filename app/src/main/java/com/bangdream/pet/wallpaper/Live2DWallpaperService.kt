@@ -37,6 +37,7 @@ import com.bangdream.pet.loadBuiltinVoiceLanguage
 import com.bangdream.pet.loadIdleAnimationEnabled
 import com.bangdream.pet.loadSelectedCharacterId
 import com.bangdream.pet.loadIdleAnimations
+import com.bangdream.pet.clearLastWallpaperAction
 import com.bangdream.pet.loadLastWallpaperAction
 import com.bangdream.pet.saveLastWallpaperAction
 import com.bangdream.pet.loadIdleIntervalMs
@@ -129,7 +130,11 @@ class Live2DWallpaperService : WallpaperService() {
                     KEY_SELECTED_MODEL_ASSET_PATH,
                     KEY_WALLPAPER_BACKGROUND_URI -> scheduleRendererRestart()
                     KEY_WALLPAPER_ENABLED -> {
-                        if (isWallpaperEnabled(applicationContext)) ensureRenderer() else stopRenderer()
+                        if (isWallpaperEnabled(applicationContext)) {
+                            ensureRenderer()
+                        } else {
+                            disableModelRendering()
+                        }
                     }
                 }
             }
@@ -596,6 +601,26 @@ class Live2DWallpaperService : WallpaperService() {
 
         private fun openChatInput() {
             WallpaperChatActivity.open(applicationContext)
+        }
+
+        /**
+         * 关闭桌面渲染：保留渲染器只绘制背景，卸载全部模型并清除最近动作。
+         * 避免「关闭后残留模型最后一帧冻结图、重新开启后续播旧动作」。
+         */
+        private fun disableModelRendering() {
+            idleJob?.cancel()
+            idleJob = null
+            loadGeneration++
+            loading = false
+            clearLastWallpaperAction(applicationContext)
+            if (handle != 0L) {
+                for (slot in slotModels.keys.toList()) {
+                    NativeLive2D.unloadModelAt(handle, slot)
+                }
+            }
+            slotModels.clear()
+            modelCanvas = null
+            hitArea = null
         }
 
         private fun stopRenderer() {
