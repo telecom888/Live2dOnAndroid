@@ -1,0 +1,3 @@
+[submodule "live2d-widget-mygo"]
+	path = live2d-widget-mygo
+	url = https://github.com/panxuc/live2d-widget-mygo.git
