@@ -130,7 +130,9 @@ class Live2DWallpaperService : WallpaperService() {
                     KEY_SELECTED_MODEL_ASSET_PATH,
                     KEY_WALLPAPER_BACKGROUND_URI -> scheduleRendererRestart()
                     KEY_WALLPAPER_ENABLED -> {
-                        if (isWallpaperEnabled(applicationContext)) {
+                        val enabled = isWallpaperEnabled(applicationContext)
+                        Log.d(TAG, "wallpaper enabled changed -> $enabled handle=$handle")
+                        if (enabled) {
                             ensureRenderer()
                         } else {
                             disableModelRendering()
@@ -608,6 +610,7 @@ class Live2DWallpaperService : WallpaperService() {
          * 避免「关闭后残留模型最后一帧冻结图、重新开启后续播旧动作」。
          */
         private fun disableModelRendering() {
+            Log.d(TAG, "disableModelRendering handle=$handle slots=${slotModels.keys}")
             idleJob?.cancel()
             idleJob = null
             loadGeneration++
