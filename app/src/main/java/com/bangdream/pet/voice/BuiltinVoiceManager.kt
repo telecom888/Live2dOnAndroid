@@ -52,9 +52,9 @@ object BuiltinVoiceManager {
     fun hasGenerated(context: Context, characterId: String, language: BuiltinVoiceLanguage): Boolean =
         generatedCount(context, characterId, language) > 0
 
-    /** 预生成语音在 assets 中的路径（随版本内置）。 */
+    /** 预生成语音在 assets 中的路径（随版本内置，mp3 减小体积）。 */
     fun assetVoicePath(characterId: String, language: BuiltinVoiceLanguage, index: Int): String =
-        "voices_builtin/$characterId/${language.value}/$index.wav"
+        "voices_builtin/$characterId/${language.value}/$index.mp3"
 
     fun randomLineWithVoice(context: Context, characterId: String, language: BuiltinVoiceLanguage): BuiltinLine? {
         val voiced = loadLines(context, characterId, language).filter { it.hasWav(context) }
