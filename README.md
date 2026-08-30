@@ -20,3 +20,5 @@
 ## 参考文档
 
 - docs/BiliPai-技术栈与UI参考.md：BiliPai 参考项目的技术栈、UI 风格与动效设计说明
+
+- docs/DeepSeek-API调用规范.md：DeepSeek 官方 API 调用规范（认证、参数、流式、思考模式、视觉、工具调用、限流、错误码、计费）
