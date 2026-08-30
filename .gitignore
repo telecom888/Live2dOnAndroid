@@ -22,3 +22,24 @@ dist/
 
 # Logs
 *.log
+
+# --- BANDORI base ---
+.gradle/
+app/build/
+app/src/main/rust/target/
+third_party/
+models/
+jniLibs/
+*.hprof
+/companion/
+/companion-secrets/
+/companion-credentials*.json
+/companion-pairing*.json
+/app/src/debug/assets/companion-credentials*.json
+/app/src/debug/assets/companion-pairing*.json
+**/identity-key.pem
+**/identity-cert.pem
+*.key
+*.pem
+*.p12
+*.pfx
