@@ -835,39 +835,80 @@ internal fun ChatBubble(
                                 }
                             }
                         }
+                        if (lineMode) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 3.dp),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (fromUser && read) {
+                                    Text(
+                                        "已读",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                                    )
+                                    if (timestamp > 0L) Spacer(Modifier.width(4.dp))
+                                }
+                                if (timestamp > 0L) {
+                                    Text(
+                                        formatMessageTime(timestamp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    )
+                                }
+                                if (onReplay != null) {
+                                    if (timestamp > 0L || read) Spacer(Modifier.width(4.dp))
+                                    IconButton(
+                                        onClick = onReplay,
+                                        modifier = Modifier.size(22.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.VolumeUp,
+                                            contentDescription = "朗读",
+                                            modifier = Modifier.size(13.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-                Row(
-                    modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (fromUser && read) {
-                        Text(
-                            "已读",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                        )
-                        if (timestamp > 0L) Spacer(Modifier.width(6.dp))
-                    }
-                    if (timestamp > 0L) {
-                        Text(
-                            formatMessageTime(timestamp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (onReplay != null) {
-                        if (timestamp > 0L || read) Spacer(Modifier.width(6.dp))
-                        IconButton(
-                            onClick = onReplay,
-                            modifier = Modifier.size(28.dp),
-                        ) {
-                            Icon(
-                                Icons.Outlined.VolumeUp,
-                                contentDescription = "朗读",
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                if (!lineMode) {
+                    Row(
+                        modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (fromUser && read) {
+                            Text(
+                                "已读",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
                             )
+                            if (timestamp > 0L) Spacer(Modifier.width(6.dp))
+                        }
+                        if (timestamp > 0L) {
+                            Text(
+                                formatMessageTime(timestamp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (onReplay != null) {
+                            if (timestamp > 0L || read) Spacer(Modifier.width(6.dp))
+                            IconButton(
+                                onClick = onReplay,
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Icon(
+                                    Icons.Outlined.VolumeUp,
+                                    contentDescription = "朗读",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }

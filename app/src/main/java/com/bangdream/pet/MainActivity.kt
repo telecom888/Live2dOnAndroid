@@ -29,6 +29,8 @@ import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.ViewInAr
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -107,6 +109,7 @@ enum class Screen {
     Live2D,
     Model,
     Chat,
+    Line,
     Settings,
 }
 
@@ -114,6 +117,7 @@ fun Screen.title(): String = when (this) {
     Screen.Live2D -> I18n.t("nav_live2d")
     Screen.Model -> I18n.t("nav_model")
     Screen.Chat -> "角色"
+    Screen.Line -> "Line"
     Screen.Settings -> I18n.t("nav_settings")
 }
 
@@ -326,6 +330,9 @@ fun BangDreamPetApp(
                                 appData = appData,
                                 repository = repository,
                             )
+                            Screen.Line -> com.bangdream.pet.ui.line.LineScreen(
+                                appData = appData,
+                            )
                             Screen.Settings -> Box(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                                 SettingsScreen(
                                 selectedModel = selectedModel,
@@ -340,7 +347,7 @@ fun BangDreamPetApp(
                 }
             }
             }
-            if (selectedScreen != Screen.Model && selectedScreen != Screen.Chat) {
+            if (selectedScreen != Screen.Model && selectedScreen != Screen.Chat && selectedScreen != Screen.Line) {
                 AppTopBar(
                     selectedModel = selectedModel,
                     modifier = Modifier.align(Alignment.TopCenter).appLiquidGlass(hazeState, enabled = liquidGlass),
@@ -391,10 +398,12 @@ private fun NavIcon(screen: Screen, selected: Boolean) {
             Screen.Live2D to true -> Icons.Filled.Face
             Screen.Model to true -> Icons.Filled.ViewInAr
             Screen.Chat to true -> Icons.Filled.Forum
+            Screen.Line to true -> Icons.Filled.People
             Screen.Settings to true -> Icons.Filled.Settings
             Screen.Live2D to false -> Icons.Outlined.Face
             Screen.Model to false -> Icons.Outlined.ViewInAr
             Screen.Chat to false -> Icons.Outlined.Forum
+            Screen.Line to false -> Icons.Outlined.Groups
             else -> Icons.Outlined.Settings
         },
         contentDescription = screen.title(),

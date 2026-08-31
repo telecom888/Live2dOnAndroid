@@ -5,6 +5,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.job
 import org.json.JSONArray
@@ -209,6 +210,61 @@ class LlmChatClient {
                 .getOrElse { JSONObject().put("raw", call.arguments) },
         )
         .toString()
+
+    /** 非流式单次请求：返回最终 content（content 为空时回退 reasoning_content）。 */
+    suspend fun complete(
+        settings: LlmSettings,
+        messages: List<Pair<String, String>>,
+    ): String = withContext(Dispatchers.IO) {
+        val normalized = settings.normalized()
+        val body = JSONObject()
+            .put("model", normalized.model)
+            .put(
+                "messages",
+                JSONArray().apply {
+                    messages.forEach { (role, content) ->
+                        put(JSONObject().put("role", role).put("content", content))
+                    }
+                },
+            )
+            .put("stream", false)
+            .put("temperature", normalized.temperature.toDouble())
+            .put("max_tokens", normalized.maxTokens.coerceAtLeast(64))
+            .apply {
+                when (normalized.thinkingMode) {
+                    ThinkingMode.Auto -> Unit
+                    ThinkingMode.Enabled -> put("thinking", JSONObject().put("type", "enabled"))
+                    ThinkingMode.Disabled -> put("thinking", JSONObject().put("type", "disabled"))
+                }
+            }
+        runCatching {
+            val connection = (URL(normalized.endpoint()).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 15_000
+                readTimeout = 120_000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Authorization", "Bearer ${normalized.apiKey}")
+            }
+            try {
+                connection.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body.toString()) }
+                val code = connection.responseCode
+                if (code !in 200..299) {
+                    val detail = connection.errorStream?.bufferedReader()?.use { it.readText().take(1024) }.orEmpty()
+                    throw IOException("HTTP $code: $detail")
+                }
+                val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val message = JSONObject(text)
+                    .optJSONArray("choices")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("message")
+                val content = message?.optString("content").orEmpty().trim()
+                if (content.isNotEmpty()) content else message?.optString("reasoning_content").orEmpty().trim()
+            } finally {
+                connection.disconnect()
+            }
+        }.getOrDefault("")
+    }
 
     internal fun buildRequestBody(
         settings: LlmSettings,
