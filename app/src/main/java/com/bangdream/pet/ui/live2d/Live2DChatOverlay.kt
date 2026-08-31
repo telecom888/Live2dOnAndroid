@@ -762,27 +762,23 @@ internal fun ChatBubble(
                 Spacer(Modifier.width(8.dp))
             }
             Column(
-                modifier = if (lineMode) {
-                    Modifier.wrapContentWidth(align = if (fromUser) Alignment.End else Alignment.Start)
-                } else {
-                    Modifier.widthIn(max = maxBubbleWidth)
-                },
+                modifier = Modifier.widthIn(max = maxBubbleWidth),
                 horizontalAlignment = if (fromUser) Alignment.End else Alignment.Start,
             ) {
                 Surface(
                     shape = RoundedCornerShape(
-                        topStart = 16.dp,
-                        topEnd = 16.dp,
-                        bottomStart = if (fromUser) 16.dp else if (lineMode) 4.dp else 6.dp,
-                        bottomEnd = if (fromUser) if (lineMode) 4.dp else 6.dp else 16.dp,
+                        topStart = 20.dp,
+                        topEnd = 20.dp,
+                        bottomStart = if (fromUser) 20.dp else 6.dp,
+                        bottomEnd = if (fromUser) 6.dp else 20.dp,
                     ),
                     color = if (fromUser) {
                         MaterialTheme.colorScheme.primaryContainer
                     } else {
-                        if (lineMode) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceContainerHighest
+                        MaterialTheme.colorScheme.surfaceContainerHighest
                     },
                 ) {
-                    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                         if (thinking) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -803,11 +799,7 @@ internal fun ChatBubble(
                         }
                         SelectionContainer {
                             if (ranges.isEmpty()) {
-                                Text(
-                                    content,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = if (lineMode && !fromUser) MaterialTheme.colorScheme.onSurface else Color.Unspecified,
-                                )
+                                Text(content, style = MaterialTheme.typography.bodyMedium)
                             } else {
                                 val annotated = buildAnnotatedString {
                                     var last = 0
@@ -843,79 +835,39 @@ internal fun ChatBubble(
                                 }
                             }
                         }
-                        if (lineMode) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 2.dp),
-                                horizontalArrangement = Arrangement.End,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (fromUser && read) {
-                                    Text(
-                                        "已读",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                }
-                                if (onReplay != null) {
-                                    IconButton(
-                                        onClick = onReplay,
-                                        modifier = Modifier.size(24.dp),
-                                    ) {
-                                        Icon(
-                                            Icons.Outlined.VolumeUp,
-                                            contentDescription = "朗读",
-                                            modifier = Modifier.size(14.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                                if (timestamp > 0L) {
-                                    Text(
-                                        formatMessageTime(timestamp),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    )
-                                }
-                            }
-                        }
                     }
                 }
-                if (!lineMode) {
-                    Row(
-                        modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (fromUser && read) {
-                            Text(
-                                "已读",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                Row(
+                    modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (fromUser && read) {
+                        Text(
+                            "已读",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                        )
+                        if (timestamp > 0L) Spacer(Modifier.width(6.dp))
+                    }
+                    if (timestamp > 0L) {
+                        Text(
+                            formatMessageTime(timestamp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (onReplay != null) {
+                        if (timestamp > 0L || read) Spacer(Modifier.width(6.dp))
+                        IconButton(
+                            onClick = onReplay,
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(
+                                Icons.Outlined.VolumeUp,
+                                contentDescription = "朗读",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            if (timestamp > 0L) Spacer(Modifier.width(6.dp))
-                        }
-                        if (timestamp > 0L) {
-                            Text(
-                                formatMessageTime(timestamp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        if (onReplay != null) {
-                            if (timestamp > 0L || read) Spacer(Modifier.width(6.dp))
-                            IconButton(
-                                onClick = onReplay,
-                                modifier = Modifier.size(28.dp),
-                            ) {
-                                Icon(
-                                    Icons.Outlined.VolumeUp,
-                                    contentDescription = "朗读",
-                                    modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
                         }
                     }
                 }
