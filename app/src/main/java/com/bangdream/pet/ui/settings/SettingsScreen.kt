@@ -9,6 +9,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
@@ -430,7 +432,14 @@ private fun LlmSettingsEntryCard() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** LLM 服务商预设：标签 / baseUrl / model。提到顶层，避免每次重组重建列表。 */
+private val LLM_PROVIDER_PRESETS = listOf(
+    Triple("DeepSeek", "https://api.deepseek.com", "deepseek-v4-flash"),
+    Triple("OpenCode Go", "https://opencode.ai/zen/go/v1", "mimo-v2.5"),
+    Triple("小米 mimo", "https://api.xiaomimimo.com/v1", "mimo-v2.5"),
+)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun LlmSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -466,16 +475,23 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
             item(key = "llm_form") {
                 SettingsSectionCard {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(
-                        "DeepSeek" to Pair("https://api.deepseek.com", "deepseek-v4-flash"),
-                        "OpenCode Go" to Pair("https://opencode.ai/zen/go/v1", "mimo-v2.5"),
-                        "小米 mimo" to Pair("https://api.xiaomimimo.com/v1", "mimo-v2.5"),
-                    ).forEach { (label, pair) ->
-                        FilledTonalButton(onClick = {
-                            draft = draft.copy(baseUrl = pair.first, model = pair.second)
-                            saved = false
-                        }) { Text(label) }
+                // Row 会顺序测量、把剩余宽度丢给最后一个按钮，窄屏/大字号下「小米 mimo」被压扁并换行成瘦长块。
+                // 改用 FlowRow：各按钮按自身宽度排布，放不下时整体换行；再配合紧凑内边距与单行文本兜底。
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    LLM_PROVIDER_PRESETS.forEach { (label, presetBaseUrl, presetModel) ->
+                        FilledTonalButton(
+                            onClick = {
+                                draft = draft.copy(baseUrl = presetBaseUrl, model = presetModel)
+                                saved = false
+                            },
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        ) {
+                            Text(label, maxLines = 1)
+                        }
                     }
                 }
                 OutlinedTextField(
