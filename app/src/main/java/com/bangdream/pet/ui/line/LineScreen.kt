@@ -1,28 +1,36 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.bangdream.pet.ui.line
 
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddComment
 import androidx.compose.material.icons.outlined.ArrowBack
@@ -31,7 +39,6 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -69,6 +76,10 @@ import com.bangdream.pet.line.LineOrchestrator
 import com.bangdream.pet.line.LineSceneRepository
 import com.bangdream.pet.ui.ImageBitmapCache
 import com.bangdream.pet.ui.SampledImageDecoder
+import com.bangdream.pet.ui.design.appEntrance
+import com.bangdream.pet.ui.design.appPressScale
+import com.bangdream.pet.ui.design.emphasizedTween
+import com.bangdream.pet.ui.design.expressiveTween
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -76,7 +87,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Line 见见页：选择观看哪个角色的 Line 账号 → 该角色的消息列表 → 旁观详情。 */
+/** Line 旁观者：选角色 Line 账号 → 该角色的对话列表 → 旁观详情（先设主题再开始讨论）。 */
 @Composable
 fun LineScreen(appData: AppData?, modifier: Modifier = Modifier) {
     val characters = remember(appData) {
@@ -84,25 +95,55 @@ fun LineScreen(appData: AppData?, modifier: Modifier = Modifier) {
     }
     var selectedRole by remember { mutableStateOf<CharacterInfo?>(null) }
     var openConversationId by remember { mutableStateOf<String?>(null) }
-
-    when {
-        openConversationId != null -> LineConversationDetailScreen(
-            conversationId = openConversationId!!,
-            onBack = { openConversationId = null },
-            modifier = modifier,
-        )
-        selectedRole != null -> LineAccountScreen(
-            role = selectedRole!!,
-            characters = characters,
-            onBack = { selectedRole = null },
-            onOpen = { openConversationId = it },
-            modifier = modifier,
-        )
-        else -> LineRolePickerScreen(
-            characters = characters,
-            onSelectRole = { selectedRole = it },
-            modifier = modifier,
-        )
+    val level = when {
+        openConversationId != null -> 2
+        selectedRole != null -> 1
+        else -> 0
+    }
+    AnimatedContent(
+        targetState = level,
+        transitionSpec = {
+            if (targetState > initialState) {
+                (slideInHorizontally(animationSpec = emphasizedTween(), initialOffsetX = { it }) +
+                    fadeIn(animationSpec = emphasizedTween()))
+                    .togetherWith(
+                        slideOutHorizontally(animationSpec = expressiveTween(), targetOffsetX = { -it / 4 }) +
+                            fadeOut(animationSpec = expressiveTween()),
+                    )
+            } else {
+                (slideInHorizontally(animationSpec = emphasizedTween(), initialOffsetX = { -it / 4 }) +
+                    fadeIn(animationSpec = emphasizedTween()))
+                    .togetherWith(
+                        slideOutHorizontally(animationSpec = expressiveTween(), targetOffsetX = { it }) +
+                            fadeOut(animationSpec = expressiveTween()),
+                    )
+            }
+        },
+        modifier = modifier,
+        label = "lineLevel",
+    ) { target ->
+        when (target) {
+            2 -> {
+                val id = openConversationId ?: return@AnimatedContent
+                LineConversationDetailScreen(
+                    conversationId = id,
+                    onBack = { openConversationId = null },
+                )
+            }
+            1 -> {
+                val role = selectedRole ?: return@AnimatedContent
+                LineAccountScreen(
+                    role = role,
+                    characters = characters,
+                    onBack = { selectedRole = null },
+                    onOpen = { openConversationId = it },
+                )
+            }
+            else -> LineRolePickerScreen(
+                characters = characters,
+                onSelectRole = { selectedRole = it },
+            )
+        }
     }
 }
 
@@ -138,7 +179,10 @@ private fun LineRolePickerScreen(
                 items(characters, key = { it.id }) { character ->
                     Surface(
                         onClick = { onSelectRole(character) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .appEntrance(delayMillis = (characters.indexOfFirst { it.id == character.id } * 22).coerceAtMost(160))
+                            .appPressScale(),
                         shape = RoundedCornerShape(18.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
                     ) {
@@ -201,7 +245,7 @@ private fun LineAccountScreen(
         if (conversations.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    "暂无对话，点右上角 + 新建（设置主题后开始讨论）",
+                    "暂无对话，点右上角 + 新建",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -214,7 +258,10 @@ private fun LineAccountScreen(
                 items(conversations, key = { it.id }) { conv ->
                     Surface(
                         onClick = { onOpen(conv.id) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .appEntrance(delayMillis = (conversations.indexOfFirst { it.id == conv.id } * 22).coerceAtMost(160))
+                            .appPressScale(),
                         shape = RoundedCornerShape(18.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
                     ) {
@@ -230,7 +277,7 @@ private fun LineAccountScreen(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
-                                    "主题：${conv.topic}",
+                                    if (conv.topic.isBlank()) "尚未设置主题" else "主题：${conv.topic}",
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     style = MaterialTheme.typography.bodySmall,
@@ -257,12 +304,12 @@ private fun LineAccountScreen(
             ownerRole = role,
             characters = characters,
             onDismiss = { showCreate = false },
-            onCreate = { type, title, topic, members ->
+            onCreate = { type, title, members ->
                 val conversation = LineConversation(
                     id = LineSceneRepository.newId(),
                     type = type,
                     title = title,
-                    topic = topic,
+                    topic = "",
                     memberRoleIds = members,
                     status = LineConversationStatus.ACTIVE,
                     createdAt = System.currentTimeMillis(),
@@ -298,73 +345,95 @@ private fun CreateLineDialog(
     ownerRole: CharacterInfo,
     characters: List<CharacterInfo>,
     onDismiss: () -> Unit,
-    onCreate: (LineConversationType, String, String, List<String>) -> Unit,
+    onCreate: (LineConversationType, String, List<String>) -> Unit,
 ) {
+    val context = LocalContext.current
     var isGroup by remember { mutableStateOf(false) }
     var title by remember { mutableStateOf("") }
-    var topic by remember { mutableStateOf("") }
     var otherId by remember { mutableStateOf<String?>(null) }
     var groupMembers by remember { mutableStateOf<Set<String>>(emptySet()) }
     val others = remember(characters) { characters.filter { it.id != ownerRole.id } }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (isGroup) "新建群组" else "新建 1对1") },
+        title = { Text(if (isGroup) "新建群组" else "新建私聊") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(max = 440.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = !isGroup, onClick = { isGroup = false }, label = { Text("1对1") })
+                    FilterChip(selected = !isGroup, onClick = { isGroup = false }, label = { Text("私聊") })
                     FilterChip(selected = isGroup, onClick = { isGroup = true }, label = { Text("群组") })
                 }
                 if (isGroup) {
                     OutlinedTextField(
                         value = title,
                         onValueChange = { title = it },
-                        label = { Text("群名") },
+                        label = { Text("群名（可选）") },
                         singleLine = true,
                     )
                     Text("选择参与角色（含 ${ownerRole.display}）", style = MaterialTheme.typography.bodySmall)
-                    others.forEach { c ->
-                        val selected = c.id in groupMembers
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable {
-                            groupMembers = if (selected) groupMembers - c.id else groupMembers + c.id
-                        }) {
-                            FilterChip(selected = selected, onClick = {
-                                groupMembers = if (selected) groupMembers - c.id else groupMembers + c.id
-                            }, label = { Text(c.display) })
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        others.forEach { c ->
+                            val selected = c.id in groupMembers
+                            FilterChip(
+                                selected = selected,
+                                onClick = {
+                                    groupMembers = if (selected) groupMembers - c.id else groupMembers + c.id
+                                },
+                                label = { Text(c.display) },
+                            )
                         }
                     }
                 } else {
-                    others.forEach { c ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { otherId = c.id }) {
-                            FilterChip(selected = otherId == c.id, onClick = { otherId = c.id }, label = { Text(c.display) })
+                    Text("选择私聊对象", style = MaterialTheme.typography.bodySmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        others.forEach { c ->
+                            FilterChip(
+                                selected = otherId == c.id,
+                                onClick = { otherId = c.id },
+                                label = { Text(c.display) },
+                            )
                         }
                     }
                 }
-                OutlinedTextField(
-                    value = topic,
-                    onValueChange = { topic = it },
-                    label = { Text("讨论主题") },
-                    minLines = 2,
+                Text(
+                    "创建后进入对话，先设置主题再开始讨论",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = {
-                    val members = if (isGroup) {
-                        (groupMembers + ownerRole.id).toList()
-                    } else {
-                        val other = otherId ?: return@TextButton
-                        listOf(ownerRole.id, other)
+            TextButton(onClick = {
+                val members = if (isGroup) {
+                    if (groupMembers.isEmpty()) {
+                        Toast.makeText(context, "请至少选择一位群成员", Toast.LENGTH_SHORT).show()
+                        return@TextButton
                     }
-                    if (topic.isBlank()) return@TextButton
-                    val convTitle = if (isGroup) title.ifBlank { "新群组" } else {
-                        characters.firstOrNull { it.id == (members.firstOrNull { it != ownerRole.id }) }?.display.orEmpty()
+                    (groupMembers + ownerRole.id).toList()
+                } else {
+                    val other = otherId
+                    if (other == null) {
+                        Toast.makeText(context, "请选择私聊对象", Toast.LENGTH_SHORT).show()
+                        return@TextButton
                     }
-                    onCreate(if (isGroup) LineConversationType.GROUP else LineConversationType.ONE_TO_ONE, convTitle, topic.trim(), members)
-                },
-            ) { Text("创建") }
+                    listOf(ownerRole.id, other)
+                }
+                val convTitle = if (isGroup) {
+                    title.trim().ifBlank { "新群组" }
+                } else {
+                    characters.firstOrNull { it.id == members.firstOrNull { it != ownerRole.id } }?.display.orEmpty()
+                }
+                onCreate(
+                    if (isGroup) LineConversationType.GROUP else LineConversationType.ONE_TO_ONE,
+                    convTitle,
+                    members,
+                )
+            }) { Text("创建") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
@@ -386,11 +455,26 @@ private fun LineConversationDetailScreen(
     }
     var conversation by remember { mutableStateOf(repository.get(conversationId)) }
     var running by remember { mutableStateOf(false) }
+    var showTopicDialog by remember { mutableStateOf(false) }
+    var topicDraft by remember { mutableStateOf("") }
 
     val conv = conversation
     if (conv == null) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("对话不存在") }
         return
+    }
+
+    fun startDiscussion() {
+        running = true
+        scope.launch {
+            val updated = engine.runConversation(conversation!!) { latest ->
+                conversation = latest
+                repository.save(latest)
+            }
+            conversation = updated
+            repository.save(updated)
+            running = false
+        }
     }
 
     Column(modifier.fillMaxSize()) {
@@ -401,25 +485,32 @@ private fun LineConversationDetailScreen(
             IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBack, contentDescription = "返回") }
             Column(Modifier.weight(1f)) {
                 Text(conv.title.ifBlank { "未命名" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(
-                    "主题：${conv.topic}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (conv.topic.isBlank()) "尚未设置主题" else "主题：${conv.topic}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    IconButton(
+                        onClick = {
+                            topicDraft = conv.topic
+                            showTopicDialog = true
+                        },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(Icons.Outlined.Edit, contentDescription = "设置主题", modifier = Modifier.size(14.dp))
+                    }
+                }
             }
             if (conv.status == LineConversationStatus.ACTIVE && !running) {
                 FilledTonalButton(onClick = {
-                    running = true
-                    scope.launch {
-                        val updated = engine.runConversation(conv) { latest ->
-                            conversation = latest
-                            repository.save(latest)
-                        }
-                        conversation = updated
-                        repository.save(updated)
-                        running = false
+                    if (conv.topic.isBlank()) {
+                        topicDraft = ""
+                        showTopicDialog = true
+                    } else {
+                        startDiscussion()
                     }
                 }) {
                     Icon(Icons.Outlined.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -444,7 +535,7 @@ private fun LineConversationDetailScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(conv.messages, key = { it.id }) { message ->
-                LineMessageRow(message = message, roleNames = roleNames, context = appContext)
+                LineMessageRow(message = message, roleNames = roleNames)
             }
             if (conv.messages.isEmpty()) {
                 item(key = "empty") {
@@ -459,10 +550,40 @@ private fun LineConversationDetailScreen(
             }
         }
     }
+
+    if (showTopicDialog) {
+        AlertDialog(
+            onDismissRequest = { showTopicDialog = false },
+            title = { Text("设置讨论主题") },
+            text = {
+                OutlinedTextField(
+                    value = topicDraft,
+                    onValueChange = { topicDraft = it },
+                    label = { Text("主题") },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val topic = topicDraft.trim()
+                    if (topic.isEmpty()) {
+                        Toast.makeText(context, "请输入主题", Toast.LENGTH_SHORT).show()
+                        return@TextButton
+                    }
+                    val updated = conversation!!.copy(topic = topic)
+                    conversation = updated
+                    repository.save(updated)
+                    showTopicDialog = false
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { showTopicDialog = false }) { Text("取消") } },
+        )
+    }
 }
 
 @Composable
-private fun LineMessageRow(message: LineMessage, roleNames: Map<String, String>, context: android.content.Context) {
+private fun LineMessageRow(message: LineMessage, roleNames: Map<String, String>) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Bottom,
