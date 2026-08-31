@@ -567,7 +567,6 @@ private fun ConversationDetailScreen(
                 streamingReasoning = state.streamingReasoning,
                 highlightQuery = searchQuery.takeIf { it.isNotBlank() },
                 scrollToMessageId = scrollTarget,
-                characterId = character.characterId,
                 onReplay = { message -> viewModel.replayMessage(character.characterId, message.content) },
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
