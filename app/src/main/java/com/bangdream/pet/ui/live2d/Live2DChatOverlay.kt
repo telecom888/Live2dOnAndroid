@@ -1064,7 +1064,7 @@ private fun DecodedImage(
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
-    val key = "chat-img:$maxEdge:${dataUrl.take(80)}"
+    val key = "chat-img:$maxEdge:$dataUrl"
     var bitmap by remember(key) { mutableStateOf(ImageBitmapCache.get(key)) }
     LaunchedEffect(key) {
         if (bitmap != null || ImageBitmapCache.isKnownMissing(key)) return@LaunchedEffect
