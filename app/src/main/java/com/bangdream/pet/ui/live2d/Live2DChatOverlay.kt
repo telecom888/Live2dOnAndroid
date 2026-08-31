@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
@@ -40,6 +41,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -85,6 +87,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -106,6 +109,8 @@ import com.bangdream.pet.llm.ChatTextSearch
 import com.bangdream.pet.llm.ChatUiState
 import com.bangdream.pet.llm.Live2DChatViewModel
 import com.bangdream.pet.llm.LlmSettings
+import com.bangdream.pet.loadLineUiEnabled
+import com.bangdream.pet.AvatarManager
 import com.bangdream.pet.ui.ImageBitmapCache
 import com.bangdream.pet.ui.SampledImageDecoder
 import com.bangdream.pet.ui.chat.PickedImage
@@ -376,6 +381,8 @@ private fun ChatPanelContent(
                     streamingText = state.streamingText,
                     thinking = state.isThinking,
                     onReplay = null,
+                    characterId = model.characterId,
+                    lineMode = loadLineUiEnabled(context),
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
                 state.error?.let { error ->
@@ -635,8 +642,11 @@ internal fun ChatMessageList(
     onReplay: ((ChatMessage) -> Unit)? = null,
     highlightQuery: String? = null,
     scrollToMessageId: String? = null,
+    characterId: String? = null,
+    lineMode: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    val avatar = if (lineMode) rememberChatAvatar(characterId) else null
     val listState = rememberLazyListState()
     val itemCount = messages.size + if (streamingText.isNotBlank() || thinking) 1 else 0
     val streamScrollBucket = streamingText.length / 24
@@ -677,6 +687,8 @@ internal fun ChatMessageList(
                     onReplay = replay,
                     timestamp = message.timestamp,
                     images = message.images,
+                    avatar = avatar,
+                    lineMode = lineMode,
                     maxBubbleWidth = bubbleMaxWidth,
                 )
             }
@@ -687,6 +699,8 @@ internal fun ChatMessageList(
                         streamingText.ifBlank { I18n.t("chat_thinking") },
                         thinking,
                         reasoning = streamingReasoning,
+                        avatar = avatar,
+                        lineMode = lineMode,
                         maxBubbleWidth = bubbleMaxWidth,
                     )
                 }
@@ -708,6 +722,8 @@ internal fun ChatBubble(
     onReplay: (() -> Unit)? = null,
     timestamp: Long = 0L,
     images: List<String> = emptyList(),
+    avatar: ImageBitmap? = null,
+    lineMode: Boolean = false,
     maxBubbleWidth: Dp = 420.dp,
 ) {
     val fromUser = role == "user"
@@ -720,104 +736,229 @@ internal fun ChatBubble(
             ReasoningFold(reasoning, maxBubbleWidth)
             Spacer(Modifier.height(6.dp))
         }
-        Surface(
-            modifier = Modifier.widthIn(max = maxBubbleWidth),
-            shape = RoundedCornerShape(
-                topStart = if (fromUser) 20.dp else 6.dp,
-                topEnd = if (fromUser) 6.dp else 20.dp,
-                bottomStart = 20.dp,
-                bottomEnd = 20.dp,
-            ),
-            color = if (fromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-        ) {
-            Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
-                if (thinking) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                }
-                val ranges = remember(content, highlightQuery) {
-                    if (highlightQuery.isNullOrBlank()) {
-                        emptyList()
-                    } else {
-                        ChatTextSearch.findHighlightRanges(content, highlightQuery)
-                    }
-                }
-                if (ranges.isEmpty()) {
-                    Text(
-                        content,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                } else {
-                    val annotated = buildAnnotatedString {
-                        var last = 0
-                        for (range in ranges.sortedBy { it.first }) {
-                            val start = range.first.coerceIn(0, content.length)
-                            val end = range.last.plus(1).coerceIn(start, content.length)
-                            if (start > last) append(content.substring(last, start))
-                            withStyle(
-                                SpanStyle(
-                                    background = Color(0x66FFD54F),
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            ) {
-                                append(content.substring(start, end))
-                            }
-                            last = end
-                        }
-                        if (last < content.length) append(content.substring(last))
-                    }
-                    Text(
-                        annotated,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                }
-            }
-            if (images.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    images.take(9).forEach { dataUrl ->
-                        MessageImageThumb(dataUrl = dataUrl, onClick = { previewImage = dataUrl })
-                    }
-                }
-            }
-        }
         Row(
-            modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start,
+            verticalAlignment = Alignment.Bottom,
         ) {
-            if (timestamp > 0L) {
-                Text(
-                    formatMessageTime(timestamp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            if (!fromUser && lineMode) {
+                LineAvatar(avatar, isUser = false)
+                Spacer(Modifier.width(8.dp))
             }
-            if (onReplay != null) {
-                if (timestamp > 0L) Spacer(Modifier.width(6.dp))
-                IconButton(
-                    onClick = onReplay,
-                    modifier = Modifier.size(28.dp),
+            Column(
+                modifier = if (lineMode) Modifier.weight(1f, fill = false) else Modifier.widthIn(max = maxBubbleWidth),
+                horizontalAlignment = if (fromUser) Alignment.End else Alignment.Start,
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(
+                        topStart = 16.dp,
+                        topEnd = 16.dp,
+                        bottomStart = if (fromUser) 16.dp else if (lineMode) 4.dp else 6.dp,
+                        bottomEnd = if (fromUser) if (lineMode) 4.dp else 6.dp else 16.dp,
+                    ),
+                    color = if (fromUser) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        if (lineMode) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceContainerHighest
+                    },
                 ) {
-                    Icon(
-                        Icons.Outlined.VolumeUp,
-                        contentDescription = "朗读",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        if (thinking) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    I18n.t("chat_thinking"),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        val ranges = remember(content, highlightQuery) {
+                            if (highlightQuery.isNullOrBlank()) {
+                                emptyList()
+                            } else {
+                                ChatTextSearch.findHighlightRanges(content, highlightQuery)
+                            }
+                        }
+                        SelectionContainer {
+                            if (ranges.isEmpty()) {
+                                Text(
+                                    content,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (lineMode && !fromUser) MaterialTheme.colorScheme.onSurface else Color.Unspecified,
+                                )
+                            } else {
+                                val annotated = buildAnnotatedString {
+                                    var last = 0
+                                    for (range in ranges.sortedBy { it.first }) {
+                                        val start = range.first.coerceIn(0, content.length)
+                                        val end = range.last.plus(1).coerceIn(start, content.length)
+                                        if (start > last) append(content.substring(last, start))
+                                        withStyle(
+                                            SpanStyle(
+                                                background = Color(0x66FFD54F),
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                        ) {
+                                            append(content.substring(start, end))
+                                        }
+                                        last = end
+                                    }
+                                    if (last < content.length) append(content.substring(last))
+                                }
+                                Text(annotated, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                        if (images.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(top = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                images.take(9).forEach { dataUrl ->
+                                    MessageImageThumb(dataUrl = dataUrl, onClick = { previewImage = dataUrl })
+                                }
+                            }
+                        }
+                        if (lineMode) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 2.dp),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (onReplay != null) {
+                                    IconButton(
+                                        onClick = onReplay,
+                                        modifier = Modifier.size(24.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.VolumeUp,
+                                            contentDescription = "朗读",
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                                if (timestamp > 0L) {
+                                    Text(
+                                        formatMessageTime(timestamp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
+                if (!lineMode) {
+                    Row(
+                        modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (timestamp > 0L) {
+                            Text(
+                                formatMessageTime(timestamp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (onReplay != null) {
+                            if (timestamp > 0L) Spacer(Modifier.width(6.dp))
+                            IconButton(
+                                onClick = onReplay,
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Icon(
+                                    Icons.Outlined.VolumeUp,
+                                    contentDescription = "朗读",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            if (fromUser && lineMode) {
+                Spacer(Modifier.width(8.dp))
+                LineAvatar(avatar, isUser = true)
             }
         }
     }
 
     previewImage?.let { dataUrl ->
         MessageImagePreview(dataUrl = dataUrl, onDismiss = { previewImage = null })
+    }
+}
+
+@Composable
+private fun rememberChatAvatar(characterId: String?): ImageBitmap? {
+    if (characterId == null) return null
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val customFile = remember(characterId) { AvatarManager.customAvatarFile(appContext, characterId) }
+    val defaultPath = remember(characterId) { AvatarManager.defaultAvatarAssetPath(appContext, characterId) }
+    val key = remember(characterId, customFile?.lastModified()) {
+        if (customFile != null) {
+            "chat-avatar:custom:$characterId:${customFile.lastModified()}"
+        } else {
+            "chat-avatar:default:$characterId"
+        }
+    }
+    var avatar by remember(key) { mutableStateOf(ImageBitmapCache.get(key)) }
+    LaunchedEffect(key) {
+        if (avatar != null || ImageBitmapCache.isKnownMissing(key)) return@LaunchedEffect
+        val decoded = withContext(Dispatchers.IO) {
+            when {
+                customFile != null -> SampledImageDecoder.decodeBytes(customFile.readBytes(), 128)
+                defaultPath != null -> SampledImageDecoder.decodeAsset(appContext, defaultPath, 128)
+                else -> null
+            }
+        }
+        if (decoded == null) ImageBitmapCache.markMissing(key) else ImageBitmapCache.put(key, decoded)
+        avatar = decoded
+    }
+    return avatar
+}
+
+@Composable
+private fun LineAvatar(bitmap: ImageBitmap?, isUser: Boolean) {
+    val background = if (isUser) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    Box(
+        modifier = Modifier.size(40.dp).clip(CircleShape).background(background),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                contentScale = ContentScale.Crop,
+            )
+        } else if (isUser) {
+            Text(
+                "我",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text(
+                "AI",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

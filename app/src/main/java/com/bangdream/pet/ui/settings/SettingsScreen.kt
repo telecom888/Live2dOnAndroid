@@ -88,6 +88,8 @@ import com.bangdream.pet.VOICE_PROVIDER_CUSTOM
 import com.bangdream.pet.VOICE_PROVIDER_MIMO
 import com.bangdream.pet.VoiceSettings
 import com.bangdream.pet.loadBubbleEnabled
+import com.bangdream.pet.loadLineUiEnabled
+import com.bangdream.pet.saveLineUiEnabled
 import com.bangdream.pet.loadBubbleDurationSeconds
 import com.bangdream.pet.saveBubbleDurationSeconds
 import com.bangdream.pet.loadReplyVoiceEnabled
@@ -210,6 +212,9 @@ fun SettingsScreen(
         item(key = "llm") {
             LlmSettingsEntryCard()
         }
+        item(key = "line_ui") {
+            LineUiSettingsCard()
+        }
         item(key = "section_voice") { SettingsSectionHeader("语音") }
         item(key = "voice_settings") {
             VoiceSettingsCard()
@@ -226,6 +231,39 @@ fun SettingsScreen(
                 I18n.t("settings_about"),
                 I18n.t("settings_about_text"),
             )
+        }
+    }
+}
+
+@Composable
+private fun LineUiSettingsCard() {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    var lineUiEnabled by remember { mutableStateOf(loadLineUiEnabled(appContext)) }
+    SettingsSectionCard {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("对话界面", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Line UI（仿 LINE 气泡）", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "开启后消息列表使用 LINE 风格气泡并显示角色头像",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = lineUiEnabled,
+                    onCheckedChange = {
+                        lineUiEnabled = it
+                        saveLineUiEnabled(appContext, it)
+                    },
+                )
+            }
         }
     }
 }

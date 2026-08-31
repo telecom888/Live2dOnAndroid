@@ -77,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bangdream.pet.data.AppData
+import com.bangdream.pet.loadLineUiEnabled
 import com.bangdream.pet.ui.design.appEntrance
 import com.bangdream.pet.data.CharacterInfo
 import com.bangdream.pet.data.DataRepository
@@ -682,6 +683,8 @@ private fun ConversationDetailScreen(
                 highlightQuery = searchQuery.takeIf { it.isNotBlank() },
                 scrollToMessageId = scrollTarget,
                 onReplay = { message -> viewModel.replayMessage(character.characterId, message.content) },
+                characterId = character.characterId,
+                lineMode = loadLineUiEnabled(context),
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }

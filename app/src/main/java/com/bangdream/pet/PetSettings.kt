@@ -588,6 +588,18 @@ fun saveCharacterCustomPrompt(context: Context, characterId: String, prompt: Str
         }.apply()
 }
 
+// ==================== Line UI（仿 LINE 对话界面） ====================
+const val KEY_LINE_UI_ENABLED = "line_ui_enabled"
+
+fun loadLineUiEnabled(context: Context): Boolean =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getBoolean(KEY_LINE_UI_ENABLED, false)
+
+fun saveLineUiEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_LINE_UI_ENABLED, enabled).apply()
+}
+
 // ==================== 角色记忆（对话消息长按载入 → 附加到系统提示词） ====================
 const val KEY_CHARACTER_MEMORY_PREFIX = "character_memory_"
 

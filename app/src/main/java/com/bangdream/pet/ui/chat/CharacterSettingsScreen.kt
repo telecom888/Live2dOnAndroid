@@ -3,7 +3,12 @@ package com.bangdream.pet.ui.chat
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,6 +40,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +53,9 @@ import com.bangdream.pet.loadCharacterCustomPrompt
 import com.bangdream.pet.loadCharacterMemory
 import com.bangdream.pet.clearCharacterMemory
 import com.bangdream.pet.saveCharacterCustomPrompt
+import com.bangdream.pet.AvatarManager
+import com.bangdream.pet.ui.ImageBitmapCache
+import com.bangdream.pet.ui.SampledImageDecoder
 import com.bangdream.pet.llm.CharacterPromptRepository
 import com.bangdream.pet.voice.VoiceSampleInfo
 import com.bangdream.pet.voice.VoiceSamples
@@ -72,9 +83,21 @@ fun CharacterSettingsScreen(
         mutableStateOf(loadCharacterMemory(appContext, character.characterId))
     }
     var samples by remember(character.characterId) { mutableStateOf(emptyList<VoiceSampleInfo>()) }
+    var avatarTick by remember { mutableStateOf(0) }
     var refreshTick by remember { mutableStateOf(0) }
     var saved by remember { mutableStateOf(false) }
 
+    val avatarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val ok = AvatarManager.importAvatar(appContext, character.characterId, uri)
+            Toast.makeText(
+                appContext,
+                if (ok) "Line 头像已设置" else "头像导入失败",
+                Toast.LENGTH_SHORT,
+            ).show()
+            avatarTick++
+        }
+    }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             val ok = VoiceSamples.importSample(appContext, character.characterId, uri)
@@ -180,6 +203,34 @@ fun CharacterSettingsScreen(
                 }
             }
             Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Line 头像", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                if (AvatarManager.customAvatarFile(appContext, character.characterId) != null) {
+                    TextButton(onClick = {
+                        AvatarManager.clearAvatar(appContext, character.characterId)
+                        avatarTick++
+                        Toast.makeText(appContext, "已恢复默认头像", Toast.LENGTH_SHORT).show()
+                    }) { Text("恢复默认") }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LineAvatarPreview(character.characterId, avatarTick)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        "仅 Line UI 模式显示；未设置时使用内置角色头像",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "支持 jpg/png，选择后立即生效",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                FilledTonalButton(onClick = { avatarLauncher.launch("image/*") }) { Text("选择头像") }
+            }
+            Spacer(Modifier.height(8.dp))
             Text("语音样本（克隆音色）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             if (samples.isEmpty()) {
                 Text("暂无样本，导入一个音频作为克隆音色", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -236,6 +287,49 @@ fun CharacterSettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun LineAvatarPreview(characterId: String, tick: Int, size: Dp = 48.dp) {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val customFile = remember(characterId, tick) { AvatarManager.customAvatarFile(appContext, characterId) }
+    val defaultPath = remember(characterId, tick) { AvatarManager.defaultAvatarAssetPath(appContext, characterId) }
+    val key = remember(characterId, tick, customFile?.lastModified()) {
+        if (customFile != null) {
+            "avatar-preview:custom:$characterId:${customFile.lastModified()}"
+        } else {
+            "avatar-preview:default:$characterId"
+        }
+    }
+    var bitmap by remember(key) { mutableStateOf(ImageBitmapCache.get(key)) }
+    LaunchedEffect(key) {
+        if (bitmap != null || ImageBitmapCache.isKnownMissing(key)) return@LaunchedEffect
+        val decoded = withContext(Dispatchers.IO) {
+            when {
+                customFile != null -> SampledImageDecoder.decodeBytes(customFile.readBytes(), 128)
+                defaultPath != null -> SampledImageDecoder.decodeAsset(appContext, defaultPath, 128)
+                else -> null
+            }
+        }
+        if (decoded == null) ImageBitmapCache.markMissing(key) else ImageBitmapCache.put(key, decoded)
+        bitmap = decoded
+    }
+    Box(
+        modifier = Modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap!!,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Text("无", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

@@ -14,6 +14,13 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 class LlmChatClient {
+
+    /**
+     * 流式对话（OpenAI 兼容）。自动适配工具调用：
+     * - 模型返回 tool_calls 时不当作文本输出，工具调用字段不会明文显示；
+     * - 把 assistant(tool_calls) + tool 结果回传并继续请求，直到模型输出最终文本或达到最大轮数，
+     *   避免「工具调用结束后早停、要用户再发一句才继续」。
+     */
     @OptIn(kotlinx.coroutines.InternalCoroutinesApi::class)
     fun streamCompletion(
         settings: LlmSettings,
@@ -21,6 +28,22 @@ class LlmChatClient {
         messages: List<ChatMessage>,
     ): Flow<LlmStreamEvent> = flow {
         val normalized = settings.normalized()
+        var requestMessages = messagesToJsonArray(systemPrompt, messages)
+        var remainingRounds = MAX_TOOL_ROUNDS
+        while (true) {
+            val result = runSingleRequest(normalized, requestMessages) { event -> emit(event) }
+            if (result.content.isNotBlank() || result.toolCalls.isEmpty() || remainingRounds <= 0) break
+            requestMessages = appendToolMessages(requestMessages, result.toolCalls)
+            remainingRounds--
+        }
+    }.flowOn(Dispatchers.IO)
+
+    @OptIn(kotlinx.coroutines.InternalCoroutinesApi::class)
+    private suspend fun runSingleRequest(
+        normalized: LlmSettings,
+        requestMessages: JSONArray,
+        onEvent: suspend (LlmStreamEvent) -> Unit,
+    ): SingleRequestResult {
         val connection = (URL(normalized.endpoint()).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 15_000
@@ -38,7 +61,7 @@ class LlmChatClient {
         }
         try {
             connection.outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
-                writer.write(buildRequestBody(normalized, systemPrompt, messages).toString())
+                writer.write(buildRequestBody(normalized, requestMessages).toString())
             }
             val code = connection.responseCode
             if (code !in 200..299) {
@@ -48,6 +71,8 @@ class LlmChatClient {
             }
             var reasoningEmitted = false
             val dataLines = mutableListOf<String>()
+            val contentBuilder = StringBuilder()
+            val toolCalls = mutableMapOf<Int, AccumulatedToolCall>()
 
             fun takeEvent(): ParsedSseEvent? {
                 if (dataLines.isEmpty()) return null
@@ -55,15 +80,19 @@ class LlmChatClient {
                 dataLines.clear()
                 if (data == "[DONE]") return ParsedSseEvent(done = true)
                 if (data.isBlank()) return null
-                val delta = runCatching {
-                    JSONObject(data).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta")
+                val choice = runCatching {
+                    JSONObject(data).optJSONArray("choices")?.optJSONObject(0)
                 }.getOrNull() ?: return null
-                val reasoning = delta.opt("reasoning_content")
-                val content = delta.opt("content")
+                val delta = choice.optJSONObject("delta")
+                val reasoning = delta?.opt("reasoning_content")
+                val content = delta?.opt("content")
                 return ParsedSseEvent(
+                    done = false,
                     reasoning = reasoning is String && reasoning.isNotEmpty(),
                     reasoningContent = (reasoning as? String)?.takeIf(String::isNotEmpty),
                     content = content as? String,
+                    toolCalls = delta?.let { parseToolCallDeltas(it) },
+                    finishReason = choice.optString("finish_reason").takeIf(String::isNotEmpty),
                 )
             }
 
@@ -77,64 +106,150 @@ class LlmChatClient {
                             if (event?.done == true) break
                             if (event?.reasoning == true && !reasoningEmitted) {
                                 reasoningEmitted = true
-                                emit(LlmStreamEvent.ReasoningStarted)
+                                onEvent(LlmStreamEvent.ReasoningStarted)
                             }
-                            event?.reasoningContent?.let { emit(LlmStreamEvent.Reasoning(it)) }
-                            event?.content?.takeIf(String::isNotEmpty)?.let { emit(LlmStreamEvent.Content(it)) }
+                            event?.reasoningContent?.let { onEvent(LlmStreamEvent.Reasoning(it)) }
+                            event?.content?.takeIf(String::isNotEmpty)?.let {
+                                contentBuilder.append(it)
+                                onEvent(LlmStreamEvent.Content(it))
+                            }
+                            event?.toolCalls?.forEach { mergeToolCall(toolCalls, it) }
                         }
                         line.startsWith("data:") -> dataLines += line.removePrefix("data:").trimStart()
                     }
                 }
                 val event = takeEvent()
-                if (event?.reasoning == true && !reasoningEmitted) emit(LlmStreamEvent.ReasoningStarted)
-                event?.reasoningContent?.let { emit(LlmStreamEvent.Reasoning(it)) }
-                event?.content?.takeIf(String::isNotEmpty)?.let { emit(LlmStreamEvent.Content(it)) }
+                if (event?.reasoning == true && !reasoningEmitted) onEvent(LlmStreamEvent.ReasoningStarted)
+                event?.reasoningContent?.let { onEvent(LlmStreamEvent.Reasoning(it)) }
+                event?.content?.takeIf(String::isNotEmpty)?.let {
+                    contentBuilder.append(it)
+                    onEvent(LlmStreamEvent.Content(it))
+                }
+                event?.toolCalls?.forEach { mergeToolCall(toolCalls, it) }
             }
+            return SingleRequestResult(
+                content = contentBuilder.toString(),
+                toolCalls = toolCalls.values.sortedBy { it.index },
+            )
         } finally {
             cancellationHandle.dispose()
             connection.disconnect()
         }
-    }.flowOn(Dispatchers.IO)
+    }
+
+    /** 把系统提示词 + 历史消息转成请求消息 JSON（带图片消息转内容块数组）。 */
+    private fun messagesToJsonArray(systemPrompt: String, messages: List<ChatMessage>): JSONArray =
+        JSONArray().apply {
+            put(JSONObject().put("role", "system").put("content", systemPrompt))
+            messages.forEach { message ->
+                val contentJson: Any = if (message.images.isEmpty()) {
+                    message.content
+                } else {
+                    JSONArray().apply {
+                        message.images.forEach { imageUrl ->
+                            put(
+                                JSONObject()
+                                    .put("type", "image_url")
+                                    .put("image_url", JSONObject().put("url", imageUrl)),
+                            )
+                        }
+                        put(JSONObject().put("type", "text").put("text", message.content))
+                    }
+                }
+                put(JSONObject().put("role", message.role).put("content", contentJson))
+            }
+        }
+
+    /** 追加 assistant(tool_calls) + 各 tool 的执行结果消息。 */
+    private fun appendToolMessages(
+        requestMessages: JSONArray,
+        toolCalls: List<AccumulatedToolCall>,
+    ): JSONArray = JSONArray().apply {
+        for (index in 0 until requestMessages.length()) put(requestMessages.get(index))
+        put(
+            JSONObject()
+                .put("role", "assistant")
+                .put("content", "")
+                .put(
+                    "tool_calls",
+                    JSONArray().apply {
+                        toolCalls.forEach { call ->
+                            put(
+                                JSONObject()
+                                    .put("id", call.id)
+                                    .put("type", "function")
+                                    .put(
+                                        "function",
+                                        JSONObject()
+                                            .put("name", call.name)
+                                            .put("arguments", call.arguments),
+                                    ),
+                            )
+                        }
+                    },
+                ),
+        )
+        toolCalls.forEach { call ->
+            put(
+                JSONObject()
+                    .put("role", "tool")
+                    .put("tool_call_id", call.id)
+                    .put("content", toolResultContent(call)),
+            )
+        }
+    }
+
+    /** 工具执行结果（项目内置工具为空，返回成功占位，让模型基于参数继续回复）。 */
+    private fun toolResultContent(call: AccumulatedToolCall): String = JSONObject()
+        .put("status", "ok")
+        .put("tool", call.name)
+        .put(
+            "arguments",
+            runCatching { JSONObject(call.arguments.ifBlank { "{}" }) }
+                .getOrElse { JSONObject().put("raw", call.arguments) },
+        )
+        .toString()
 
     internal fun buildRequestBody(
         settings: LlmSettings,
-        systemPrompt: String,
-        messages: List<ChatMessage>,
-    ): JSONObject {
-        val requestMessages = JSONArray().put(JSONObject().put("role", "system").put("content", systemPrompt))
-        // 不设上下文上限：发送全部历史消息（存储不设限），
-        // 充分利用模型 1M 上下文窗口；占用情况由对话详情页进度条展示。
-        // 带图片的消息（mimo-v2.5 / deepseek-v4-flash-vision-exp 多模态）按 OpenAI 内容块格式发送。
-        messages.forEach { message ->
-            val contentJson: Any = if (message.images.isEmpty()) {
-                message.content
-            } else {
-                JSONArray().apply {
-                    message.images.forEach { imageUrl ->
-                        put(
-                            JSONObject()
-                                .put("type", "image_url")
-                                .put("image_url", JSONObject().put("url", imageUrl)),
-                        )
-                    }
-                    put(JSONObject().put("type", "text").put("text", message.content))
-                }
+        requestMessages: JSONArray,
+    ): JSONObject = JSONObject()
+        .put("model", settings.model)
+        .put("messages", requestMessages)
+        .put("stream", true)
+        .put("temperature", settings.temperature.toDouble())
+        .put("max_tokens", settings.maxTokens)
+        .apply {
+            when (settings.thinkingMode) {
+                ThinkingMode.Auto -> Unit
+                ThinkingMode.Enabled -> put("thinking", JSONObject().put("type", "enabled"))
+                ThinkingMode.Disabled -> put("thinking", JSONObject().put("type", "disabled"))
             }
-            requestMessages.put(JSONObject().put("role", message.role).put("content", contentJson))
         }
-        return JSONObject()
-            .put("model", settings.model)
-            .put("messages", requestMessages)
-            .put("stream", true)
-            .put("temperature", settings.temperature.toDouble())
-            .put("max_tokens", settings.maxTokens)
-            .apply {
-                when (settings.thinkingMode) {
-                    ThinkingMode.Auto -> Unit
-                    ThinkingMode.Enabled -> put("thinking", JSONObject().put("type", "enabled"))
-                    ThinkingMode.Disabled -> put("thinking", JSONObject().put("type", "disabled"))
-                }
-            }
+
+    private fun parseToolCallDeltas(delta: JSONObject): List<ParsedToolCallDelta> {
+        val array = delta.optJSONArray("tool_calls") ?: return emptyList()
+        val result = mutableListOf<ParsedToolCallDelta>()
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            val function = item.optJSONObject("function")
+            result.add(
+                ParsedToolCallDelta(
+                    index = item.optInt("index", 0),
+                    id = item.optString("id"),
+                    name = function?.optString("name").orEmpty(),
+                    arguments = function?.optString("arguments").orEmpty(),
+                ),
+            )
+        }
+        return result
+    }
+
+    private fun mergeToolCall(map: MutableMap<Int, AccumulatedToolCall>, delta: ParsedToolCallDelta) {
+        val current = map.getOrPut(delta.index) { AccumulatedToolCall(delta.index, "", "", "") }
+        if (delta.id.isNotBlank()) current.id = delta.id
+        if (delta.name.isNotBlank()) current.name = delta.name
+        current.arguments += delta.arguments
     }
 
     private data class ParsedSseEvent(
@@ -142,5 +257,30 @@ class LlmChatClient {
         val reasoning: Boolean = false,
         val reasoningContent: String? = null,
         val content: String? = null,
+        val toolCalls: List<ParsedToolCallDelta>? = null,
+        val finishReason: String? = null,
     )
+
+    private data class ParsedToolCallDelta(
+        val index: Int,
+        val id: String,
+        val name: String,
+        val arguments: String,
+    )
+
+    private data class AccumulatedToolCall(
+        val index: Int,
+        var id: String,
+        var name: String,
+        var arguments: String,
+    )
+
+    private data class SingleRequestResult(
+        val content: String,
+        val toolCalls: List<AccumulatedToolCall>,
+    )
+
+    companion object {
+        private const val MAX_TOOL_ROUNDS = 6
+    }
 }
