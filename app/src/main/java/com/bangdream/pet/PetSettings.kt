@@ -556,6 +556,18 @@ fun saveBubbleEnabled(context: Context, enabled: Boolean) {
         .edit().putBoolean(KEY_BUBBLE_ENABLED, enabled).apply()
 }
 
+const val KEY_BUBBLE_DURATION_SECONDS = "bubble_duration_seconds"
+
+fun loadBubbleDurationSeconds(context: Context): Int =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getInt(KEY_BUBBLE_DURATION_SECONDS, 6)
+        .coerceIn(1, 60)
+
+fun saveBubbleDurationSeconds(context: Context, seconds: Int) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putInt(KEY_BUBBLE_DURATION_SECONDS, seconds.coerceIn(1, 60)).apply()
+}
+
 
 // ==================== 角色自定义系统提示词（覆盖内置人物设定） ====================
 const val KEY_CHARACTER_CUSTOM_PROMPT_PREFIX = "character_custom_prompt_"
@@ -574,6 +586,31 @@ fun saveCharacterCustomPrompt(context: Context, characterId: String, prompt: Str
                 putString(KEY_CHARACTER_CUSTOM_PROMPT_PREFIX + characterId, prompt.trim())
             }
         }.apply()
+}
+
+// ==================== 角色记忆（对话消息长按载入 → 附加到系统提示词） ====================
+const val KEY_CHARACTER_MEMORY_PREFIX = "character_memory_"
+
+fun loadCharacterMemory(context: Context, characterId: String): String =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getString(KEY_CHARACTER_MEMORY_PREFIX + characterId, null)
+        .orEmpty()
+        .trim()
+
+/** 把一条记忆追加到角色记忆中（每行一条，自动去重相邻重复内容）。 */
+fun appendCharacterMemory(context: Context, characterId: String, entry: String) {
+    val text = entry.trim()
+    if (text.isEmpty()) return
+    val current = loadCharacterMemory(context, characterId)
+    if (current == text || current.contains("\n- $text\n") || current.endsWith("\n- $text")) return
+    val newValue = if (current.isEmpty()) "- $text" else "$current\n- $text"
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putString(KEY_CHARACTER_MEMORY_PREFIX + characterId, newValue).apply()
+}
+
+fun clearCharacterMemory(context: Context, characterId: String) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().remove(KEY_CHARACTER_MEMORY_PREFIX + characterId).apply()
 }
 
 // ==================== 回复后语音（对话回复 → 克隆 TTS 播放） ====================

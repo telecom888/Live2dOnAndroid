@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.bangdream.pet.data.ModelChoice
 import com.bangdream.pet.loadCharacterCustomPrompt
+import com.bangdream.pet.loadCharacterMemory
+import com.bangdream.pet.clearCharacterMemory
 import com.bangdream.pet.saveCharacterCustomPrompt
 import com.bangdream.pet.llm.CharacterPromptRepository
 import com.bangdream.pet.voice.VoiceSampleInfo
@@ -65,6 +67,9 @@ fun CharacterSettingsScreen(
     val scope = rememberCoroutineScope()
     var promptDraft by remember(character.characterId) {
         mutableStateOf(loadCharacterCustomPrompt(appContext, character.characterId).orEmpty())
+    }
+    var memoryText by remember(character.characterId) {
+        mutableStateOf(loadCharacterMemory(appContext, character.characterId))
     }
     var samples by remember(character.characterId) { mutableStateOf(emptyList<VoiceSampleInfo>()) }
     var refreshTick by remember { mutableStateOf(0) }
@@ -142,6 +147,37 @@ fun CharacterSettingsScreen(
                         Toast.makeText(appContext, "人物设定已保存", Toast.LENGTH_SHORT).show()
                     },
                 ) { Text(if (saved) "已保存" else "保存") }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("角色记忆", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                if (memoryText.isNotBlank()) {
+                    TextButton(onClick = {
+                        clearCharacterMemory(appContext, character.characterId)
+                        memoryText = ""
+                        Toast.makeText(appContext, "已清空角色记忆", Toast.LENGTH_SHORT).show()
+                    }) { Text("清空") }
+                }
+            }
+            if (memoryText.isBlank()) {
+                Text(
+                    "暂无记忆。在对话详情中长按消息气泡可「载入记忆」。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                ) {
+                    Text(
+                        memoryText,
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             Spacer(Modifier.height(8.dp))
             Text("语音样本（克隆音色）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)

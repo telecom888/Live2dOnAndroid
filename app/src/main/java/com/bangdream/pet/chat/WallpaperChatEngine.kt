@@ -11,6 +11,8 @@ import com.bangdream.pet.llm.LlmChatClient
 import com.bangdream.pet.llm.LlmSettings
 import com.bangdream.pet.llm.LlmStreamEvent
 import com.bangdream.pet.VoiceSettings
+import com.bangdream.pet.loadCharacterCustomPrompt
+import com.bangdream.pet.loadCharacterMemory
 import com.bangdream.pet.voice.VoicePlayer
 import com.bangdream.pet.voice.VoiceCloneClient
 import com.bangdream.pet.voice.VoiceSamples
@@ -48,6 +50,14 @@ class WallpaperChatEngine(private val context: Context) {
         }
         val characterId = model.characterId
         val prompt = prompts.buildSystemPrompt(model)
+        val customPrompt = loadCharacterCustomPrompt(context, model.characterId)
+        val memory = loadCharacterMemory(context, model.characterId)
+        val baseText = customPrompt?.takeIf(String::isNotBlank) ?: prompt.text
+        val systemText = if (memory.isBlank()) {
+            baseText
+        } else {
+            "$baseText\n\n【长期记忆】以下是你已经记住的内容，请在交流中自然地运用，不要向用户解释或提及记忆本身：\n$memory"
+        }
         val snapshot = history.loadSnapshot(characterId)
         val active = snapshot.activeConversation
         val now = System.currentTimeMillis()
@@ -57,7 +67,7 @@ class WallpaperChatEngine(private val context: Context) {
         val parser = ActionTagParser(prompt.allowedActionTags)
         var error: String? = null
         try {
-            client.streamCompletion(settings, prompt.text, baseMessages + userMessage).collect { event ->
+            client.streamCompletion(settings, systemText, baseMessages + userMessage).collect { event ->
                 coroutineContext.ensureActive()
                 when (event) {
                     is LlmStreamEvent.Reasoning -> Unit

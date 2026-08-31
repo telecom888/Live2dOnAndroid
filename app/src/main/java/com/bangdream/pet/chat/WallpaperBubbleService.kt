@@ -14,6 +14,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
+import com.bangdream.pet.loadBubbleDurationSeconds
 
 /** 壁纸文字气泡（悬浮文本，非模型窗口）。开关见设置「壁纸文字气泡」。 */
 class WallpaperBubbleService : Service() {
@@ -70,7 +71,7 @@ class WallpaperBubbleService : Service() {
         runCatching { wm.addView(tv, params) }
         bubbleView = tv
         handler.removeCallbacks(hideRunnable)
-        handler.postDelayed(hideRunnable, BUBBLE_DURATION_MS)
+        handler.postDelayed(hideRunnable, loadBubbleDurationSeconds(this) * 1000L)
     }
 
     private fun removeBubble() {
@@ -85,7 +86,6 @@ class WallpaperBubbleService : Service() {
         private const val EXTRA_TEXT = "text"
         private const val ACTION_SHOW = 1
         private const val ACTION_HIDE = 2
-        private const val BUBBLE_DURATION_MS = 6_000L
 
         fun show(context: Context, text: String) {
             runCatching {

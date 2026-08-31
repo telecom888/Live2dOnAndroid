@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.bangdream.pet.ui.live2d
 
 import android.graphics.Rect
@@ -11,6 +13,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -567,6 +570,7 @@ internal fun ChatMessageList(
     thinking: Boolean,
     streamingReasoning: String = "",
     onReplay: ((ChatMessage) -> Unit)? = null,
+    onMessageLongPress: ((ChatMessage) -> Unit)? = null,
     highlightQuery: String? = null,
     scrollToMessageId: String? = null,
     modifier: Modifier = Modifier,
@@ -609,6 +613,9 @@ internal fun ChatMessageList(
                     reasoning = message.reasoning,
                     highlightQuery = highlightQuery,
                     onReplay = replay,
+                    onLongPress = onMessageLongPress?.let { longPress ->
+                        { longPress(message) }
+                    },
                     timestamp = message.timestamp,
                     maxBubbleWidth = bubbleMaxWidth,
                 )
@@ -639,6 +646,7 @@ internal fun ChatBubble(
     reasoning: String? = null,
     highlightQuery: String? = null,
     onReplay: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
     timestamp: Long = 0L,
     maxBubbleWidth: Dp = 420.dp,
 ) {
@@ -651,8 +659,15 @@ internal fun ChatBubble(
             ReasoningFold(reasoning, maxBubbleWidth)
             Spacer(Modifier.height(6.dp))
         }
+        val bubbleModifier = if (onLongPress != null) {
+            Modifier
+                .widthIn(max = maxBubbleWidth)
+                .combinedClickable(onClick = {}, onLongClick = onLongPress)
+        } else {
+            Modifier.widthIn(max = maxBubbleWidth)
+        }
         Surface(
-            modifier = Modifier.widthIn(max = maxBubbleWidth),
+            modifier = bubbleModifier,
             shape = RoundedCornerShape(
                 topStart = if (fromUser) 20.dp else 6.dp,
                 topEnd = if (fromUser) 6.dp else 20.dp,

@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.bangdream.pet.VoiceSettings
 import com.bangdream.pet.data.ModelChoice
 import com.bangdream.pet.loadCharacterCustomPrompt
+import com.bangdream.pet.loadCharacterMemory
+import com.bangdream.pet.appendCharacterMemory
 import com.bangdream.pet.loadReplyVoiceEnabled
 import com.bangdream.pet.voice.VoiceCloneClient
 import com.bangdream.pet.voice.VoicePlayer
@@ -290,7 +292,15 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             val customPrompt = withContext(Dispatchers.IO) {
                 loadCharacterCustomPrompt(getApplication(), model.characterId)
             }
-            val systemPrompt = customPrompt?.takeIf(String::isNotBlank) ?: characterPrompt.text
+            val memory = withContext(Dispatchers.IO) {
+                loadCharacterMemory(getApplication(), model.characterId)
+            }
+            val basePrompt = customPrompt?.takeIf(String::isNotBlank) ?: characterPrompt.text
+            val systemPrompt = if (memory.isBlank()) {
+                basePrompt
+            } else {
+                "$basePrompt\n\n【长期记忆】以下是你已经记住的内容，请在交流中自然地运用，不要向用户解释或提及记忆本身：\n$memory"
+            }
             val parser = ActionTagParser(characterPrompt.allowedActionTags)
             mutableState.value = mutableState.value.copy(isGenerating = true)
             lastFailedRequest = null
@@ -436,6 +446,17 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         )
         if (result.text.isNotBlank()) {
             playReplyVoiceIfEnabled(request.characterId, result.text)
+        }
+    }
+
+    /** 对话页「载入记忆」：把一条消息内容追加为该角色的长期记忆。 */
+    fun loadMessageAsMemory(characterId: String, content: String) {
+        val text = content.trim()
+        if (text.isEmpty()) return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                appendCharacterMemory(getApplication(), characterId, text)
+            }
         }
     }
 

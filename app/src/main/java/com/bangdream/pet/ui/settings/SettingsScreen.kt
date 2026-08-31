@@ -88,6 +88,8 @@ import com.bangdream.pet.VOICE_PROVIDER_CUSTOM
 import com.bangdream.pet.VOICE_PROVIDER_MIMO
 import com.bangdream.pet.VoiceSettings
 import com.bangdream.pet.loadBubbleEnabled
+import com.bangdream.pet.loadBubbleDurationSeconds
+import com.bangdream.pet.saveBubbleDurationSeconds
 import com.bangdream.pet.loadReplyVoiceEnabled
 import com.bangdream.pet.BuiltinVoiceLanguage
 import com.bangdream.pet.loadBuiltinVoiceEnabled
@@ -1158,6 +1160,7 @@ private fun InteractionSettingsCard() {
     var idleEnabled by remember { mutableStateOf(loadIdleAnimationEnabled(appContext)) }
     var idleChoices by remember { mutableStateOf(loadIdleAnimations(appContext)) }
     var idleInterval by remember { mutableStateOf(loadIdleIntervalMs(appContext).toFloat()) }
+    var bubbleDurationSeconds by remember { mutableStateOf(loadBubbleDurationSeconds(appContext)) }
 
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -1220,6 +1223,16 @@ private fun InteractionSettingsCard() {
                 }
                 var bubbleEnabled by remember { mutableStateOf(loadBubbleEnabled(appContext)) }
                 Switch(checked = bubbleEnabled, onCheckedChange = { bubbleEnabled = it; saveBubbleEnabled(appContext, it) })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("气泡展示：${bubbleDurationSeconds} 秒", modifier = Modifier.width(130.dp), style = MaterialTheme.typography.bodyMedium)
+                Slider(
+                    value = bubbleDurationSeconds.toFloat(),
+                    onValueChange = { bubbleDurationSeconds = it.toInt() },
+                    onValueChangeFinished = { saveBubbleDurationSeconds(appContext, bubbleDurationSeconds) },
+                    valueRange = 1f..30f,
+                    modifier = Modifier.weight(1f),
+                )
             }
             Text(
                 "提示：双击模型弹出输入框对话；长按桌面任意位置停止当前对话/语音。",
