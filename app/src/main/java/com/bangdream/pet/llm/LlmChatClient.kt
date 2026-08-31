@@ -74,6 +74,7 @@ class LlmChatClient {
             val dataLines = mutableListOf<String>()
             val contentBuilder = StringBuilder()
             val toolCalls = mutableMapOf<Int, AccumulatedToolCall>()
+            val textToolCalls = TextToolCallScanner()
 
             fun takeEvent(): ParsedSseEvent? {
                 if (dataLines.isEmpty()) return null
@@ -110,9 +111,12 @@ class LlmChatClient {
                                 onEvent(LlmStreamEvent.ReasoningStarted)
                             }
                             event?.reasoningContent?.let { onEvent(LlmStreamEvent.Reasoning(it)) }
-                            event?.content?.takeIf(String::isNotEmpty)?.let {
-                                contentBuilder.append(it)
-                                onEvent(LlmStreamEvent.Content(it))
+                            event?.content?.takeIf(String::isNotEmpty)?.let { raw ->
+                                val visible = textToolCalls.append(raw)
+                                if (visible.isNotEmpty()) {
+                                    contentBuilder.append(visible)
+                                    onEvent(LlmStreamEvent.Content(visible))
+                                }
                             }
                             event?.toolCalls?.forEach { mergeToolCall(toolCalls, it) }
                         }
@@ -122,12 +126,16 @@ class LlmChatClient {
                 val event = takeEvent()
                 if (event?.reasoning == true && !reasoningEmitted) onEvent(LlmStreamEvent.ReasoningStarted)
                 event?.reasoningContent?.let { onEvent(LlmStreamEvent.Reasoning(it)) }
-                event?.content?.takeIf(String::isNotEmpty)?.let {
-                    contentBuilder.append(it)
-                    onEvent(LlmStreamEvent.Content(it))
+                event?.content?.takeIf(String::isNotEmpty)?.let { raw ->
+                    val visible = textToolCalls.append(raw)
+                    if (visible.isNotEmpty()) {
+                        contentBuilder.append(visible)
+                        onEvent(LlmStreamEvent.Content(visible))
+                    }
                 }
                 event?.toolCalls?.forEach { mergeToolCall(toolCalls, it) }
             }
+            textToolCalls.finish().forEach { toolCalls[it.index] = it }
             return SingleRequestResult(
                 content = contentBuilder.toString(),
                 toolCalls = toolCalls.values.sortedBy { it.index },
@@ -258,8 +266,13 @@ class LlmChatClient {
                     .optJSONArray("choices")
                     ?.optJSONObject(0)
                     ?.optJSONObject("message")
-                val content = message?.optString("content").orEmpty().trim()
-                if (content.isNotEmpty()) content else message?.optString("reasoning_content").orEmpty().trim()
+                val rawContent = message?.optString("content").orEmpty().trim()
+                val content = stripTextToolCalls(rawContent)
+                if (content.isNotEmpty()) {
+                    content
+                } else {
+                    stripTextToolCalls(message?.optString("reasoning_content").orEmpty().trim())
+                }
             } finally {
                 connection.disconnect()
             }
@@ -324,7 +337,7 @@ class LlmChatClient {
         val arguments: String,
     )
 
-    private data class AccumulatedToolCall(
+    internal data class AccumulatedToolCall(
         val index: Int,
         var id: String,
         var name: String,
@@ -340,3 +353,88 @@ class LlmChatClient {
         private const val MAX_TOOL_ROUNDS = 6
     }
 }
+
+/**
+ * 文本格式工具调用剥离器：部分模型（如 mimo）会在 content 里直接输出
+ * `<tool_call><function=...><parameter=...>...</function></tool_call>` 文本标记，
+ * 而不是标准 delta.tool_calls JSON。这里把它从可见文本中剥离并解析为工具调用，
+ * 走统一的 appendToolMessages 回传链路，避免协议文本暴露在聊天界面。
+ */
+private class TextToolCallScanner {
+    private val buffer = StringBuilder()
+    private val calls = mutableListOf<LlmChatClient.AccumulatedToolCall>()
+    private var counter = 0
+
+    /** 追加一段流式文本，返回应显示给用户的文本（完整工具调用块已剥离）。 */
+    fun append(chunk: String): String {
+        buffer.append(chunk)
+        val visible = StringBuilder()
+        while (buffer.isNotEmpty()) {
+            val start = buffer.indexOf(OPEN_TAG)
+            if (start < 0) {
+                // 没有完整开始标记：检查尾部是否为开始标记前缀（流式截断场景）
+                val prefixLen = partialOpenTagPrefixLength()
+                if (prefixLen == 0) {
+                    visible.append(buffer)
+                    buffer.setLength(0)
+                } else if (prefixLen < buffer.length) {
+                    visible.append(buffer, 0, buffer.length - prefixLen)
+                    buffer.delete(0, buffer.length - prefixLen)
+                }
+                break
+            }
+            if (start > 0) visible.append(buffer, 0, start)
+            buffer.delete(0, start)
+            val end = buffer.indexOf(CLOSE_TAG)
+            if (end < 0) break // 未闭合，保留等待后续分片
+            val block = buffer.substring(0, end + CLOSE_TAG.length)
+            buffer.delete(0, end + CLOSE_TAG.length)
+            parseBlock(block)?.let { calls += it }
+        }
+        return visible.toString()
+    }
+
+    /** 流结束：丢弃未闭合的残余标记（不显示协议文本），返回已解析的工具调用。 */
+    fun finish(): List<LlmChatClient.AccumulatedToolCall> {
+        buffer.setLength(0)
+        return calls
+    }
+
+    private fun partialOpenTagPrefixLength(): Int {
+        var longest = 0
+        for (len in 1 until OPEN_TAG.length) {
+            if (buffer.endsWith(OPEN_TAG.substring(0, len))) longest = len
+        }
+        return longest
+    }
+
+    private fun parseBlock(block: String): LlmChatClient.AccumulatedToolCall? {
+        val functionMatch = FUNCTION_REGEX.find(block) ?: return null
+        val name = functionMatch.groupValues[1]
+        val arguments = JSONObject()
+        PARAMETER_REGEX.findAll(block).forEach { match ->
+            arguments.put(match.groupValues[1], match.groupValues[2])
+        }
+        counter += 1
+        return LlmChatClient.AccumulatedToolCall(
+            index = TEXT_TOOL_INDEX_BASE + counter,
+            id = "text_call_$counter",
+            name = name,
+            arguments = arguments.toString(),
+        )
+    }
+
+    private companion object {
+        const val OPEN_TAG = "<tool_call>"
+        const val CLOSE_TAG = "</tool_call>"
+        const val TEXT_TOOL_INDEX_BASE = 10_000
+        val FUNCTION_REGEX = Regex("<function=([^>]+)>")
+        val PARAMETER_REGEX = Regex("<parameter=([^>]+)>([\\s\\S]*?)</parameter>")
+    }
+}
+
+/** 非流式响应也可能包含文本格式工具调用标记，剥离开避免显示协议文本。 */
+private fun stripTextToolCalls(text: String): String =
+    TEXT_TOOL_CALL_BLOCK_REGEX.replace(text, "")
+
+private val TEXT_TOOL_CALL_BLOCK_REGEX = Regex("<tool_call>[\\s\\S]*?</tool_call>")
