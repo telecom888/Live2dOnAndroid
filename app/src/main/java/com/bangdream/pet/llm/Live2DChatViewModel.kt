@@ -449,13 +449,20 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    /** 对话页「载入记忆」：把一条消息内容追加为该角色的长期记忆。 */
-    fun loadMessageAsMemory(characterId: String, content: String) {
-        val text = content.trim()
-        if (text.isEmpty()) return
+    /** 对话列表「载入记忆」：把整条对话按「用户/角色」格式追加为该角色的长期记忆。 */
+    fun loadConversationAsMemory(characterId: String, characterName: String, conversationId: String) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                appendCharacterMemory(getApplication(), characterId, text)
+            val entry = withContext(Dispatchers.IO) {
+                val conversation = history.loadConversation(characterId, conversationId) ?: return@withContext ""
+                conversation.messages.joinToString("\n") { message ->
+                    val who = if (message.role == "user") "用户" else characterName
+                    "$who：${message.content}"
+                }.trim()
+            }
+            if (entry.isNotEmpty()) {
+                withContext(Dispatchers.IO) {
+                    appendCharacterMemory(getApplication(), characterId, entry)
+                }
             }
         }
     }

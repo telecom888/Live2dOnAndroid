@@ -71,7 +71,6 @@ import com.bangdream.pet.data.CharacterInfo
 import com.bangdream.pet.data.DataRepository
 import com.bangdream.pet.data.ModelChoice
 import com.bangdream.pet.llm.ChatConversationSummary
-import com.bangdream.pet.llm.ChatMessage
 import com.bangdream.pet.llm.ChatTextSearch
 import com.bangdream.pet.llm.ChatUiState
 import com.bangdream.pet.llm.Live2DChatViewModel
@@ -286,7 +285,9 @@ private fun ConversationListScreen(
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var detailConversation by remember { mutableStateOf<ChatConversationSummary?>(null) }
+    var actionConversation by remember { mutableStateOf<ChatConversationSummary?>(null) }
     var stats by remember { mutableStateOf<Live2DChatViewModel.ConversationStats?>(null) }
     var filter by remember { mutableStateOf("") }
     var renameDraft by remember(detailConversation) { mutableStateOf(detailConversation?.title.orEmpty()) }
@@ -358,8 +359,7 @@ private fun ConversationListScreen(
                             .combinedClickable(
                                 onClick = { onOpen(conversation.id) },
                                 onLongClick = {
-                                    renameDraft = conversation.title
-                                    detailConversation = conversation
+                                    actionConversation = conversation
                                 },
                             )
                             .appEntrance(delayMillis = (filtered.indexOfFirst { it.id == conversation.id } * 22).coerceAtMost(160)),
@@ -445,6 +445,49 @@ private fun ConversationListScreen(
             },
         )
     }
+
+    actionConversation?.let { conversation ->
+        AlertDialog(
+            onDismissRequest = { actionConversation = null },
+            title = { Text("对话操作") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        conversation.title.ifBlank { "未命名对话" },
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "载入后，该对话将作为「${character.characterName}」的长期记忆，之后的对话会自然地带上它。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.loadConversationAsMemory(
+                        character.characterId,
+                        character.characterName,
+                        conversation.id,
+                    )
+                    Toast.makeText(context, "已载入角色记忆", Toast.LENGTH_SHORT).show()
+                    actionConversation = null
+                }) { Text("载入角色记忆") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { actionConversation = null }) { Text("取消") }
+                    TextButton(onClick = {
+                        renameDraft = conversation.title
+                        detailConversation = conversation
+                        actionConversation = null
+                    }) { Text("对话详情") }
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -461,9 +504,7 @@ private fun ConversationDetailScreen(
     var scrollTarget by remember { mutableStateOf<String?>(null) }
     var renameDialog by remember { mutableStateOf(false) }
     var renameDraft by remember { mutableStateOf("") }
-    var memoryTarget by remember { mutableStateOf<ChatMessage?>(null) }
     val input = remember { mutableStateOf("") }
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     BackHandler(enabled = searchMode) {
         searchMode = false
@@ -573,7 +614,6 @@ private fun ConversationDetailScreen(
                 highlightQuery = searchQuery.takeIf { it.isNotBlank() },
                 scrollToMessageId = scrollTarget,
                 onReplay = { message -> viewModel.replayMessage(character.characterId, message.content) },
-                onMessageLongPress = { message -> memoryTarget = message },
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }
@@ -628,48 +668,6 @@ private fun ConversationDetailScreen(
         )
     }
 
-    memoryTarget?.let { message ->
-        AlertDialog(
-            onDismissRequest = { memoryTarget = null },
-            title = { Text("载入角色记忆") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "把这条消息内容作为「${character.characterName}」的长期记忆，之后对话会带上它。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ) {
-                        Text(
-                            message.content,
-                            modifier = Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 6,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.loadMessageAsMemory(character.characterId, message.content)
-                    Toast.makeText(
-                        context,
-                        "已载入角色记忆",
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    memoryTarget = null
-                }) { Text("载入") }
-            },
-            dismissButton = {
-                TextButton(onClick = { memoryTarget = null }) { Text("取消") }
-            },
-        )
-    }
 }
 
 private fun formatTimestamp(timestamp: Long): String {
