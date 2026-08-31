@@ -164,6 +164,7 @@ fun ConversationManagerScreen(
                 viewModel = viewModel,
                 onBack = { selectedCharacter = null },
                 onOpen = { id ->
+                    viewModel.selectConversation(character.characterId, id)
                     openConversationId = id
                     showCharacterSettings = false
                 },
@@ -515,7 +516,11 @@ private fun ConversationDetailScreen(
                 }
             }
         }
-        if (searchMode && searchQuery.isNotBlank()) {
+        if (state.isHistoryLoading) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else if (searchMode && searchQuery.isNotBlank()) {
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -562,6 +567,8 @@ private fun ConversationDetailScreen(
                 streamingReasoning = state.streamingReasoning,
                 highlightQuery = searchQuery.takeIf { it.isNotBlank() },
                 scrollToMessageId = scrollTarget,
+                characterId = character.characterId,
+                onReplay = { message -> viewModel.replayMessage(character.characterId, message.content) },
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }

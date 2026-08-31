@@ -55,16 +55,16 @@ class WallpaperChatEngine(private val context: Context) {
         val baseMessages = active?.messages.orEmpty()
 
         val parser = ActionTagParser(prompt.allowedActionTags)
-        val textBuilder = StringBuilder()
         var error: String? = null
         try {
             client.streamCompletion(settings, prompt.text, baseMessages + userMessage).collect { event ->
                 coroutineContext.ensureActive()
                 when (event) {
                     is LlmStreamEvent.Reasoning -> Unit
-                is LlmStreamEvent.Content -> {
-                        textBuilder.append(event.text)
-                        onStreaming(parser.consume(textBuilder.toString()))
+                    is LlmStreamEvent.Content -> {
+                        // 只把增量 delta 交给 parser（parser 内部会累积），
+                        // 传全量文本会导致 A/AB/ABC/ABCD 式重复累积。
+                        onStreaming(parser.consume(event.text))
                     }
                     LlmStreamEvent.ReasoningStarted -> Unit
                 }

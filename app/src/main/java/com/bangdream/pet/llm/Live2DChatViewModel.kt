@@ -439,6 +439,25 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    /** 对话页「朗读」：用该角色当前音色合成并播放指定文本。 */
+    fun replayMessage(characterId: String, text: String) {
+        val textValue = text.trim()
+        if (textValue.isEmpty()) return
+        val app = getApplication<Application>()
+        val voice = VoiceSettings.load(app)
+        if (!voice.isConfigured) return
+        val sample = VoiceSamples.activeSampleFile(app, characterId) ?: return
+        viewModelScope.launch {
+            val wav = withContext(Dispatchers.IO) {
+                runCatching {
+                    VoiceCloneClient(voice.baseUrl, voice.model, voice.apiKey).synthesize(textValue, sample)
+                }.getOrNull()
+            }
+            val audio = wav?.takeIf { it.isNotEmpty() }
+            if (audio != null) VoicePlayer.play(app, audio)
+        }
+    }
+
     /** 回复完成后若开启「回复后播放语音」且 TTS/音色已配置，合成并播放（等待合成完成后播放）。 */
     private fun playReplyVoiceIfEnabled(characterId: String, text: String) {
         val app = getApplication<Application>()

@@ -29,6 +29,9 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -49,6 +52,8 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
@@ -68,6 +73,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -91,8 +100,12 @@ import com.bangdream.pet.llm.ChatTextSearch
 import com.bangdream.pet.llm.ChatUiState
 import com.bangdream.pet.llm.Live2DChatViewModel
 import com.bangdream.pet.llm.LlmSettings
+import com.bangdream.pet.ui.ImageBitmapCache
+import com.bangdream.pet.ui.SampledImageDecoder
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun Live2DChatOverlay(
@@ -337,6 +350,7 @@ private fun ChatPanelContent(
                     streamingText = state.streamingText,
                     thinking = state.isThinking,
                     onReplay = null,
+                    characterId = model.characterId,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
                 state.error?.let { error ->
@@ -566,8 +580,10 @@ internal fun ChatMessageList(
     onReplay: ((ChatMessage) -> Unit)? = null,
     highlightQuery: String? = null,
     scrollToMessageId: String? = null,
+    characterId: String? = null,
     modifier: Modifier = Modifier,
 ) {
+    val avatar = rememberCharacterAvatar(characterId)
     val listState = rememberLazyListState()
     val itemCount = messages.size + if (streamingText.isNotBlank() || thinking) 1 else 0
     val streamScrollBucket = streamingText.length / 24
@@ -583,37 +599,45 @@ internal fun ChatMessageList(
         previousItemCount = itemCount
         if (itemCount > 0 && wasNearBottom) listState.scrollToItem(itemCount - 1)
     }
-    LazyColumn(
-        modifier = modifier,
-        state = listState,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(
-            items = messages,
-            key = { it.id },
-            contentType = { "message" },
-        ) { message ->
-            val replay = if (onReplay != null && message.role == "assistant") {
-                { onReplay(message) }
-            } else {
-                null
-            }
-            ChatBubble(
-                message.role,
-                message.content,
-                reasoning = message.reasoning,
-                highlightQuery = highlightQuery,
-                onReplay = replay,
-            )
-        }
-        if (streamingText.isNotBlank() || thinking) {
-            item(key = "streaming", contentType = "message") {
+    BoxWithConstraints(modifier = modifier) {
+        val bubbleMaxWidth = (maxWidth * 0.82f).coerceAtMost(560.dp)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            state = listState,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(
+                items = messages,
+                key = { it.id },
+                contentType = { "message" },
+            ) { message ->
+                val replay = if (onReplay != null && message.role == "assistant") {
+                    { onReplay(message) }
+                } else {
+                    null
+                }
                 ChatBubble(
-                    "assistant",
-                    streamingText.ifBlank { I18n.t("chat_thinking") },
-                    thinking,
-                    reasoning = streamingReasoning,
+                    message.role,
+                    message.content,
+                    reasoning = message.reasoning,
+                    highlightQuery = highlightQuery,
+                    onReplay = replay,
+                    avatar = avatar,
+                    timestamp = message.timestamp,
+                    maxBubbleWidth = bubbleMaxWidth,
                 )
+            }
+            if (streamingText.isNotBlank() || thinking) {
+                item(key = "streaming", contentType = "message") {
+                    ChatBubble(
+                        "assistant",
+                        streamingText.ifBlank { I18n.t("chat_thinking") },
+                        thinking,
+                        reasoning = streamingReasoning,
+                        avatar = avatar,
+                        maxBubbleWidth = bubbleMaxWidth,
+                    )
+                }
             }
         }
     }
@@ -630,6 +654,9 @@ internal fun ChatBubble(
     reasoning: String? = null,
     highlightQuery: String? = null,
     onReplay: (() -> Unit)? = null,
+    avatar: ImageBitmap? = null,
+    timestamp: Long = 0L,
+    maxBubbleWidth: Dp = 420.dp,
 ) {
     val fromUser = role == "user"
     Column(
@@ -637,74 +664,178 @@ internal fun ChatBubble(
         horizontalAlignment = if (fromUser) Alignment.End else Alignment.Start,
     ) {
         if (!reasoning.isNullOrBlank()) {
-            ReasoningFold(reasoning)
-            Spacer(Modifier.height(4.dp))
+            ReasoningFold(reasoning, maxBubbleWidth)
+            Spacer(Modifier.height(6.dp))
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start,
+            verticalAlignment = Alignment.Bottom,
         ) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(0.86f),
-                shape = RoundedCornerShape(
-                    topStart = 20.dp,
-                    topEnd = 20.dp,
-                    bottomStart = if (fromUser) 20.dp else 6.dp,
-                    bottomEnd = if (fromUser) 6.dp else 20.dp,
-                ),
-                color = if (fromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+            if (!fromUser) {
+                ChatAvatar(avatar, isUser = false)
+                Spacer(Modifier.width(8.dp))
+            }
+            Column(
+                modifier = Modifier.widthIn(max = maxBubbleWidth),
+                horizontalAlignment = if (fromUser) Alignment.End else Alignment.Start,
             ) {
-                Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (thinking) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    val ranges = remember(content, highlightQuery) {
-                        if (highlightQuery.isNullOrBlank()) {
-                            emptyList()
-                        } else {
-                            ChatTextSearch.findHighlightRanges(content, highlightQuery)
+                Surface(
+                    shape = RoundedCornerShape(
+                        topStart = if (fromUser) 20.dp else 6.dp,
+                        topEnd = if (fromUser) 6.dp else 20.dp,
+                        bottomStart = 20.dp,
+                        bottomEnd = 20.dp,
+                    ),
+                    color = if (fromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                ) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
+                        if (thinking) {
+                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
                         }
-                    }
-                    if (ranges.isEmpty()) {
-                        Text(content, style = MaterialTheme.typography.bodyMedium)
-                    } else {
-                        val annotated = buildAnnotatedString {
-                            var last = 0
-                            for (range in ranges.sortedBy { it.first }) {
-                                val start = range.first.coerceIn(0, content.length)
-                                val end = range.last.plus(1).coerceIn(start, content.length)
-                                if (start > last) append(content.substring(last, start))
-                                withStyle(
-                                    SpanStyle(
-                                        background = Color(0x66FFD54F),
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                ) {
-                                    append(content.substring(start, end))
-                                }
-                                last = end
+                        val ranges = remember(content, highlightQuery) {
+                            if (highlightQuery.isNullOrBlank()) {
+                                emptyList()
+                            } else {
+                                ChatTextSearch.findHighlightRanges(content, highlightQuery)
                             }
-                            if (last < content.length) append(content.substring(last))
                         }
-                        Text(annotated, style = MaterialTheme.typography.bodyMedium)
-                    }
-                    if (onReplay != null) {
-                        TextButton(onClick = onReplay) { Text("朗读") }
+                        if (ranges.isEmpty()) {
+                            Text(
+                                content,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                        } else {
+                            val annotated = buildAnnotatedString {
+                                var last = 0
+                                for (range in ranges.sortedBy { it.first }) {
+                                    val start = range.first.coerceIn(0, content.length)
+                                    val end = range.last.plus(1).coerceIn(start, content.length)
+                                    if (start > last) append(content.substring(last, start))
+                                    withStyle(
+                                        SpanStyle(
+                                            background = Color(0x66FFD54F),
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    ) {
+                                        append(content.substring(start, end))
+                                    }
+                                    last = end
+                                }
+                                if (last < content.length) append(content.substring(last))
+                            }
+                            Text(
+                                annotated,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                        }
                     }
                 }
+                Row(
+                    modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (timestamp > 0L) {
+                        Text(
+                            formatMessageTime(timestamp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (onReplay != null) {
+                        if (timestamp > 0L) Spacer(Modifier.width(6.dp))
+                        IconButton(
+                            onClick = onReplay,
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(
+                                Icons.Outlined.VolumeUp,
+                                contentDescription = "朗读",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+            if (fromUser) {
+                Spacer(Modifier.width(8.dp))
+                ChatAvatar(avatar, isUser = true)
             }
         }
     }
 }
 
+@Composable
+private fun rememberCharacterAvatar(characterId: String?): ImageBitmap? {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val key = characterId?.let { "chat-avatar:$it" }
+    var avatar by remember(key) { mutableStateOf(key?.let(ImageBitmapCache::get)) }
+    LaunchedEffect(key) {
+        val k = key ?: return@LaunchedEffect
+        val character = characterId ?: return@LaunchedEffect
+        if (avatar != null || ImageBitmapCache.isKnownMissing(k)) return@LaunchedEffect
+        val decoded = withContext(Dispatchers.IO) {
+            SampledImageDecoder.decodeAsset(appContext, "models/$character/character.png", 128)
+        }
+        if (decoded == null) ImageBitmapCache.markMissing(k) else ImageBitmapCache.put(k, decoded)
+        avatar = decoded
+    }
+    return avatar
+}
+
+@Composable
+private fun ChatAvatar(bitmap: ImageBitmap?, isUser: Boolean) {
+    val background = if (isUser) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    Box(
+        modifier = Modifier.size(32.dp).clip(CircleShape).background(background),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                contentScale = ContentScale.Crop,
+            )
+        } else if (isUser) {
+            Icon(
+                Icons.Outlined.Person,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text(
+                "AI",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private fun formatMessageTime(timestamp: Long): String {
+    if (timestamp <= 0L) return ""
+    return DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(timestamp))
+}
+
 /** 可折叠的深度思考（思维链）块。 */
 @Composable
-private fun ReasoningFold(reasoning: String) {
+private fun ReasoningFold(reasoning: String, maxBubbleWidth: Dp = 420.dp) {
     var expanded by remember { mutableStateOf(false) }
     Surface(
         onClick = { expanded = !expanded },
-        modifier = Modifier.fillMaxWidth(0.86f),
+        modifier = Modifier.widthIn(max = maxBubbleWidth),
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
