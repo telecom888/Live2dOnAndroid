@@ -263,8 +263,7 @@ class ChatHistoryRepository internal constructor(
         characterId.replace(Regex("[^A-Za-z0-9_.-]"), "_")
 
     companion object {
-        const val MAX_STORED_MESSAGES = 100
-        const val MAX_REQUEST_MESSAGES = 40
+        const val MAX_STORED_MESSAGES = 2000
         private const val SCHEMA_VERSION = 2
         private const val LEGACY_CONVERSATION_ID = "legacy"
         private const val TITLE_MAX_CODE_POINTS = 32

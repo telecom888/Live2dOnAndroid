@@ -24,6 +24,7 @@ data class LlmSettings(
     val thinkingMode: ThinkingMode = ThinkingMode.Auto,
     val temperature: Float = 0.8f,
     val maxTokens: Int = 1024,
+    val contextTokens: Int = DEFAULT_CONTEXT_TOKENS,
 ) {
     val isConfigured: Boolean
         get() = baseUrl.isNotBlank() && apiKey.isNotBlank() && model.isNotBlank()
@@ -35,6 +36,7 @@ data class LlmSettings(
         customPrompt = customPrompt.trim(),
         temperature = temperature.coerceIn(0f, 2f),
         maxTokens = maxTokens.coerceIn(1, 32_768),
+        contextTokens = contextTokens.coerceIn(MIN_CONTEXT_TOKENS, MAX_CONTEXT_TOKENS),
     )
 
     fun endpoint(): String {
@@ -51,10 +53,15 @@ data class LlmSettings(
             .putString(KEY_LLM_THINKING_MODE, value.thinkingMode.value)
             .putFloat(KEY_LLM_TEMPERATURE, value.temperature)
             .putInt(KEY_LLM_MAX_TOKENS, value.maxTokens)
+            .putInt(KEY_LLM_CONTEXT_TOKENS, value.contextTokens)
             .apply()
     }
 
     companion object {
+        const val DEFAULT_CONTEXT_TOKENS = 1_048_576 // 1M
+        const val MIN_CONTEXT_TOKENS = 8_192
+        const val MAX_CONTEXT_TOKENS = 4_000_000
+
         fun load(context: Context): LlmSettings {
             val prefs = context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
             return LlmSettings(
@@ -64,6 +71,8 @@ data class LlmSettings(
                 thinkingMode = ThinkingMode.fromValue(prefs.getString(KEY_LLM_THINKING_MODE, null)),
                 temperature = prefs.getFloat(KEY_LLM_TEMPERATURE, 0.8f).coerceIn(0f, 2f),
                 maxTokens = prefs.getInt(KEY_LLM_MAX_TOKENS, 1024).coerceIn(1, 32_768),
+                contextTokens = prefs.getInt(KEY_LLM_CONTEXT_TOKENS, DEFAULT_CONTEXT_TOKENS)
+                    .coerceIn(MIN_CONTEXT_TOKENS, MAX_CONTEXT_TOKENS),
             )
         }
     }
@@ -118,3 +127,4 @@ private const val KEY_LLM_MODEL = "llm_model"
 private const val KEY_LLM_THINKING_MODE = "llm_thinking_mode"
 private const val KEY_LLM_TEMPERATURE = "llm_temperature"
 private const val KEY_LLM_MAX_TOKENS = "llm_max_tokens"
+private const val KEY_LLM_CONTEXT_TOKENS = "llm_context_tokens"

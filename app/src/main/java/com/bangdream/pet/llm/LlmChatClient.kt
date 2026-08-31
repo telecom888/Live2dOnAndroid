@@ -102,7 +102,9 @@ class LlmChatClient {
         messages: List<ChatMessage>,
     ): JSONObject {
         val requestMessages = JSONArray().put(JSONObject().put("role", "system").put("content", systemPrompt))
-        messages.takeLast(ChatHistoryRepository.MAX_REQUEST_MESSAGES).forEach { message ->
+        // 不设上下文上限：发送全部历史消息（存储由 MAX_STORED_MESSAGES 兜底），
+        // 充分利用模型 1M 上下文窗口；占用情况由对话详情页进度条展示。
+        messages.forEach { message ->
             requestMessages.put(JSONObject().put("role", message.role).put("content", message.content))
         }
         return JSONObject()

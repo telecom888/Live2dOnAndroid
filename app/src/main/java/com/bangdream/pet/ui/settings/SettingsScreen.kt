@@ -274,6 +274,7 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
     var maxTokensText by remember { mutableStateOf(draft.maxTokens.toString()) }
     var apiKeyVisible by remember { mutableStateOf(false) }
     var thinkingMenuExpanded by remember { mutableStateOf(false) }
+    var contextMenuExpanded by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
     var confirmClearAll by remember { mutableStateOf(false) }
     var clearAllFailed by remember { mutableStateOf(false) }
@@ -394,6 +395,40 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("上下文窗口（预估基准）", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "不限制发送；仅用于对话详情页上下文占用预估显示",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Box {
+                        TextButton(onClick = { contextMenuExpanded = true }) {
+                            Text(contextTokensLabel(draft.contextTokens))
+                        }
+                        DropdownMenu(
+                            expanded = contextMenuExpanded,
+                            onDismissRequest = { contextMenuExpanded = false },
+                        ) {
+                            CONTEXT_TOKEN_OPTIONS.forEach { tokens ->
+                                DropdownMenuItem(
+                                    text = { Text(contextTokensLabel(tokens)) },
+                                    onClick = {
+                                        draft = draft.copy(contextTokens = tokens)
+                                        saved = false
+                                        contextMenuExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = mimoKey,
                     onValueChange = { mimoKey = it },
@@ -481,6 +516,27 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
             ),
         )
     }
+}
+
+private val CONTEXT_TOKEN_OPTIONS = listOf(
+    32_768,      // 32K
+    65_536,      // 64K
+    131_072,     // 128K
+    262_144,     // 256K
+    524_288,     // 512K
+    1_048_576,   // 1M
+    2_097_152,   // 2M
+)
+
+private fun contextTokensLabel(tokens: Int): String = when (tokens) {
+    32_768 -> "32K"
+    65_536 -> "64K"
+    131_072 -> "128K"
+    262_144 -> "256K"
+    524_288 -> "512K"
+    1_048_576 -> "1M"
+    2_097_152 -> "2M"
+    else -> "${tokens / 1024}K"
 }
 
 private fun thinkingModeLabel(mode: ThinkingMode): String = when (mode) {

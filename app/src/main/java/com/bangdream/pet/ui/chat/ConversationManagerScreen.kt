@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -78,6 +79,7 @@ import com.bangdream.pet.data.ModelChoice
 import com.bangdream.pet.llm.ChatConversationSummary
 import com.bangdream.pet.llm.ChatTextSearch
 import com.bangdream.pet.llm.ChatUiState
+import com.bangdream.pet.llm.LlmSettings
 import com.bangdream.pet.llm.Live2DChatViewModel
 import com.bangdream.pet.ui.design.emphasizedTween
 import com.bangdream.pet.ui.design.expressiveTween
@@ -516,7 +518,13 @@ private fun ConversationDetailScreen(
     var renameDialog by remember { mutableStateOf(false) }
     var renameDraft by remember { mutableStateOf("") }
     val input = remember { mutableStateOf("") }
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val contextTokens = remember { LlmSettings.load(context.applicationContext).contextTokens }
+    val usedTokens = remember(state.messages) {
+        state.messages.sumOf { ChatTextSearch.estimateTokens(it.content) }
+    }
+    val usageRatio = (usedTokens.toFloat() / contextTokens.toFloat()).coerceIn(0f, 1f)
     BackHandler(enabled = searchMode) {
         searchMode = false
         searchQuery = ""
@@ -573,6 +581,29 @@ private fun ConversationDetailScreen(
                 }
             }
         }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "上下文占用（消息内容预估）",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "${formatTokens(usedTokens)} / ${formatTokens(contextTokens)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        LinearProgressIndicator(
+            progress = { usageRatio },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(5.dp),
+            color = if (usageRatio >= 0.8f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        )
+        Spacer(Modifier.height(6.dp))
         if (state.isHistoryLoading) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -684,6 +715,12 @@ private fun ConversationDetailScreen(
 private fun formatTimestamp(timestamp: Long): String {
     if (timestamp <= 0L) return ""
     return DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(timestamp))
+}
+
+private fun formatTokens(tokens: Int): String = when {
+    tokens >= 1_000_000 -> String.format("%.1fM", tokens / 1_000_000f)
+    tokens >= 1_000 -> String.format("%.1fK", tokens / 1_000f)
+    else -> tokens.toString()
 }
 
 /** 在对话全文里定位第一个命中点，取上下文片段（首尾加省略号）。未命中返回 null。 */
