@@ -91,6 +91,8 @@ data class ChatMessage(
     val reasoning: String? = null,
     /** 随本条消息发送给模型的图片（base64 data URL）。仅用于当次请求，不写入历史。 */
     val images: List<String> = emptyList(),
+    /** LINE 已读状态：只对用户发送的消息显示，对方（角色）看过后为 true。 */
+    val read: Boolean = false,
 )
 
 @Immutable

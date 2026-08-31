@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -653,16 +654,24 @@ internal fun ChatMessageList(
     val itemCount = messages.size + if (streamingText.isNotBlank() || thinking) 1 else 0
     val streamScrollBucket = streamingText.length / 24
     var previousItemCount by remember { mutableIntStateOf(0) }
+    var consumedJump by remember { mutableStateOf(false) }
     LaunchedEffect(scrollToMessageId, messages.size) {
         val targetId = scrollToMessageId ?: return@LaunchedEffect
         val index = messages.indexOfFirst { it.id == targetId }
-        if (index >= 0) listState.scrollToItem(index)
+        if (index >= 0) {
+            listState.scrollToItem(index)
+            // 标记本次跳转已被处理，避免随后被「自动跟随到底部」覆盖
+            consumedJump = true
+        }
     }
     LaunchedEffect(itemCount, streamScrollBucket) {
         val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
         val wasNearBottom = shouldFollowNewChatContent(previousItemCount, lastVisibleIndex)
         previousItemCount = itemCount
-        if (itemCount > 0 && wasNearBottom) listState.scrollToItem(itemCount - 1)
+        if (itemCount > 0 && wasNearBottom && !consumedJump) {
+            listState.scrollToItem(itemCount - 1)
+        }
+        consumedJump = false
     }
     BoxWithConstraints(modifier = modifier) {
         val bubbleMaxWidth = (maxWidth * 0.82f).coerceAtMost(560.dp)
@@ -692,6 +701,7 @@ internal fun ChatMessageList(
                     avatar = avatar,
                     userAvatar = userAvatar,
                     lineMode = lineMode,
+                    read = message.read,
                     maxBubbleWidth = bubbleMaxWidth,
                 )
             }
@@ -729,6 +739,7 @@ internal fun ChatBubble(
     avatar: ImageBitmap? = null,
     userAvatar: ImageBitmap? = null,
     lineMode: Boolean = false,
+    read: Boolean = false,
     maxBubbleWidth: Dp = 420.dp,
 ) {
     val fromUser = role == "user"
@@ -840,6 +851,14 @@ internal fun ChatBubble(
                                 horizontalArrangement = Arrangement.End,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                if (fromUser && read) {
+                                    Text(
+                                        "已读",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                }
                                 if (onReplay != null) {
                                     IconButton(
                                         onClick = onReplay,
@@ -869,6 +888,14 @@ internal fun ChatBubble(
                         modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        if (fromUser && read) {
+                            Text(
+                                "已读",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                            )
+                            if (timestamp > 0L) Spacer(Modifier.width(6.dp))
+                        }
                         if (timestamp > 0L) {
                             Text(
                                 formatMessageTime(timestamp),
@@ -877,7 +904,7 @@ internal fun ChatBubble(
                             )
                         }
                         if (onReplay != null) {
-                            if (timestamp > 0L) Spacer(Modifier.width(6.dp))
+                            if (timestamp > 0L || read) Spacer(Modifier.width(6.dp))
                             IconButton(
                                 onClick = onReplay,
                                 modifier = Modifier.size(28.dp),

@@ -15,6 +15,7 @@ import com.bangdream.pet.voice.VoicePlayer
 import com.bangdream.pet.voice.VoiceSamples
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -259,6 +260,15 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 messages = messages,
             )
 
+            // LINE 已读：模拟「对方（角色）看过了」，在模型开始回复前随机时间把这条用户消息标记为已读
+            if (appendUser) {
+                val userMessageId = messages.lastOrNull { it.role == "user" }?.id
+                viewModelScope.launch {
+                    delay(Random.nextLong(800L, 4_000L))
+                    markUserMessageRead(model.characterId, conversationId, userMessageId)
+                }
+            }
+
             val conversations = runIoCatching {
                 history.saveConversation(requestContext.toConversation(messages))
                 history.setActiveConversation(model.characterId, conversationId)
@@ -407,6 +417,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         val finalMessages = if (result.text.isNotBlank()) {
             (request.messages + newMessage("assistant", result.text).copy(
                 reasoning = reasoning.takeIf(String::isNotBlank),
+                read = true,
             ))
         } else {
             request.messages
@@ -531,6 +542,23 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         request.characterId,
         request.conversationId,
     )
+
+    private suspend fun markUserMessageRead(characterId: String, conversationId: String, messageId: String?) {
+        if (messageId == null) return
+        val current = mutableState.value
+        if (current.conversationId != conversationId) return
+        val updated = current.messages.map { if (it.id == messageId) it.copy(read = true) else it }
+        if (updated == current.messages) return
+        mutableState.value = current.copy(messages = updated)
+        withContext(Dispatchers.IO) {
+            val conversation = history.loadConversation(characterId, conversationId) ?: return@withContext
+            history.saveConversation(
+                conversation.copy(
+                    messages = conversation.messages.map { if (it.id == messageId) it.copy(read = true) else it },
+                ),
+            )
+        }
+    }
 
     private fun newMessage(role: String, content: String): ChatMessage = ChatMessage(
         id = UUID.randomUUID().toString(),

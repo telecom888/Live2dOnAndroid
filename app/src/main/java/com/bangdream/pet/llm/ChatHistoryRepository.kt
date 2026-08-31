@@ -184,6 +184,7 @@ class ChatHistoryRepository internal constructor(
                     images = item.optJSONArray("images")
                         ?.let { array -> buildList { for (i in 0 until array.length()) add(array.optString(i)) } }
                         .orEmpty(),
+                    read = item.optBoolean("read", false),
                 ),
             )
         }
@@ -198,7 +199,8 @@ class ChatHistoryRepository internal constructor(
                     .put("content", message.content)
                     .put("reasoning", message.reasoning)
                     .put("timestamp", message.timestamp)
-                    .put("images", JSONArray().apply { message.images.forEach { put(it) } }),
+                    .put("images", JSONArray().apply { message.images.forEach { put(it) } })
+                    .put("read", message.read),
             )
         }
     }

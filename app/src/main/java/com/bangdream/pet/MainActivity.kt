@@ -266,7 +266,7 @@ fun BangDreamPetApp(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding)
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .padding(vertical = 8.dp)
                         .appHazeSource(hazeState),
                 ) {
                     AnimatedContent(
@@ -282,7 +282,8 @@ fun BangDreamPetApp(
                         label = "screen",
                     ) { screen ->
                         when (screen) {
-                            Screen.Live2D -> Live2DScreen(
+                            Screen.Live2D -> Box(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                                Live2DScreen(
                                 selectedModel = selectedModel,
                                 renderSettings = renderSettings,
                                 fullScreen = false,
@@ -292,7 +293,10 @@ fun BangDreamPetApp(
                                     }
                                 },
                             )
-                            Screen.Model -> Box(Modifier.fillMaxSize().padding(top = statusBarInset)) {
+                            }
+                            Screen.Model -> Box(
+                                Modifier.fillMaxSize().padding(top = statusBarInset).padding(horizontal = 16.dp),
+                            ) {
                                 ModelScreen(
                                     data = data,
                                     selectedBandId = selectedBandId,
@@ -322,7 +326,8 @@ fun BangDreamPetApp(
                                 appData = appData,
                                 repository = repository,
                             )
-                            Screen.Settings -> SettingsScreen(
+                            Screen.Settings -> Box(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                                SettingsScreen(
                                 selectedModel = selectedModel,
                                 themeSettings = themeSettings,
                                 onThemeSettingsChanged = onThemeSettingsChanged,
@@ -330,9 +335,10 @@ fun BangDreamPetApp(
                                 onRenderSettingsChanged = updateRenderSettings,
                                 topInset = topInset,
                             )
-                        }
+                            }
                     }
                 }
+            }
             }
             if (selectedScreen != Screen.Model && selectedScreen != Screen.Chat) {
                 AppTopBar(
