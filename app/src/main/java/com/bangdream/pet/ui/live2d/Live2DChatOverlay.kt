@@ -606,9 +606,15 @@ private fun ChatHistoryPanel(
     }
 }
 
+// DateFormat 创建很贵（要读 locale 数据），而这两个方法在消息列表里逐条、逐次重组调用。
+private val conversationTimestampFormat by lazy {
+    DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+}
+private val messageTimeFormat by lazy { DateFormat.getTimeInstance(DateFormat.SHORT) }
+
 private fun formatConversationTimestamp(timestamp: Long): String {
     if (timestamp <= 0L) return ""
-    return DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(timestamp))
+    return conversationTimestampFormat.format(Date(timestamp))
 }
 
 private fun chatErrorText(error: String): String = when (error) {
@@ -845,7 +851,7 @@ internal fun ChatBubble(
                             ) {
                                 if (fromUser && read) {
                                     Text(
-                                        "已读",
+                                        I18n.t("chat_read_receipt"),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
                                     )
@@ -866,7 +872,7 @@ internal fun ChatBubble(
                                     ) {
                                         Icon(
                                             Icons.Outlined.VolumeUp,
-                                            contentDescription = "朗读",
+                                            contentDescription = I18n.t("chat_speak"),
                                             modifier = Modifier.size(13.dp),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -883,7 +889,7 @@ internal fun ChatBubble(
                     ) {
                         if (fromUser && read) {
                             Text(
-                                "已读",
+                                I18n.t("chat_read_receipt"),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
                             )
@@ -904,7 +910,7 @@ internal fun ChatBubble(
                             ) {
                                 Icon(
                                     Icons.Outlined.VolumeUp,
-                                    contentDescription = "朗读",
+                                    contentDescription = I18n.t("chat_speak"),
                                     modifier = Modifier.size(16.dp),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -1049,7 +1055,7 @@ private fun MessageImagePreview(dataUrl: String, onDismiss: () -> Unit) {
                 onClick = onDismiss,
                 modifier = Modifier.align(Alignment.TopEnd),
             ) {
-                Icon(Icons.Outlined.Close, contentDescription = "关闭", tint = Color.White)
+                Icon(Icons.Outlined.Close, contentDescription = I18n.t("close"), tint = Color.White)
             }
         }
     }
@@ -1064,7 +1070,7 @@ private fun DecodedImage(
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
-    val key = "chat-img:$maxEdge:$dataUrl"
+    val key = remember(dataUrl, maxEdge) { ImageBitmapCache.shortKey("chat-img:$maxEdge", dataUrl) }
     var bitmap by remember(key) { mutableStateOf(ImageBitmapCache.get(key)) }
     LaunchedEffect(key) {
         if (bitmap != null || ImageBitmapCache.isKnownMissing(key)) return@LaunchedEffect
@@ -1088,7 +1094,7 @@ private fun dataUrlToBytes(dataUrl: String): ByteArray? {
 
 private fun formatMessageTime(timestamp: Long): String {
     if (timestamp <= 0L) return ""
-    return DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(timestamp))
+    return messageTimeFormat.format(Date(timestamp))
 }
 
 /** 可折叠的深度思考（思维链）块。 */

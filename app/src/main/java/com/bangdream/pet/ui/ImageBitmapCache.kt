@@ -32,6 +32,15 @@ internal object ImageBitmapCache {
         if (cache.get(key) == null) missing.put(key, true)
     }
 
+    /**
+     * 为超长内容（base64 data URL 常有几 MB）生成稳定短 key。
+     * 直接把 data URL 当 key 会让每个缓存项额外常驻整份 base64 字符串，
+     * 而且每次重组拼接 key 都要复制一遍这个巨型字符串。
+     * String.hashCode 在 JVM 上有缓存，这里只有第一次是 O(n)。
+     */
+    fun shortKey(prefix: String, value: String): String =
+        "$prefix:${value.length}:${value.hashCode()}:${value.takeLast(24).hashCode()}"
+
     private fun cacheSizeKb(): Int =
         (Runtime.getRuntime().maxMemory() / 1024L / 16L)
             .coerceIn(8L * 1024L, 32L * 1024L)

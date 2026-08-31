@@ -14,6 +14,22 @@ class ChatHistoryRepository internal constructor(
 ) {
     constructor(context: Context) : this(File(context.filesDir, "chat_history"))
 
+    /**
+     * 会话摘要缓存：key 为文件绝对路径，命中条件为「文件未被修改」（mtime + 大小一致）。
+     * 之前每次发消息都会重新解析该角色目录下的全部会话 JSON（含 base64 图片），
+     * 会话越多越卡；这里只在文件真正变化时才重新解析。
+     */
+    private val summaryCache = object : LinkedHashMap<String, CachedSummary>(0, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedSummary>): Boolean =
+            size > MAX_CACHED_SUMMARIES
+    }
+
+    private class CachedSummary(
+        val lastModified: Long,
+        val length: Long,
+        val summary: ChatConversationSummary,
+    )
+
     @Synchronized
     fun loadSnapshot(characterId: String): ChatHistorySnapshot {
         val conversations = listConversations(characterId)
@@ -33,7 +49,7 @@ class ChatHistoryRepository internal constructor(
         return directory.listFiles()
             ?.asSequence()
             ?.filter { it.isFile && it.extension.equals("json", ignoreCase = true) }
-            ?.mapNotNull { file -> readConversation(file, characterId)?.toSummary() }
+            ?.mapNotNull { file -> cachedSummary(file, characterId) }
             ?.sortedWith(
                 compareByDescending<ChatConversationSummary> { it.updatedAt }
                     .thenByDescending { it.createdAt }
@@ -67,6 +83,7 @@ class ChatHistoryRepository internal constructor(
             .put("updatedAt", normalized.updatedAt)
             .put("messages", messagesToJson(normalized.messages))
         writeAtomically(file, payload.toString())
+        putSummary(file, normalized.toSummary())
         return normalized
     }
 
@@ -96,6 +113,7 @@ class ChatHistoryRepository internal constructor(
     fun deleteConversation(characterId: String, conversationId: String): Boolean {
         val file = conversationFile(characterId, conversationId) ?: return false
         val deleted = !file.exists() || file.delete()
+        if (deleted) summaryCache.remove(file.absolutePath)
         if (deleted && readActiveIds()[characterId] == conversationId) {
             setActiveConversation(characterId, null)
         }
@@ -108,12 +126,35 @@ class ChatHistoryRepository internal constructor(
         check(!legacy.exists() || legacy.delete()) { "Cannot delete legacy chat history" }
         val directory = characterDirectory(characterId)
         check(!directory.exists() || directory.deleteRecursively()) { "Cannot delete character chat history" }
+        summaryCache.keys.removeAll { it.startsWith(directory.absolutePath) }
         setActiveConversation(characterId, null)
     }
 
     @Synchronized
     fun clearAll() {
         check(!root.exists() || root.deleteRecursively()) { "Cannot delete chat history" }
+        summaryCache.clear()
+    }
+
+    /** 命中缓存则直接返回摘要，否则解析文件并写入缓存。 */
+    private fun cachedSummary(file: File, characterId: String): ChatConversationSummary? {
+        val path = file.absolutePath
+        val lastModified = file.lastModified()
+        val length = file.length()
+        summaryCache[path]?.let { cached ->
+            if (cached.lastModified == lastModified && cached.length == length) return cached.summary
+        }
+        val summary = readConversation(file, characterId)?.toSummary()
+        if (summary == null) {
+            summaryCache.remove(path)
+            return null
+        }
+        summaryCache[path] = CachedSummary(lastModified, length, summary)
+        return summary
+    }
+
+    private fun putSummary(file: File, summary: ChatConversationSummary) {
+        summaryCache[file.absolutePath] = CachedSummary(file.lastModified(), file.length(), summary)
     }
 
     private fun ensureLegacyMigrated(characterId: String) {
@@ -269,6 +310,7 @@ class ChatHistoryRepository internal constructor(
 
     companion object {
         private const val SCHEMA_VERSION = 2
+        private const val MAX_CACHED_SUMMARIES = 256
         private const val LEGACY_CONVERSATION_ID = "legacy"
         private const val TITLE_MAX_CODE_POINTS = 32
         private const val PREVIEW_MAX_CODE_POINTS = 64

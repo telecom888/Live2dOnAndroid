@@ -327,7 +327,7 @@ private fun LineUiSettingsCard() {
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                if (AvatarManager.userAvatarFile(appContext) != null) {
+                if (remember(userAvatarTick) { AvatarManager.userAvatarFile(appContext) } != null) {
                     TextButton(onClick = {
                         AvatarManager.clearUserAvatar(appContext)
                         userAvatarTick++
@@ -446,7 +446,10 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
     var mimoKey by remember { mutableStateOf(loadMimoApiKey(appContext)) }
     val scope = rememberCoroutineScope()
     val hazeState = rememberLiquidGlassState()
-    val glassEnabled = ThemeSettings.load(appContext).liquidGlassEnabled && VisualGuard.supportsLiquidGlass(appContext)
+    // 之前每次重组都同步读一次 SharedPreferences
+    val glassEnabled = remember(appContext) {
+        ThemeSettings.load(appContext).liquidGlassEnabled && VisualGuard.supportsLiquidGlass(appContext)
+    }
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -1067,7 +1070,11 @@ private fun WallpaperSettingsCard(
         onBackgroundChanged(uri.toString())
     }
     val scope = rememberCoroutineScope()
-    val wallpaperStatus = remember { WallpaperBackup.wallpaperStatus(context.applicationContext) }
+    var wallpaperStatus by remember { mutableStateOf("") }
+    LaunchedEffect(appContext) {
+        // 读系统壁纸状态要走 WallpaperManager + 磁盘，不能在组合期同步做
+        wallpaperStatus = withContext(Dispatchers.IO) { WallpaperBackup.wallpaperStatus(appContext) }
+    }
     var showAllFilesAccessDialog by remember { mutableStateOf(false) }
     val allFilesAccessLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         showAllFilesAccessDialog = false
@@ -1119,14 +1126,18 @@ private fun WallpaperSettingsCard(
                             }
                         }
                         else {
-                            // 关闭：恢复系统原壁纸，清除桌面模型显示
-                            val restored = WallpaperBackup.restoreSystemWallpaper(appContext)
-                            if (!restored) {
-                                Toast.makeText(
-                                    appContext,
-                                    "未找到原壁纸备份，无法自动恢复（模型将由壁纸服务停止渲染）",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
+                            // 关闭：恢复系统原壁纸，清除桌面模型显示（解码+写壁纸很重，必须离开主线程）
+                            scope.launch {
+                                val restored = withContext(Dispatchers.IO) {
+                                    WallpaperBackup.restoreSystemWallpaper(appContext)
+                                }
+                                if (!restored) {
+                                    Toast.makeText(
+                                        appContext,
+                                        "未找到原壁纸备份，无法自动恢复（模型将由壁纸服务停止渲染）",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
                             }
                         }
                     },
@@ -1395,8 +1406,12 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
                 }
                 FilledTonalButton(
                     onClick = {
-                        val ok = WallpaperBackup.restoreSystemWallpaper(appContext)
-                        Toast.makeText(appContext, if (ok) "已恢复系统壁纸" else "没有可恢复的备份", Toast.LENGTH_SHORT).show()
+                        scope.launch {
+                            val ok = withContext(Dispatchers.IO) {
+                                WallpaperBackup.restoreSystemWallpaper(appContext)
+                            }
+                            Toast.makeText(appContext, if (ok) "已恢复系统壁纸" else "没有可恢复的备份", Toast.LENGTH_SHORT).show()
+                        }
                     },
                 ) {
                     Text("恢复系统壁纸")
@@ -1688,7 +1703,9 @@ private fun VoiceSamplesCard(selectedModel: ModelChoice?) {
     }
     LaunchedEffect(selectedModel?.characterId, refreshTick) {
         if (selectedModel != null) {
-            samples = VoiceSamples.listSamples(appContext, selectedModel.characterId)
+            samples = withContext(Dispatchers.IO) {
+                VoiceSamples.listSamples(appContext, selectedModel.characterId)
+            }
         }
     }
 

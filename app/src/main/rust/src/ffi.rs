@@ -119,6 +119,7 @@ unsafe extern "C" {
     pub fn eglDestroyContext(display: EGLDisplay, context: EGLContext) -> EGLBoolean;
     pub fn eglDestroySurface(display: EGLDisplay, surface: EGLSurface) -> EGLBoolean;
     pub fn eglTerminate(display: EGLDisplay) -> EGLBoolean;
+    pub fn eglGetError() -> EGLint;
 }
 
 #[link(name = "GLESv2")]

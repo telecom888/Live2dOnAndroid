@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddComment
@@ -252,12 +253,13 @@ private fun CharacterListScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(filtered, key = { it.id }) { character ->
+                itemsIndexed(filtered, key = { _, item -> item.id }) { index, character ->
                     Surface(
                         onClick = { onCharacterClick(character) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .appEntrance(delayMillis = (filtered.indexOfFirst { it.id == character.id } * 22).coerceAtMost(160)),
+                            // 原来用 filtered.indexOfFirst{...} 求入场延迟，逐项 O(n) → 整列表 O(n²)
+                            .appEntrance(delayMillis = (index * 22).coerceAtMost(160)),
                         shape = RoundedCornerShape(18.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
                     ) {
@@ -367,7 +369,7 @@ private fun ConversationListScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(filtered, key = { it.id }) { conversation ->
+                itemsIndexed(filtered, key = { _, item -> item.id }) { index, conversation ->
                     val selected = conversation.id == state.conversationId
                     Surface(
                         modifier = Modifier
@@ -378,7 +380,7 @@ private fun ConversationListScreen(
                                     actionConversation = conversation
                                 },
                             )
-                            .appEntrance(delayMillis = (filtered.indexOfFirst { it.id == conversation.id } * 22).coerceAtMost(160)),
+                            .appEntrance(delayMillis = (index * 22).coerceAtMost(160)),
                         shape = RoundedCornerShape(18.dp),
                         color = if (selected) {
                             MaterialTheme.colorScheme.primaryContainer
@@ -560,8 +562,11 @@ private fun ConversationDetailScreen(
     ) { uris ->
         if (uris.isNotEmpty()) {
             scope.launch {
-                val picked = uris.mapNotNull { uri ->
-                    contentUriToImageDataUrl(context, uri)?.let { PickedImage(uri, it) }
+                // 读取 + base64 编码可能是几 MB，之前直接跑在主线程协程里会卡住输入框
+                val picked = withContext(Dispatchers.IO) {
+                    uris.mapNotNull { uri ->
+                        contentUriToImageDataUrl(context, uri)?.let { PickedImage(uri, it) }
+                    }
                 }
                 selectedImages = (selectedImages + picked).distinctBy { it.uri }
             }

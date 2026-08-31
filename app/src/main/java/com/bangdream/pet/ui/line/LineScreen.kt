@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -178,12 +179,13 @@ private fun LineRolePickerScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(characters, key = { it.id }) { character ->
+                itemsIndexed(characters, key = { _, item -> item.id }) { index, character ->
                     Surface(
                         onClick = { onSelectRole(character) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .appEntrance(delayMillis = (characters.indexOfFirst { it.id == character.id } * 22).coerceAtMost(160))
+                            // 逐项 indexOfFirst 会让整列表变成 O(n²)，直接用 itemsIndexed 的下标
+                            .appEntrance(delayMillis = (index * 22).coerceAtMost(160))
                             .appPressScale(),
                         shape = RoundedCornerShape(18.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -257,12 +259,12 @@ private fun LineAccountScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(conversations, key = { it.id }) { conv ->
+                itemsIndexed(conversations, key = { _, item -> item.id }) { index, conv ->
                     Surface(
                         onClick = { onOpen(conv.id) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .appEntrance(delayMillis = (conversations.indexOfFirst { it.id == conv.id } * 22).coerceAtMost(160))
+                            .appEntrance(delayMillis = (index * 22).coerceAtMost(160))
                             .appPressScale(),
                         shape = RoundedCornerShape(18.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -661,7 +663,7 @@ private fun LineMessageRow(message: LineMessage, roleNames: Map<String, String>)
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)),
+                            lineTimeFormat.format(Date(message.timestamp)),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         )
@@ -671,6 +673,9 @@ private fun LineMessageRow(message: LineMessage, roleNames: Map<String, String>)
         }
     }
 }
+
+/** 逐条消息渲染都会用到；SimpleDateFormat 构造很贵，提为文件级单例（只在主线程使用）。 */
+private val lineTimeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
 @Composable
 private fun LineRoleAvatar(roleId: String, size: androidx.compose.ui.unit.Dp) {

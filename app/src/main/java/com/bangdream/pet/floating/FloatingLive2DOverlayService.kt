@@ -1,8 +1,10 @@
 package com.bangdream.pet.floating
 
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.PixelFormat
 import android.net.Uri
 import android.os.Build
@@ -17,6 +19,7 @@ import android.widget.FrameLayout
 import com.bangdream.pet.FloatingLive2DItem
 import com.bangdream.pet.FloatingOverlaySettings
 import com.bangdream.pet.RenderResolution
+import androidx.core.content.ContextCompat
 import com.bangdream.pet.RenderSettings
 import com.bangdream.pet.live2d.Live2DRenderView
 import com.bangdream.pet.saveFloatingLive2DItemBounds
@@ -27,10 +30,30 @@ import kotlin.math.roundToInt
 class FloatingLive2DOverlayService : Service() {
     private val windows = linkedMapOf<String, FloatingWindow>()
     private lateinit var windowManager: WindowManager
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val rendering = when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> false
+                Intent.ACTION_SCREEN_ON -> true
+                else -> return
+            }
+            // 息屏时悬浮窗的 onWindowVisibilityChanged 经常不触发，渲染线程会满帧空转一整晚
+            windows.values.forEach { it.renderView.setRenderingActive(rendering) }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        ContextCompat.registerReceiver(
+            this,
+            screenReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -41,6 +64,7 @@ class FloatingLive2DOverlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(screenReceiver) }
         clearWindows()
         super.onDestroy()
     }
@@ -120,7 +144,7 @@ class FloatingLive2DOverlayService : Service() {
         onBoundsChanged: (Int, Int, Int, Int) -> Unit,
     ) {
         private val modelAssetPath = item.model.modelAssetPath
-        private val renderView = Live2DRenderView(context).apply {
+        val renderView = Live2DRenderView(context).apply {
             setInteractionLocked(true)
             setRenderOptions(fpsLimit, vsyncEnabled)
             setRenderResolution(renderResolution)

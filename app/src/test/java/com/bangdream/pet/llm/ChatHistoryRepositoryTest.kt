@@ -62,7 +62,8 @@ class ChatHistoryRepositoryTest {
     }
 
     @Test
-    fun messagesAreCappedPerConversationAndTitlesAreUnicodeSafe() {
+    fun messagesAreStoredWithoutLimitAndTitlesAreUnicodeSafe() {
+        // 对话存储不设限：全部消息都应保留（旧版有 MAX_STORED_MESSAGES 上限，已移除）
         val repository = ChatHistoryRepository(temporaryFolder.newFolder("history"))
         val messages = (0 until 120).map { index -> message("m$index", "user", "内容$index", index.toLong()) }
         val longTitle = "😀".repeat(40)
@@ -76,10 +77,12 @@ class ChatHistoryRepositoryTest {
                 messages = messages,
             ),
         )
+        val reloaded = repository.loadConversation("kasumi", "capped")
 
-        assertEquals(ChatHistoryRepository.MAX_STORED_MESSAGES, saved.messages.size)
-        assertEquals("m20", saved.messages.first().id)
+        assertEquals(messages.size, saved.messages.size)
+        assertEquals("m0", saved.messages.first().id)
         assertEquals("😀".repeat(32) + "…", saved.title)
+        assertEquals(messages.size, reloaded?.messages?.size)
     }
 
     @Test

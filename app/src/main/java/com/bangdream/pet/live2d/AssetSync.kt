@@ -5,17 +5,39 @@ import com.bangdream.pet.data.ZstModelArchive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.lang.ref.SoftReference
 
 object AssetSync {
     private val runtimeCopyLock = Any()
+    private val prepareLock = Any()
+
+    /** 已就绪的运行时包版本号（同一进程内只需一次 PackageManager binder IPC）。 */
+    @Volatile
+    private var runtimeReadyForPackageTime: String? = null
+
+    /**
+     * 最近一次准备好的模型（软引用，内存紧张时可被回收）。
+     * 旋转屏幕、切换 Tab、壁纸重启都会重新 prepareModel，
+     * 之前每次都要把整个 .zst 归档重新解压一遍（数十 MB），是首屏/切换卡顿的主因。
+     */
+    @Volatile
+    private var lastPrepared: SoftReference<CachedPrepared>? = null
+
+    private class CachedPrepared(val modelAssetPath: String, val model: PreparedModel)
 
     suspend fun prepareModel(context: Context, modelAssetPath: String): PreparedModel = withContext(Dispatchers.IO) {
         val root = File(context.filesDir, "live2d_assets")
         val runtimeRoot = File(root, "third_party/Live2D-v2-Lua")
         copyRuntimeIfNeeded(context, runtimeRoot)
 
+        lastPrepared?.get()?.let { cached ->
+            if (cached.modelAssetPath == modelAssetPath && cached.model.runtimeRoot == runtimeRoot.absolutePath) {
+                return@withContext cached.model
+            }
+        }
+
         val archive = ZstModelArchive.readModelPrefix(context, modelAssetPath)
-        if (archive != null) {
+        val prepared = if (archive != null) {
             PreparedModel(
                 runtimeRoot = runtimeRoot.absolutePath,
                 modelPath = archive.modelPath,
@@ -41,13 +63,26 @@ object AssetSync {
                 resourceBytes = emptyList(),
             )
         }
+        lastPrepared = SoftReference(CachedPrepared(modelAssetPath, prepared))
+        prepared
+    }
+
+    /** 模型下载/更新/删除后必须让缓存失效，否则会继续用旧归档内容。 */
+    fun invalidatePreparedCache() {
+        lastPrepared = null
     }
 
     private fun copyRuntimeIfNeeded(context: Context, runtimeRoot: File) {
         synchronized(runtimeCopyLock) {
+            val cachedPackageTime = runtimeReadyForPackageTime
+            if (cachedPackageTime != null) return
+
             val marker = File(runtimeRoot, ".copied")
             val packageTime = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime.toString()
-            if (marker.exists() && marker.readText() == packageTime) return
+            if (marker.exists() && marker.readText() == packageTime) {
+                runtimeReadyForPackageTime = packageTime
+                return
+            }
 
             val parent = runtimeRoot.parentFile ?: return
             parent.mkdirs()
@@ -61,16 +96,25 @@ object AssetSync {
                 tempRoot.copyRecursively(runtimeRoot, overwrite = true)
                 tempRoot.deleteRecursively()
             }
+            runtimeReadyForPackageTime = packageTime
         }
     }
 
+    /**
+     * 资源树复制：先写 .part 再改名，避免中断留下截断文件后被 `exists()` 判定为"已复制"而永不修复。
+     */
     private fun copyTree(context: Context, assetPath: String, target: File) {
         val children = context.assets.list(assetPath).orEmpty()
         if (children.isEmpty()) {
             if (!target.exists()) {
                 target.parentFile?.mkdirs()
+                val temp = File(target.parentFile, "${target.name}.part")
                 context.assets.open(assetPath).use { input ->
-                    target.outputStream().use { output -> input.copyTo(output) }
+                    temp.outputStream().use { output -> input.copyTo(output) }
+                }
+                if (!temp.renameTo(target)) {
+                    temp.copyTo(target, overwrite = true)
+                    temp.delete()
                 }
             }
             return
@@ -79,25 +123,6 @@ object AssetSync {
         target.mkdirs()
         for (child in children) {
             copyTree(context, "$assetPath/$child", File(target, child))
-        }
-    }
-
-    private fun readAssetDirFiles(context: Context, assetDir: String, targetDir: File): Map<String, ByteArray> {
-        val result = mutableMapOf<String, ByteArray>()
-        collectAssetFiles(context, assetDir, targetDir, result)
-        return result
-    }
-
-    private fun collectAssetFiles(context: Context, assetPath: String, targetFile: File, result: MutableMap<String, ByteArray>) {
-        val entries = context.assets.list(assetPath)
-        if (entries.isNullOrEmpty()) {
-            runCatching {
-                result[targetFile.absolutePath] = context.assets.open(assetPath).use { it.readBytes() }
-            }
-            return
-        }
-        for (entry in entries) {
-            collectAssetFiles(context, "$assetPath/$entry", File(targetFile, entry), result)
         }
     }
 }

@@ -9,7 +9,24 @@ class CharacterPromptRepository(private val context: Context) {
         JSONObject(readAsset("prompt.json").ifBlank { "{}" })
     }
 
+    /**
+     * 角色系统提示词缓存：每次发消息都要重建提示词，而资料文件（A_*.md / soul.md）
+     * 每个角色都有几十 KB，之前每次请求都要重新读 assets 并重新拼接字符串。
+     */
+    private val promptCache = object : LinkedHashMap<String, CharacterPrompt>(0, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CharacterPrompt>): Boolean =
+            size > MAX_CACHED_PROMPTS
+    }
+
     fun buildSystemPrompt(model: ModelChoice): CharacterPrompt {
+        val cacheKey = "${model.characterId}|${model.characterName}"
+        synchronized(promptCache) { promptCache[cacheKey] }?.let { return it }
+        val prompt = buildSystemPromptUncached(model)
+        synchronized(promptCache) { promptCache[cacheKey] = prompt }
+        return prompt
+    }
+
+    private fun buildSystemPromptUncached(model: ModelChoice): CharacterPrompt {
         val character = promptJson.optJSONObject("characters")?.optJSONObject(model.characterId)
         val identity = character?.optString("identity").orEmpty().ifBlank {
             "你是${model.characterName}。请始终以该角色身份自然地与用户交流。"
@@ -52,4 +69,8 @@ class CharacterPromptRepository(private val context: Context) {
         val allowedActionTags: Set<String>,
         val missingAssets: List<String>,
     )
+
+    private companion object {
+        const val MAX_CACHED_PROMPTS = 8
+    }
 }

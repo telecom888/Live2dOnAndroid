@@ -2,6 +2,7 @@ package com.bangdream.pet.data
 
 import android.content.Context
 import com.bangdream.pet.I18n
+import com.bangdream.pet.live2d.AssetSync
 import com.github.luben.zstd.ZstdInputStream
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -105,6 +106,7 @@ object ZstModelArchive {
             if (!temp.delete()) temp.deleteOnExit()
         }
         synchronized(indexCache) { indexCache.remove(archiveAssetPath(characterId)) }
+        AssetSync.invalidatePreparedCache()
         return target
     }
 
@@ -113,7 +115,10 @@ object ZstModelArchive {
 
     fun deleteDownloadedCharacter(context: Context, characterId: String): Boolean {
         val deleted = downloadedArchiveFile(context, characterId).delete()
-        if (deleted) synchronized(indexCache) { indexCache.remove(archiveAssetPath(characterId)) }
+        if (deleted) {
+            synchronized(indexCache) { indexCache.remove(archiveAssetPath(characterId)) }
+            AssetSync.invalidatePreparedCache()
+        }
         return deleted
     }
 

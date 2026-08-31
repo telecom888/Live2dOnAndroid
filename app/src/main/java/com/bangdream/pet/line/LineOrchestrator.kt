@@ -9,6 +9,9 @@ import com.bangdream.pet.llm.LlmSettings
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlin.random.Random
 
@@ -29,6 +32,9 @@ class LineOrchestrator(private val context: Context) {
         }.getOrDefault(emptyMap())
     }
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+
+    /** 角色人设缓存：persona() 会读 assets 里几十 KB 的资料，之前每次决策 / 每次已读判定都重读一遍。 */
+    private val personaCache = mutableMapOf<String, String>()
 
     suspend fun runConversation(
         conversation: LineConversation,
@@ -81,16 +87,22 @@ class LineOrchestrator(private val context: Context) {
                             )
                             conv = conv.copy(messages = conv.messages + message, updatedAt = now)
                             contexts[rid]?.add(message)
-                            for (other in conv.memberRoleIds) {
-                                if (other == rid) continue
-                                if (askRead(other, rid, trimmed, conv)) {
-                                    contexts[other]?.add(message)
-                                    conv = conv.copy(
-                                        messages = conv.messages.map {
-                                            if (it.id == message.id) it.copy(readBy = it.readBy + other) else it
-                                        },
-                                    )
-                                }
+                            // 已读判定原来是串行的：群聊里每发一条都要按人数依次等一次模型返回，
+                            // 5 人群一条消息就要串 4 次请求。改成并发后延迟约等于最慢的一次。
+                            val readers = conv.memberRoleIds.filter { it != rid }
+                            val readFlags = coroutineScope {
+                                readers.map { other ->
+                                    async { other to askRead(other, rid, trimmed, conv) }
+                                }.awaitAll()
+                            }
+                            for ((other, hasRead) in readFlags) {
+                                if (!hasRead) continue
+                                contexts[other]?.add(message)
+                                conv = conv.copy(
+                                    messages = conv.messages.map {
+                                        if (it.id == message.id) it.copy(readBy = it.readBy + other) else it
+                                    },
+                                )
                             }
                             spokeInRound = true
                             onUpdated(conv)
@@ -152,7 +164,9 @@ ${roleNames[senderId] ?: senderId}给你发来一条新消息：
         return lower.contains("是") || lower.contains("true") || lower.contains("read")
     }
 
-    private fun persona(roleId: String): String {
+    private fun persona(roleId: String): String = personaCache.getOrPut(roleId) { buildPersona(roleId) }
+
+    private fun buildPersona(roleId: String): String {
         val name = roleNames[roleId] ?: roleId
         val model = ModelChoice(
             characterId = roleId,

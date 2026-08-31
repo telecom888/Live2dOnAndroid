@@ -1,6 +1,8 @@
 package com.bangdream.pet
 
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
@@ -43,6 +45,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -116,8 +119,8 @@ enum class Screen {
 fun Screen.title(): String = when (this) {
     Screen.Live2D -> I18n.t("nav_live2d")
     Screen.Model -> I18n.t("nav_model")
-    Screen.Chat -> "角色"
-    Screen.Line -> "Line"
+    Screen.Chat -> I18n.t("nav_chat")
+    Screen.Line -> I18n.t("nav_line")
     Screen.Settings -> I18n.t("nav_settings")
 }
 
@@ -144,7 +147,19 @@ fun BangDreamPetApp(
     val appContext = context.applicationContext
     var appData by remember { mutableStateOf<AppData?>(null) }
     var selectedScreen by rememberSaveable { mutableStateOf(Screen.Live2D) }
-    val lineNavEnabled = loadLineNavEnabled(appContext)
+    // 之前每次重组都同步读一次 SharedPreferences；改为读一次 + 监听变更，
+    // 设置页里开关 Line 导航时导航栏也能即时刷新。
+    var lineNavEnabled by remember { mutableStateOf(loadLineNavEnabled(appContext)) }
+    DisposableEffect(appContext) {
+        val preferences = appContext.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == null || key == KEY_LINE_NAV_ENABLED) {
+                lineNavEnabled = loadLineNavEnabled(appContext)
+            }
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
     LaunchedEffect(lineNavEnabled) {
         if (!lineNavEnabled && selectedScreen == Screen.Line) {
             selectedScreen = Screen.Live2D
@@ -356,6 +371,7 @@ fun BangDreamPetApp(
             if (selectedScreen != Screen.Model && selectedScreen != Screen.Chat && selectedScreen != Screen.Line) {
                 AppTopBar(
                     selectedModel = selectedModel,
+                    glassEnabled = liquidGlass,
                     modifier = Modifier.align(Alignment.TopCenter).appLiquidGlass(hazeState, enabled = liquidGlass),
                 )
             }
@@ -368,10 +384,9 @@ fun BangDreamPetApp(
 @Composable
 private fun AppTopBar(
     selectedModel: ModelChoice?,
+    glassEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val appContext = LocalContext.current.applicationContext
-    val glassEnabled = ThemeSettings.load(appContext).liquidGlassEnabled && VisualGuard.supportsLiquidGlass(appContext)
     CenterAlignedTopAppBar(
         modifier = modifier,
         title = {
@@ -399,18 +414,14 @@ private fun AppTopBar(
 
 @Composable
 private fun NavIcon(screen: Screen, selected: Boolean) {
+    // 原来是 `when (screen to selected)`，每次重组都要为每个 Tab 新建一个 Pair
     Icon(
-        imageVector = when (screen to selected) {
-            Screen.Live2D to true -> Icons.Filled.Face
-            Screen.Model to true -> Icons.Filled.ViewInAr
-            Screen.Chat to true -> Icons.Filled.Forum
-            Screen.Line to true -> Icons.Filled.People
-            Screen.Settings to true -> Icons.Filled.Settings
-            Screen.Live2D to false -> Icons.Outlined.Face
-            Screen.Model to false -> Icons.Outlined.ViewInAr
-            Screen.Chat to false -> Icons.Outlined.Forum
-            Screen.Line to false -> Icons.Outlined.Groups
-            else -> Icons.Outlined.Settings
+        imageVector = when (screen) {
+            Screen.Live2D -> if (selected) Icons.Filled.Face else Icons.Outlined.Face
+            Screen.Model -> if (selected) Icons.Filled.ViewInAr else Icons.Outlined.ViewInAr
+            Screen.Chat -> if (selected) Icons.Filled.Forum else Icons.Outlined.Forum
+            Screen.Line -> if (selected) Icons.Filled.People else Icons.Outlined.Groups
+            Screen.Settings -> if (selected) Icons.Filled.Settings else Icons.Outlined.Settings
         },
         contentDescription = screen.title(),
     )

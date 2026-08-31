@@ -11,6 +11,10 @@ use crate::lua::LuaRuntime;
 use crate::overlays::{BackgroundRenderer, FpsRenderer};
 
 const GAZE_FOLLOW_EASING_PER_SECOND: f32 = 8.0;
+/// eglSwapBuffers 连续失败时的退避间隔（毫秒），避免 surface 失效后满速空转耗电。
+const SWAP_FAILURE_BACKOFF_MS: u64 = 120;
+/// 连续失败每 N 次上报一次错误，避免刷屏。
+const SWAP_FAILURE_REPORT_INTERVAL: u32 = 60;
 
 fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
@@ -187,15 +191,30 @@ impl SharedState {
         }
     }
 
-    fn wait_for_frame(&self, frame_started: Instant) {
+    /// 帧率限制：使用绝对时基（上一帧截止时间 + 周期）而不是每帧重新起算，
+    /// 避免 condvar 超时过冲带来的累计漂移（60fps 实测掉到 50~55 且抖动）。
+    fn wait_for_frame(&self, frame_started: Instant, next_deadline: &mut Instant) {
         let state = lock_unpoisoned(&self.control);
         let fps_limit = state.fps_limit;
         if !state.running || state.paused || fps_limit <= 0 {
+            *next_deadline = Instant::now();
             return;
         }
 
         let target = Duration::from_nanos(1_000_000_000_u64 / fps_limit as u64);
-        let remaining = target.saturating_sub(frame_started.elapsed());
+        if *next_deadline < frame_started {
+            *next_deadline = frame_started;
+        }
+        *next_deadline += target;
+        let now = Instant::now();
+        if *next_deadline <= now {
+            // 落后超过两个周期说明这帧确实画不动了，直接重同步，避免"追帧风暴"
+            if now.duration_since(*next_deadline) > target * 2 {
+                *next_deadline = now;
+            }
+            return;
+        }
+        let remaining = *next_deadline - now;
         if remaining.is_zero() {
             return;
         }
@@ -521,6 +540,10 @@ impl EglSession {
         unsafe { ffi::eglSwapBuffers(self.display, self.surface) == ffi::EGL_TRUE }
     }
 
+    fn last_egl_error(&self) -> ffi::EGLint {
+        unsafe { ffi::eglGetError() }
+    }
+
     /// surface 被系统销毁后重绑新的 ANativeWindow：保留 display/context/GL 资源与 Lua 状态，
     /// 只销毁旧 EGL surface 并用新 window 重建，随后重新激活同一 context。
     fn rebind(&mut self, window: &ffi::NativeWindow) -> Result<(), String> {
@@ -570,7 +593,10 @@ impl Drop for EglSession {
                 if !self.surface.is_null() {
                     ffi::eglDestroySurface(self.display, self.surface);
                 }
-                ffi::eglTerminate(self.display);
+                // 这里刻意不调用 eglTerminate：EGL_DEFAULT_DISPLAY 是整个进程共享的
+                // （壁纸引擎 / 悬浮窗 / 应用内 RenderView / HWUI 都用它），销毁任意一个
+                // 渲染实例就 terminate，会连带作废其它实例与系统 UI 的 EGL 资源，
+                // 表现为黑屏 / 花屏 / 崩溃。display 本身是进程级句柄，无需释放。
             }
         }
     }
@@ -608,10 +634,14 @@ fn render_loop(shared: &Arc<SharedState>, window: &ffi::NativeWindow, runtime_ro
     let mut measured_fps = 0_i32;
     let mut look_at_active = false;
     let mut smoothed_look_at = (0.5_f32, 0.5_f32);
+    let mut next_frame_deadline = monotonic_origin;
+    let mut swap_failures = 0_u32;
 
-    while let Some((commands, resumed)) = shared.next_frame() {
+    while let Some((mut commands, resumed)) = shared.next_frame() {
         if resumed {
             previous_frame_start = Instant::now();
+            next_frame_deadline = previous_frame_start;
+            swap_failures = 0;
             fps_sample_start = previous_frame_start;
             frames_since_sample = 0;
             measured_fps = 0;
@@ -642,16 +672,17 @@ fn render_loop(shared: &Arc<SharedState>, window: &ffi::NativeWindow, runtime_ro
             lua.push_number(commands.height as f64);
             report_result(shared, lua.call("__bp_resize", 2));
         }
-        for (slot, model) in &commands.model {
+        // 用移动语义交出资源表：之前的 clone() 会把整套贴图（数十 MB）在加载时再复制一份
+        for (slot, model) in std::mem::take(&mut commands.model) {
             if !model.path.is_empty() {
-                lua.set_resources(model.resources.clone());
+                lua.set_resources(model.resources);
                 look_at_active = false;
                 smoothed_look_at = (0.5, 0.5);
                 lua.get_global(c"__bp_load");
                 lua.push_bytes(model.path.as_bytes());
                 lua.push_number(commands.width as f64);
                 lua.push_number(commands.height as f64);
-                lua.push_number(*slot as f64);
+                lua.push_number(slot as f64);
                 report_result(shared, lua.call("__bp_load", 4));
             }
         }
@@ -721,6 +752,7 @@ fn render_loop(shared: &Arc<SharedState>, window: &ffi::NativeWindow, runtime_ro
         );
 
         if egl.swap_buffers() {
+            swap_failures = 0;
             frames_since_sample += 1;
             let elapsed = fps_sample_start.elapsed().as_secs_f32();
             if elapsed >= 0.5 {
@@ -729,8 +761,19 @@ fn render_loop(shared: &Arc<SharedState>, window: &ffi::NativeWindow, runtime_ro
                 frames_since_sample = 0;
                 fps_sample_start = Instant::now();
             }
+        } else {
+            // surface 失效 / 上下文丢失时不再全速空绘（否则后台持续耗电且没有任何可观测信息）
+            swap_failures += 1;
+            if swap_failures == 1 || swap_failures % SWAP_FAILURE_REPORT_INTERVAL == 0 {
+                shared.set_error(format!(
+                    "EGL swap 失败（累计 {} 次），eglGetError=0x{:04X}",
+                    swap_failures,
+                    egl.last_egl_error(),
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(SWAP_FAILURE_BACKOFF_MS));
         }
-        shared.wait_for_frame(frame_started);
+        shared.wait_for_frame(frame_started, &mut next_frame_deadline);
     }
 
     // 渲染循环退出前显式释放 Lua 模型（GL 纹理等），此时 EGL context 仍为 current

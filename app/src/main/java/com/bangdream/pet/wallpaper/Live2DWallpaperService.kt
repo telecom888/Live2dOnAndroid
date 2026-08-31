@@ -10,6 +10,7 @@ import android.view.SurfaceHolder
 import com.bangdream.pet.RenderSettings
 import com.bangdream.pet.KEY_FPS_DISPLAY_ENABLED
 import com.bangdream.pet.KEY_FPS_LIMIT
+import com.bangdream.pet.KEY_GAZE_FOLLOW_ENABLED
 import com.bangdream.pet.KEY_RENDER_RESOLUTION
 import com.bangdream.pet.KEY_SELECTED_CHARACTER_ID
 import com.bangdream.pet.KEY_SELECTED_MODEL_ASSET_PATH
@@ -99,6 +100,8 @@ class Live2DWallpaperService : WallpaperService() {
 
         private var touchDownX = 0f
         private var touchDownY = 0f
+        /** 视线跟随开关缓存：MOVE 事件每秒上百次，之前每次都整份 load SharedPreferences。 */
+        private var gazeFollowEnabled = false
         private var idleJob: Job? = null
         private var lastInteractionAt = 0L
         private val renderSettingsListener = SharedPreferences.OnSharedPreferenceChangeListener { preferences, key ->
@@ -121,6 +124,8 @@ class Live2DWallpaperService : WallpaperService() {
                         val settings = RenderSettings.load(applicationContext)
                         NativeLive2D.setRenderOptions(handle, settings.fpsLimit, settings.vsyncEnabled)
                     }
+                    KEY_GAZE_FOLLOW_ENABLED ->
+                        gazeFollowEnabled = preferences.getBoolean(KEY_GAZE_FOLLOW_ENABLED, false)
                     KEY_WALLPAPER_OFFSET_X, KEY_WALLPAPER_OFFSET_Y, KEY_WALLPAPER_SCALE -> {
                         if (wallpaperMode == WallpaperMode.SINGLE) applyWallpaperTransform()
                     }
@@ -147,6 +152,7 @@ class Live2DWallpaperService : WallpaperService() {
             surfaceHolderRef = surfaceHolder
             settingsPreferences = applicationContext.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE).also {
                 it.registerOnSharedPreferenceChangeListener(renderSettingsListener)
+                gazeFollowEnabled = it.getBoolean(KEY_GAZE_FOLLOW_ENABLED, false)
             }
             setTouchEventsEnabled(true)
             gestureHandler = WallpaperGestureHandler(
@@ -321,6 +327,7 @@ class Live2DWallpaperService : WallpaperService() {
                     settings.vsyncEnabled,
                     settings.renderResolution.scale,
                 )
+                Live2DWallpaperService.activeHandle = handle
                 NativeLive2D.setBackground(handle, background)
                 applyWallpaperTransform()
             } else {
@@ -390,6 +397,7 @@ class Live2DWallpaperService : WallpaperService() {
                         settings.vsyncEnabled,
                         settings.renderResolution.scale,
                     )
+                    Live2DWallpaperService.activeHandle = handle
                     NativeLive2D.setBackground(handle, background)
                 }
             } else {
@@ -491,7 +499,7 @@ class Live2DWallpaperService : WallpaperService() {
         /** 视线跟随：全屏任意触摸都响应（不限定模型区域）。 */
         private fun lookAtTouch(x: Float, y: Float) {
             if (handle == 0L) return
-            if (!RenderSettings.load(applicationContext).gazeFollowEnabled) return
+            if (!gazeFollowEnabled) return
             val nx = (x / width).coerceIn(0f, 1f)
             val ny = (y / height).coerceIn(0f, 1f)
             NativeLive2D.lookAt(handle, nx, ny)
@@ -655,7 +663,8 @@ class Live2DWallpaperService : WallpaperService() {
             private set
 
         const val TAG = "BangDreamLive2DWallpaper"
-        const val RESTART_DEBOUNCE_MS = 50L
+        // 50ms 对拖动滑杆过短：一次拖动会触发数十次完整重建（EGL + Lua + 解压）
+        const val RESTART_DEBOUNCE_MS = 180L
         const val LAST_ACTION_REPLAY_WINDOW_MS = 10_000L
     }
 }
