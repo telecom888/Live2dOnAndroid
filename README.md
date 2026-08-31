@@ -39,6 +39,7 @@
 - docs/BiliPai-技术栈与UI参考.md
 - docs/DeepSeek-API调用规范.md
 - docs/mimo-tts-voiceclone.txt
+- docs/performance-audit-2026.md（性能专项审计与优化说明，2026-08）
 
 
 ## 当前实现状态
