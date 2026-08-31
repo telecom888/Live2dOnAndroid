@@ -57,6 +57,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -305,7 +310,9 @@ private fun ConversationListScreen(
         } else {
             val lower = query.lowercase()
             state.conversations.filter {
-                it.title.contains(lower, ignoreCase = true) || it.preview.contains(lower, ignoreCase = true)
+                it.title.contains(lower, ignoreCase = true) ||
+                    it.preview.contains(lower, ignoreCase = true) ||
+                    it.searchableContent.contains(lower, ignoreCase = true)
             }
         }
     }
@@ -374,20 +381,24 @@ private fun ConversationListScreen(
                             modifier = Modifier.fillMaxWidth().padding(start = 14.dp, top = 10.dp, bottom = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            val queryText = filter.trim()
+                            val contentSnippet = remember(conversation.id, queryText, conversation.searchableContent) {
+                                if (queryText.isBlank()) null else messageContentSnippet(conversation.searchableContent, queryText)
+                            }
                             Column(Modifier.weight(1f)) {
-                                Text(
-                                    conversation.title.ifBlank { "未命名对话" },
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                                HighlightText(
+                                    text = conversation.title.ifBlank { "未命名对话" },
+                                    query = queryText,
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                )
-                                Text(
-                                    conversation.preview.ifBlank { "空对话" },
                                     maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                HighlightText(
+                                    text = contentSnippet ?: conversation.preview.ifBlank { "空对话" },
+                                    query = queryText,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
                                 )
                                 Text(
                                     formatTimestamp(conversation.updatedAt),
@@ -673,4 +684,77 @@ private fun ConversationDetailScreen(
 private fun formatTimestamp(timestamp: Long): String {
     if (timestamp <= 0L) return ""
     return DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(timestamp))
+}
+
+/** 在对话全文里定位第一个命中点，取上下文片段（首尾加省略号）。未命中返回 null。 */
+private fun messageContentSnippet(content: String, query: String): String? {
+    val q = query.trim()
+    if (q.isEmpty()) return null
+    val lower = content.lowercase()
+    val pos = lower.indexOf(q.lowercase())
+    if (pos < 0) return null
+    val radius = 26
+    val start = (pos - radius).coerceAtLeast(0)
+    val end = (pos + q.length + radius).coerceAtMost(content.length)
+    val raw = content.substring(start, end)
+        .replace('\n', ' ')
+        .replace(Regex("\\s+"), " ")
+        .trim()
+    return buildString {
+        if (start > 0) append("…")
+        append(raw)
+        if (end < content.length) append("…")
+    }
+}
+
+/** 带关键字高亮（黄底加粗）的文本。 */
+@Composable
+private fun HighlightText(
+    text: String,
+    query: String,
+    style: TextStyle,
+    color: Color? = null,
+    fontWeight: FontWeight? = null,
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Ellipsis,
+) {
+    val ranges = remember(text, query) {
+        if (query.isBlank()) emptyList() else ChatTextSearch.findHighlightRanges(text, query)
+    }
+    if (ranges.isEmpty()) {
+        Text(
+            text = text,
+            style = style,
+            color = color ?: Color.Unspecified,
+            fontWeight = fontWeight,
+            maxLines = maxLines,
+            overflow = overflow,
+        )
+        return
+    }
+    val annotated = buildAnnotatedString {
+        var last = 0
+        for (range in ranges.sortedBy { it.first }) {
+            val start = range.first.coerceIn(0, text.length)
+            val end = range.last.plus(1).coerceIn(start, text.length)
+            if (start > last) append(text.substring(last, start))
+            withStyle(
+                SpanStyle(
+                    background = Color(0x66FFD54F),
+                    fontWeight = FontWeight.Bold,
+                )
+            ) {
+                append(text.substring(start, end))
+            }
+            last = end
+        }
+        if (last < text.length) append(text.substring(last))
+    }
+    Text(
+        text = annotated,
+        style = style,
+        color = color ?: Color.Unspecified,
+        maxLines = maxLines,
+        overflow = overflow,
+    )
 }

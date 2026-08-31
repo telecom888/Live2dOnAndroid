@@ -208,6 +208,7 @@ class ChatHistoryRepository internal constructor(
             ?.content
             ?.let { compactAndTruncate(it, PREVIEW_MAX_CODE_POINTS) }
             .orEmpty(),
+        searchableContent = messages.joinToString("\n") { it.content }.trim(),
         createdAt = createdAt,
         updatedAt = updatedAt,
         messageCount = messages.size,

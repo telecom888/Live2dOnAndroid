@@ -95,6 +95,7 @@ data class ChatConversationSummary(
     val characterId: String,
     val title: String,
     val preview: String,
+    val searchableContent: String = "",
     val createdAt: Long,
     val updatedAt: Long,
     val messageCount: Int,
