@@ -1070,7 +1070,8 @@ private fun DecodedImage(
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
-    val key = remember(dataUrl, maxEdge) { ImageBitmapCache.shortKey("chat-img:$maxEdge", dataUrl) }
+    // key 必须包含完整 dataUrl：不同图片 base64 前缀可能相同，短 key 会碰撞导致重复展示第一张
+    val key = "chat-img:$maxEdge:$dataUrl"
     var bitmap by remember(key) { mutableStateOf(ImageBitmapCache.get(key)) }
     LaunchedEffect(key) {
         if (bitmap != null || ImageBitmapCache.isKnownMissing(key)) return@LaunchedEffect
