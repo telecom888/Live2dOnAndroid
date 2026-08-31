@@ -1,6 +1,7 @@
 package com.bangdream.pet.ui.live2d
 
 import android.graphics.Rect
+import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 
@@ -12,6 +13,7 @@ import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
@@ -45,6 +47,7 @@ import androidx.compose.material.icons.outlined.AddComment
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ExpandLess
@@ -76,6 +79,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -100,12 +106,16 @@ import com.bangdream.pet.llm.ChatTextSearch
 import com.bangdream.pet.llm.ChatUiState
 import com.bangdream.pet.llm.Live2DChatViewModel
 import com.bangdream.pet.llm.LlmSettings
+import com.bangdream.pet.ui.ImageBitmapCache
+import com.bangdream.pet.ui.SampledImageDecoder
 import com.bangdream.pet.ui.chat.PickedImage
 import com.bangdream.pet.ui.chat.PickedImageThumb
 import com.bangdream.pet.ui.chat.contentUriToImageDataUrl
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun Live2DChatOverlay(
@@ -666,6 +676,7 @@ internal fun ChatMessageList(
                     highlightQuery = highlightQuery,
                     onReplay = replay,
                     timestamp = message.timestamp,
+                    images = message.images,
                     maxBubbleWidth = bubbleMaxWidth,
                 )
             }
@@ -696,9 +707,11 @@ internal fun ChatBubble(
     highlightQuery: String? = null,
     onReplay: (() -> Unit)? = null,
     timestamp: Long = 0L,
+    images: List<String> = emptyList(),
     maxBubbleWidth: Dp = 420.dp,
 ) {
     val fromUser = role == "user"
+    var previewImage by remember { mutableStateOf<String?>(null) }
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = if (fromUser) Alignment.End else Alignment.Start,
@@ -761,6 +774,19 @@ internal fun ChatBubble(
                     )
                 }
             }
+            if (images.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    images.take(9).forEach { dataUrl ->
+                        MessageImageThumb(dataUrl = dataUrl, onClick = { previewImage = dataUrl })
+                    }
+                }
+            }
         }
         Row(
             modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
@@ -789,6 +815,85 @@ internal fun ChatBubble(
             }
         }
     }
+
+    previewImage?.let { dataUrl ->
+        MessageImagePreview(dataUrl = dataUrl, onDismiss = { previewImage = null })
+    }
+}
+
+@Composable
+private fun MessageImageThumb(dataUrl: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(96.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        DecodedImage(dataUrl = dataUrl, maxEdge = 256, modifier = Modifier.fillMaxSize())
+    }
+}
+
+@Composable
+private fun MessageImagePreview(dataUrl: String, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onDismiss() },
+            contentAlignment = Alignment.Center,
+        ) {
+            DecodedImage(
+                dataUrl = dataUrl,
+                maxEdge = 2048,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp)
+                    .clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.Fit,
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopEnd),
+            ) {
+                Icon(Icons.Outlined.Close, contentDescription = "关闭", tint = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DecodedImage(
+    dataUrl: String,
+    maxEdge: Int,
+    modifier: Modifier,
+    contentScale: ContentScale = ContentScale.Crop,
+) {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val key = "chat-img:$maxEdge:${dataUrl.take(80)}"
+    var bitmap by remember(key) { mutableStateOf(ImageBitmapCache.get(key)) }
+    LaunchedEffect(key) {
+        if (bitmap != null || ImageBitmapCache.isKnownMissing(key)) return@LaunchedEffect
+        val bytes = dataUrlToBytes(dataUrl)
+        val decoded = bytes?.let {
+            withContext(Dispatchers.IO) { SampledImageDecoder.decodeBytes(it, maxEdge) }
+        }
+        if (decoded == null) ImageBitmapCache.markMissing(key) else ImageBitmapCache.put(key, decoded)
+        bitmap = decoded
+    }
+    if (bitmap != null) {
+        Image(bitmap = bitmap!!, contentDescription = null, modifier = modifier, contentScale = contentScale)
+    }
+}
+
+private fun dataUrlToBytes(dataUrl: String): ByteArray? {
+    val comma = dataUrl.indexOf(',')
+    if (comma < 0) return null
+    return runCatching { Base64.decode(dataUrl.substring(comma + 1), Base64.NO_WRAP) }.getOrNull()
 }
 
 private fun formatMessageTime(timestamp: Long): String {

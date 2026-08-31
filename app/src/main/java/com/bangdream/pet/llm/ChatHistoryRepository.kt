@@ -181,6 +181,9 @@ class ChatHistoryRepository internal constructor(
                     content = item.optString("content"),
                     reasoning = item.optString("reasoning").takeIf(String::isNotEmpty),
                     timestamp = item.optLong("timestamp", 0L),
+                    images = item.optJSONArray("images")
+                        ?.let { array -> buildList { for (i in 0 until array.length()) add(array.optString(i)) } }
+                        .orEmpty(),
                 ),
             )
         }
@@ -194,7 +197,8 @@ class ChatHistoryRepository internal constructor(
                     .put("role", message.role)
                     .put("content", message.content)
                     .put("reasoning", message.reasoning)
-                    .put("timestamp", message.timestamp),
+                    .put("timestamp", message.timestamp)
+                    .put("images", JSONArray().apply { message.images.forEach { put(it) } }),
             )
         }
     }
