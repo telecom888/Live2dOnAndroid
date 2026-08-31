@@ -1,5 +1,3 @@
-@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-
 package com.bangdream.pet.ui.line
 
 import android.widget.Toast
@@ -15,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -28,10 +25,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddComment
 import androidx.compose.material.icons.outlined.ArrowBack
@@ -202,7 +197,7 @@ private fun LineRolePickerScreen(
                             Column(Modifier.weight(1f)) {
                                 Text(character.display, fontWeight = FontWeight.Medium)
                                 Text(
-                                    "${character.costumes.size} 套装材",
+                                    "${character.costumes.size} 套素材",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -366,9 +361,7 @@ private fun CreateLineDialog(
         title = { Text(if (isGroup) "新建群组" else "新建私聊") },
         text = {
             Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .heightIn(max = 440.dp),
+                modifier = Modifier.heightIn(max = 480.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -382,28 +375,73 @@ private fun CreateLineDialog(
                         label = { Text("群名（可选）") },
                         singleLine = true,
                     )
-                    Text("选择参与角色（含 ${ownerRole.display}）", style = MaterialTheme.typography.bodySmall)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        others.forEach { c ->
+                    Text("选择参与角色（含 ${ownerRole.display}），可滑动", style = MaterialTheme.typography.bodySmall)
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 340.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(others, key = { it.id }) { c ->
                             val selected = c.id in groupMembers
-                            FilterChip(
-                                selected = selected,
+                            Surface(
                                 onClick = {
                                     groupMembers = if (selected) groupMembers - c.id else groupMembers + c.id
                                 },
-                                label = { Text(c.display) },
-                            )
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                },
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(c.display, modifier = Modifier.weight(1f))
+                                    if (selected) {
+                                        Text(
+                                            "已选",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 } else {
-                    Text("选择私聊对象", style = MaterialTheme.typography.bodySmall)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        others.forEach { c ->
-                            FilterChip(
-                                selected = otherId == c.id,
+                    Text("选择私聊对象，可滑动", style = MaterialTheme.typography.bodySmall)
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 340.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(others, key = { it.id }) { c ->
+                            val selected = otherId == c.id
+                            Surface(
                                 onClick = { otherId = c.id },
-                                label = { Text(c.display) },
-                            )
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                },
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(c.display, modifier = Modifier.weight(1f))
+                                    if (selected) {
+                                        Text(
+                                            "已选",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
