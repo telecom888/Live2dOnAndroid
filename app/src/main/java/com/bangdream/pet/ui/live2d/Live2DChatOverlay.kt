@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -647,6 +648,7 @@ internal fun ChatMessageList(
     modifier: Modifier = Modifier,
 ) {
     val avatar = if (lineMode) rememberChatAvatar(characterId) else null
+    val userAvatar = if (lineMode) rememberUserAvatar() else null
     val listState = rememberLazyListState()
     val itemCount = messages.size + if (streamingText.isNotBlank() || thinking) 1 else 0
     val streamScrollBucket = streamingText.length / 24
@@ -688,6 +690,7 @@ internal fun ChatMessageList(
                     timestamp = message.timestamp,
                     images = message.images,
                     avatar = avatar,
+                    userAvatar = userAvatar,
                     lineMode = lineMode,
                     maxBubbleWidth = bubbleMaxWidth,
                 )
@@ -700,6 +703,7 @@ internal fun ChatMessageList(
                         thinking,
                         reasoning = streamingReasoning,
                         avatar = avatar,
+                        userAvatar = userAvatar,
                         lineMode = lineMode,
                         maxBubbleWidth = bubbleMaxWidth,
                     )
@@ -723,6 +727,7 @@ internal fun ChatBubble(
     timestamp: Long = 0L,
     images: List<String> = emptyList(),
     avatar: ImageBitmap? = null,
+    userAvatar: ImageBitmap? = null,
     lineMode: Boolean = false,
     maxBubbleWidth: Dp = 420.dp,
 ) {
@@ -746,7 +751,11 @@ internal fun ChatBubble(
                 Spacer(Modifier.width(8.dp))
             }
             Column(
-                modifier = if (lineMode) Modifier.weight(1f, fill = false) else Modifier.widthIn(max = maxBubbleWidth),
+                modifier = if (lineMode) {
+                    Modifier.wrapContentWidth(align = if (fromUser) Alignment.End else Alignment.Start)
+                } else {
+                    Modifier.widthIn(max = maxBubbleWidth)
+                },
                 horizontalAlignment = if (fromUser) Alignment.End else Alignment.Start,
             ) {
                 Surface(
@@ -884,9 +893,9 @@ internal fun ChatBubble(
                     }
                 }
             }
-            if (fromUser && lineMode) {
+            if (fromUser && lineMode && userAvatar != null) {
                 Spacer(Modifier.width(8.dp))
-                LineAvatar(avatar, isUser = true)
+                LineAvatar(userAvatar, isUser = true)
             }
         }
     }
@@ -919,6 +928,26 @@ private fun rememberChatAvatar(characterId: String?): ImageBitmap? {
                 defaultPath != null -> SampledImageDecoder.decodeAsset(appContext, defaultPath, 128)
                 else -> null
             }
+        }
+        if (decoded == null) ImageBitmapCache.markMissing(key) else ImageBitmapCache.put(key, decoded)
+        avatar = decoded
+    }
+    return avatar
+}
+
+@Composable
+private fun rememberUserAvatar(): ImageBitmap? {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val file = remember { AvatarManager.userAvatarFile(appContext) }
+    val key = remember(file?.lastModified()) {
+        if (file != null) "chat-avatar:user:${file.lastModified()}" else "chat-avatar:user:none"
+    }
+    var avatar by remember(key) { mutableStateOf(ImageBitmapCache.get(key)) }
+    LaunchedEffect(key) {
+        if (avatar != null || ImageBitmapCache.isKnownMissing(key)) return@LaunchedEffect
+        val decoded = file?.let {
+            withContext(Dispatchers.IO) { SampledImageDecoder.decodeBytes(it.readBytes(), 128) }
         }
         if (decoded == null) ImageBitmapCache.markMissing(key) else ImageBitmapCache.put(key, decoded)
         avatar = decoded

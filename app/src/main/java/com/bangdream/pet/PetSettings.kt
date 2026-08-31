@@ -27,6 +27,7 @@ const val KEY_WALLPAPER_SCALE = "wallpaper_scale"
 const val KEY_DYNAMIC_COLOR_ENABLED = "dynamic_color_enabled"
 const val KEY_DARK_MODE = "dark_mode"
 const val KEY_LIQUID_GLASS_ENABLED = "liquid_glass_enabled"
+const val KEY_ACCENT_COLOR = "accent_color"
 const val KEY_FLOATING_OVERLAY_ENABLED = "floating_overlay_enabled"
 const val KEY_FLOATING_OVERLAY_LOCKED = "floating_overlay_locked"
 const val KEY_FLOATING_OVERLAY_TOUCH_THROUGH = "floating_overlay_touch_through"
@@ -107,6 +108,7 @@ data class ThemeSettings(
     val dynamicColorEnabled: Boolean = false,
     val darkMode: DarkModeSetting = DarkModeSetting.System,
     val liquidGlassEnabled: Boolean = true,
+    val accentColor: String = ACCENT_PINK,
 ) {
     fun save(context: Context) {
         context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
@@ -114,16 +116,40 @@ data class ThemeSettings(
             .putBoolean(KEY_DYNAMIC_COLOR_ENABLED, dynamicColorEnabled)
             .putString(KEY_DARK_MODE, darkMode.value)
             .putBoolean(KEY_LIQUID_GLASS_ENABLED, liquidGlassEnabled)
+            .putString(KEY_ACCENT_COLOR, accentColor)
             .apply()
     }
 
     companion object {
+        const val ACCENT_PINK = "pink"
+        const val ACCENT_MONET = "monet"
+        const val ACCENT_MINT = "mint"
+        const val ACCENT_SKY = "sky"
+        const val ACCENT_SUNSET = "sunset"
+        const val ACCENT_LAVENDER = "lavender"
+        const val ACCENT_ROSE = "rose"
+
+        val ACCENT_OPTIONS = listOf(ACCENT_PINK, ACCENT_MONET, ACCENT_MINT, ACCENT_SKY, ACCENT_SUNSET, ACCENT_LAVENDER, ACCENT_ROSE)
+
+        fun accentLabel(value: String): String = when (value) {
+            ACCENT_MONET -> "莫奈取色"
+            ACCENT_MINT -> "薄荷绿"
+            ACCENT_SKY -> "天空蓝"
+            ACCENT_SUNSET -> "落日橙"
+            ACCENT_LAVENDER -> "薰衣草紫"
+            ACCENT_ROSE -> "玫瑰红"
+            else -> "默认粉"
+        }
+
         fun load(context: Context): ThemeSettings {
             val prefs = context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
             return ThemeSettings(
                 dynamicColorEnabled = prefs.getBoolean(KEY_DYNAMIC_COLOR_ENABLED, false),
                 darkMode = DarkModeSetting.fromValue(prefs.getString(KEY_DARK_MODE, null)),
                 liquidGlassEnabled = prefs.getBoolean(KEY_LIQUID_GLASS_ENABLED, true),
+                accentColor = prefs.getString(KEY_ACCENT_COLOR, ACCENT_PINK).orEmpty().let { v ->
+                    if (v in ACCENT_OPTIONS) v else ACCENT_PINK
+                },
             )
         }
     }

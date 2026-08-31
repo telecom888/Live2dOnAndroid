@@ -9,6 +9,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.statusBars
@@ -24,9 +29,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
@@ -60,6 +67,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -101,6 +110,9 @@ import com.bangdream.pet.saveBuiltinVoiceEnabled
 import com.bangdream.pet.saveReplyVoiceEnabled
 import com.bangdream.pet.saveBubbleEnabled
 import com.bangdream.pet.data.ModelChoice
+import com.bangdream.pet.AvatarManager
+import com.bangdream.pet.ui.ImageBitmapCache
+import com.bangdream.pet.ui.SampledImageDecoder
 import com.bangdream.pet.isWallpaperEnabled
 import com.bangdream.pet.llm.ChatHistoryRepository
 import com.bangdream.pet.llm.LlmSettings
@@ -162,6 +174,9 @@ fun SettingsScreen(
                 onSettingsChanged = onThemeSettingsChanged,
             )
         }
+        item(key = "line_ui") {
+            LineUiSettingsCard()
+        }
         item(key = "render") {
             RenderSettingsCard(
                 settings = renderSettings,
@@ -212,9 +227,6 @@ fun SettingsScreen(
         item(key = "llm") {
             LlmSettingsEntryCard()
         }
-        item(key = "line_ui") {
-            LineUiSettingsCard()
-        }
         item(key = "section_voice") { SettingsSectionHeader("语音") }
         item(key = "voice_settings") {
             VoiceSettingsCard()
@@ -240,6 +252,14 @@ private fun LineUiSettingsCard() {
     val context = LocalContext.current
     val appContext = context.applicationContext
     var lineUiEnabled by remember { mutableStateOf(loadLineUiEnabled(appContext)) }
+    var userAvatarTick by remember { mutableStateOf(0) }
+    val userAvatarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val ok = AvatarManager.importUserAvatar(appContext, uri)
+            Toast.makeText(appContext, if (ok) "我的头像已设置" else "头像导入失败", Toast.LENGTH_SHORT).show()
+            userAvatarTick++
+        }
+    }
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("对话界面", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -264,6 +284,64 @@ private fun LineUiSettingsCard() {
                     },
                 )
             }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                UserAvatarPreview(userAvatarTick)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("我的头像", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "默认不显示；设置后显示在 Line 消息右侧",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (AvatarManager.userAvatarFile(appContext) != null) {
+                    TextButton(onClick = {
+                        AvatarManager.clearUserAvatar(appContext)
+                        userAvatarTick++
+                        Toast.makeText(appContext, "已清除我的头像", Toast.LENGTH_SHORT).show()
+                    }) { Text("清除") }
+                }
+                FilledTonalButton(onClick = { userAvatarLauncher.launch("image/*") }) { Text("设置") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UserAvatarPreview(tick: Int, size: Dp = 44.dp) {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val file = remember(tick) { AvatarManager.userAvatarFile(appContext) }
+    val key = remember(tick, file?.lastModified()) {
+        if (file != null) "user-avatar:${file.lastModified()}" else "user-avatar:none"
+    }
+    var bitmap by remember(key) { mutableStateOf(ImageBitmapCache.get(key)) }
+    LaunchedEffect(key) {
+        if (bitmap != null || ImageBitmapCache.isKnownMissing(key)) return@LaunchedEffect
+        val decoded = file?.let {
+            withContext(Dispatchers.IO) { SampledImageDecoder.decodeBytes(it.readBytes(), 128) }
+        }
+        if (decoded == null) ImageBitmapCache.markMissing(key) else ImageBitmapCache.put(key, decoded)
+        bitmap = decoded
+    }
+    Box(
+        modifier = Modifier.size(size).clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap!!,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Icon(Icons.Outlined.Person, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -607,6 +685,7 @@ private fun ThemeSettingsCard(
     onSettingsChanged: (ThemeSettings) -> Unit,
 ) {
     var darkModeMenuExpanded by remember { mutableStateOf(false) }
+    var accentMenuExpanded by remember { mutableStateOf(false) }
 
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -617,6 +696,52 @@ private fun ThemeSettingsCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("主题色", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        ThemeSettings.accentLabel(settings.accentColor),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                Box {
+                    Row(
+                        modifier = Modifier.clickable { accentMenuExpanded = true },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier.size(20.dp).clip(CircleShape)
+                                .background(accentSwatchColor(settings.accentColor)),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(ThemeSettings.accentLabel(settings.accentColor))
+                    }
+                    DropdownMenu(
+                        expanded = accentMenuExpanded,
+                        onDismissRequest = { accentMenuExpanded = false },
+                    ) {
+                        ThemeSettings.ACCENT_OPTIONS.forEach { accent ->
+                            DropdownMenuItem(
+                                text = { Text(ThemeSettings.accentLabel(accent)) },
+                                onClick = {
+                                    onSettingsChanged(
+                                        settings.copy(
+                                            accentColor = accent,
+                                            dynamicColorEnabled = accent == ThemeSettings.ACCENT_MONET,
+                                        ),
+                                    )
+                                    accentMenuExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -644,7 +769,7 @@ private fun ThemeSettingsCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("液态玻璃（毛玻璃）", fontWeight = FontWeight.SemiBold)
+                    Text("毛玻璃", fontWeight = FontWeight.SemiBold)
                     Text(
                         if (settings.liquidGlassEnabled) "已开启，低配设备自动降级" else "已关闭",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1108,6 +1233,16 @@ private fun darkModeLabel(mode: DarkModeSetting): String = when (mode) {
     DarkModeSetting.On -> I18n.t("settings_dark_mode_on")
     DarkModeSetting.Off -> I18n.t("settings_dark_mode_off")
     DarkModeSetting.System -> I18n.t("settings_dark_mode_system")
+}
+
+private fun accentSwatchColor(accent: String): Color = when (accent) {
+    ThemeSettings.ACCENT_MINT -> Color(0xFF00796B)
+    ThemeSettings.ACCENT_SKY -> Color(0xFF1565C0)
+    ThemeSettings.ACCENT_SUNSET -> Color(0xFFE65100)
+    ThemeSettings.ACCENT_LAVENDER -> Color(0xFF6A4FB8)
+    ThemeSettings.ACCENT_ROSE -> Color(0xFFC2185B)
+    ThemeSettings.ACCENT_MONET -> Color(0xFF7E7E7E)
+    else -> Color(0xFFB32666)
 }
 
 private fun darkModeDescription(mode: DarkModeSetting): String = when (mode) {

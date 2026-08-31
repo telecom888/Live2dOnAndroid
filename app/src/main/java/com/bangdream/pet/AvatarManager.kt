@@ -61,4 +61,36 @@ object AvatarManager {
         val id = safeId(characterId)
         dir(context).listFiles()?.firstOrNull { it.nameWithoutExtension == id }?.delete()
     }
+
+    // ==================== 用户自己的头像（全局，与角色头像独立） ====================
+
+    /** 用户自定义头像文件（未设置时返回 null，默认为空）。 */
+    fun userAvatarFile(context: Context): File? {
+        val id = "user"
+        return dir(context).listFiles()?.firstOrNull { it.nameWithoutExtension == id }
+    }
+
+    /** 导入用户头像（覆盖旧的）。 */
+    fun importUserAvatar(context: Context, uri: Uri): Boolean = runCatching {
+        val id = "user"
+        val mime = context.contentResolver.getType(uri).orEmpty()
+        val ext = when {
+            mime.contains("png") -> "png"
+            mime.contains("webp") -> "webp"
+            mime.contains("gif") -> "gif"
+            else -> "jpg"
+        }
+        dir(context).listFiles()?.firstOrNull { it.nameWithoutExtension == id }?.delete()
+        val target = File(dir(context), "$id.$ext")
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            target.outputStream().use { output -> input.copyTo(output) }
+        } ?: return@runCatching false
+        true
+    }.getOrDefault(false)
+
+    /** 清空用户头像（回到空）。 */
+    fun clearUserAvatar(context: Context) {
+        val id = "user"
+        dir(context).listFiles()?.firstOrNull { it.nameWithoutExtension == id }?.delete()
+    }
 }

@@ -301,6 +301,7 @@ private fun ConversationListScreen(
     val context = LocalContext.current
     var detailConversation by remember { mutableStateOf<ChatConversationSummary?>(null) }
     var actionConversation by remember { mutableStateOf<ChatConversationSummary?>(null) }
+    var pendingDelete by remember { mutableStateOf<ChatConversationSummary?>(null) }
     var stats by remember { mutableStateOf<Live2DChatViewModel.ConversationStats?>(null) }
     var filter by remember { mutableStateOf("") }
     var renameDraft by remember(detailConversation) { mutableStateOf(detailConversation?.title.orEmpty()) }
@@ -416,7 +417,7 @@ private fun ConversationListScreen(
                                 )
                             }
                             IconButton(onClick = {
-                                viewModel.deleteConversation(character.characterId, conversation.id)
+                                pendingDelete = conversation
                             }) {
                                 Icon(Icons.Outlined.Delete, contentDescription = "删除")
                             }
@@ -504,6 +505,27 @@ private fun ConversationListScreen(
                         actionConversation = null
                     }) { Text("对话详情") }
                 }
+            },
+        )
+    }
+
+    pendingDelete?.let { conversation ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除对话") },
+            text = {
+                Text(
+                    "确定删除「${conversation.title.ifBlank { "未命名对话" }}」吗？删除后不可恢复。",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteConversation(character.characterId, conversation.id)
+                    pendingDelete = null
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
             },
         )
     }

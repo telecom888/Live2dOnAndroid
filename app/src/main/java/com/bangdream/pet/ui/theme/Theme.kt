@@ -129,15 +129,17 @@ private val AppShapes = Shapes(
 fun BangDreamPetTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false,
+    accentColor: String = "pink",
     content: @Composable () -> Unit,
 ) {
-    val colors: ColorScheme = if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        val context = LocalContext.current
-        if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-    } else if (darkTheme) {
-        DarkColors
-    } else {
-        LightColors
+    val useDynamic = accentColor == "monet" || (dynamicColor && accentColor == "pink")
+    val colors: ColorScheme = when {
+        useDynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val context = LocalContext.current
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        }
+        accentColor == "pink" || accentColor.isEmpty() -> if (darkTheme) DarkColors else LightColors
+        else -> presetColorScheme(accentColor, darkTheme)
     }
     SystemBarAppearance(darkTheme)
     MaterialTheme(
@@ -146,6 +148,26 @@ fun BangDreamPetTheme(
         shapes = AppShapes,
         content = content,
     )
+}
+
+private fun presetColorScheme(accent: String, darkTheme: Boolean): ColorScheme {
+    val light = when (accent) {
+        "mint" -> Color(0xFF00796B)
+        "sky" -> Color(0xFF1565C0)
+        "sunset" -> Color(0xFFE65100)
+        "lavender" -> Color(0xFF6A4FB8)
+        "rose" -> Color(0xFFC2185B)
+        else -> Color(0xFFB32666)
+    }
+    val dark = when (accent) {
+        "mint" -> Color(0xFF6FDFC4)
+        "sky" -> Color(0xFF8EC9FF)
+        "sunset" -> Color(0xFFFFB68F)
+        "lavender" -> Color(0xFFCFBFFF)
+        "rose" -> Color(0xFFFFB0C3)
+        else -> Color(0xFFFF9AC7)
+    }
+    return if (darkTheme) darkColorScheme(primary = dark) else lightColorScheme(primary = light)
 }
 
 @Composable

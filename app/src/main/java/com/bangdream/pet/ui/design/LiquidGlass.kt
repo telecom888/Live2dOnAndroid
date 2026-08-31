@@ -13,12 +13,12 @@ import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 
-/** 液态玻璃：Haze 毛玻璃 + 半透明底色 + 噪点（参考 BiliPai BlurStyles：模糊 + 半透明底色 + 顶部高光）。 */
+/** 毛玻璃：Haze 毛玻璃 + 半透明底色 + 噪点（参考 BiliPai BlurStyles：模糊 + 半透明底色 + 顶部高光）。 */
 @Composable
 fun rememberLiquidGlassState(): HazeState = remember { HazeState() }
 
 /**
- * 给前景层（顶栏/底栏/面板）叠加液态玻璃效果。
+ * 给前景层（顶栏/底栏/面板）叠加毛玻璃效果。
  * @param enabled 关闭时回退为半透明纯色，保证低端机/关闭开关时依然可读。
  * @param backgroundAlpha 半透明底色不透明度。
  * @param blurRadius 模糊半径。

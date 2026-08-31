@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
             BangDreamPetTheme(
                 darkTheme = darkTheme,
                 dynamicColor = themeSettings.dynamicColorEnabled,
+                accentColor = themeSettings.accentColor,
             ) {
                 BangDreamPetApp(
                     themeSettings = themeSettings,
