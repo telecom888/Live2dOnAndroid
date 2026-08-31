@@ -20,14 +20,14 @@
 `saveConversation()` 后直接用刚写出的对话刷新缓存；delete/clear 同步失效。
 效果：列表打开、发消息、回复落盘都不再重复解析其它会话文件。
 
-### 1.2 LLM 请求把整史（含全部 base64 图片）重发 —— 已修复
+### 1.2 LLM 请求把整史（含全部 base64 图片）重发 —— 保持原行为（已回滚裁剪）
 
 **证据** `llm/LlmChatClient.kt` `messagesToJsonArray()` 对所有消息原样转 JSON，
-图片以 base64 data URL 内联。一张手机照片 base64 后 1MB+，对话 50 轮后单次请求就是几十 MB
-上传 + 巨额 token 成本，且极易碰服务端请求体上限。
+图片以 base64 data URL 内联。一张手机照片 base64 后 1MB+，对话轮数增多后请求体积与
+token 成本会随轮数线性增长。
 
-**修复**：只保留最近 `MAX_IMAGE_HISTORY_MESSAGES = 2` 条**带图消息**的图片，
-更早的图片替换为 `[更早的图片已省略]` 文字标记（文本上下文保持不裁剪，符合"上下文不设限"）。
+**结论**：曾尝试只保留最近 2 条带图消息、更早图片以文字标记代替，但用户确认
+**所有带图消息都必须整图重发**，已回滚该裁剪。文本与图片上下文均不设限。
 
 ### 1.3 模型资源重复解压 / 重复复制 —— 已修复
 
@@ -98,13 +98,14 @@
 - **图片选择解码在主线程**：`ConversationManagerScreen` 选图回调 → `withContext(IO)`。
 - **内存占用**：`ImageBitmapCache` 本身是好的（16 分之一 maxMemory，8~32MB），无需改。
 
-### 1.10 息屏/锁屏后悬浮窗满帧空转 —— 已修复
+### 1.10 息屏/锁屏后悬浮窗满帧空转 —— 保持原行为（已回滚暂停）
 
 **证据** `FloatingLive2DOverlayService` 只靠 `onWindowVisibilityChanged`，
-息屏时悬浮窗常不回调，黑屏下渲染线程整夜空转。
+息屏时悬浮窗常不回调，黑屏下渲染线程可能满帧空转。
 
-**修复**：注册 `ACTION_SCREEN_OFF / ACTION_SCREEN_ON` 动态广播
-（`RECEIVER_NOT_EXPORTED`，Android 13+ 兼容），统一 `setRenderingActive`。
+**结论**：曾注册 `ACTION_SCREEN_OFF / ACTION_SCREEN_ON` 动态广播在息屏/锁屏时
+暂停渲染，但用户要求**锁屏时模型继续保持渲染**，已回滚该暂停逻辑（保留原有
+`onWindowVisibilityChanged` 行为）。
 
 ### 1.11 悬浮窗壁纸渲染实例修复 —— 功能修复
 
@@ -120,7 +121,7 @@
 | 文件 | 内容 |
 | --- | --- |
 | `line/LineOrchestrator.kt` | ① `persona()` 每轮决策/每条已读判定都从 assets 重读几十 KB 资料 → 加 persona 缓存；② 群聊一条消息给 N 个成员依次判定已读是串行 N 次 LLM 往返 → 改 `coroutineScope + async + awaitAll` 并发，延迟约等于最慢一次 |
-| `llm/LlmChatClient.kt` | 图片历史裁剪（见 1.2），默认每角色"带图历史"最多重发 2 条，成本与延迟显著下降 |
+| `llm/LlmChatClient.kt` | 图片历史不裁剪（见 1.2）：所有带图消息整图重发，成本随轮数增长为已知取舍 |
 | `live2d/AssetSync.kt` | 已备模型缓存 + 复制原子化（见 1.3） |
 | `llm/CharacterPromptRepository.kt` | 角色系统提示词 LRU 缓存（8 条目）：发消息不再重读 `prompt.json` / `A_*.md` / `soul.md` |
 
@@ -151,11 +152,11 @@
 ## 五、本次变更清单（commit 摘要）
 
 - perf: 对话摘要 LRU，发消息/回复不再整目录解析
-- perf: LLM 图片历史裁剪（默认最近 2 条带图消息）
+- perf: LLM 图片历史裁剪（默认最近 2 条带图消息）→ 已回滚，保持全部带图消息整图重发
 - perf: AssetSync 已备模型缓存 + 运行时复制原子化
 - perf: 修复 EGL 共享 display 被逐个 terminate（黑屏/崩溃根因）
 - perf: 帧率绝对时基 + swap 失败退避与诊断
-- perf: 悬浮窗息屏/锁屏暂停渲染
+- perf: 悬浮窗息屏/锁屏暂停渲染 → 已回滚，锁屏时模型继续保持渲染
 - fix: 壁纸 activeHandle 从未发布（口型/动作失效）
 - perf: 触摸路径 SharedPreferences 缓存
 - perf: Compose 热点（itemsIndexed、短缓存 key、DateFormat 单例、IO 上移）

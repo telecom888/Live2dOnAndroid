@@ -42,8 +42,8 @@ class LlmRequestTest {
     }
 
     @Test
-    fun imageHistoryIsCappedToRecentMessages() {
-        // 带图历史只保留最近 MAX_IMAGE_HISTORY_MESSAGES 条；更早的图片以文字标记代替
+    fun imageHistoryKeepsAllImageMessages() {
+        // 图片历史不裁剪：所有带图消息都以图片内容块重发
         val messages = (0 until 5).map { index ->
             ChatMessage("img$index", "user", "pic$index", index.toLong(), images = listOf("data:image/png;base64,abc$index"))
         }
@@ -52,15 +52,14 @@ class LlmRequestTest {
         val retainedAsContentBlock = (1 until 6).count { index ->
             request.optJSONObject(index)?.opt("content") is JSONArray
         }
-        assertEquals(LlmChatClient.MAX_IMAGE_HISTORY_MESSAGES, retainedAsContentBlock)
-        // 更早的图片被文字标记替换，且文本仍在
-        val omitted = request.getJSONObject(1).getString("content")
-        assertTrue(omitted.contains("pic0"))
-        assertTrue(omitted.contains("省略"))
-        // 最近一条带图消息：1 个 image_url 块 + 1 个 text 块
-        val lastContent = request.getJSONObject(5).getJSONArray("content")
-        assertEquals(2, lastContent.length())
-        assertEquals("image_url", lastContent.getJSONObject(0).getString("type"))
-        assertEquals("text", lastContent.getJSONObject(1).getString("type"))
+        assertEquals(5, retainedAsContentBlock)
+        // 每条带图消息：1 个 image_url 块 + 1 个 text 块，文本仍保留
+        for (index in 1 until 6) {
+            val content = request.getJSONObject(index).getJSONArray("content")
+            assertEquals(2, content.length())
+            assertEquals("image_url", content.getJSONObject(0).getString("type"))
+            assertEquals("text", content.getJSONObject(1).getString("type"))
+            assertTrue(content.getJSONObject(1).getString("text").contains("pic${index - 1}"))
+        }
     }
 }

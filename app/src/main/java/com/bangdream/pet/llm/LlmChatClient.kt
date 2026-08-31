@@ -138,33 +138,15 @@ class LlmChatClient {
         }
     }
 
-    /**
-     * 把系统提示词 + 历史消息转成请求消息 JSON（带图片消息转内容块数组）。
-     *
-     * 文本历史不做裁剪（保持"上下文不设限"的既有行为），但图片只保留最近
-     * [MAX_IMAGE_HISTORY_MESSAGES] 条带图消息：base64 图片一张就有几百 KB ~ 几 MB，
-     * 全量重发会让每次请求的上传体积和 token 成本随对话轮数线性膨胀，
-     * 也很容易触发服务端的请求体大小上限。
-     */
-    internal fun messagesToJsonArray(systemPrompt: String, messages: List<ChatMessage>): JSONArray {
-        val keepImagesFor = messages.asSequence()
-            .withIndex()
-            .filter { it.value.images.isNotEmpty() }
-            .map { it.index }
-            .toList()
-            .takeLast(MAX_IMAGE_HISTORY_MESSAGES)
-            .toSet()
-        return JSONArray().apply {
+    /** 把系统提示词 + 历史消息转成请求消息 JSON（带图片消息转内容块数组）。 */
+    internal fun messagesToJsonArray(systemPrompt: String, messages: List<ChatMessage>): JSONArray =
+        JSONArray().apply {
             put(JSONObject().put("role", "system").put("content", systemPrompt))
-            messages.forEachIndexed { index, message ->
-                val contentJson: Any = when {
-                    message.images.isEmpty() -> message.content
-                    index !in keepImagesFor -> buildString {
-                        append(message.content)
-                        if (message.content.isNotBlank()) append('\n')
-                        append(OMITTED_IMAGE_MARKER)
-                    }
-                    else -> JSONArray().apply {
+            messages.forEach { message ->
+                val contentJson: Any = if (message.images.isEmpty()) {
+                    message.content
+                } else {
+                    JSONArray().apply {
                         message.images.forEach { imageUrl ->
                             put(
                                 JSONObject()
@@ -178,7 +160,6 @@ class LlmChatClient {
                 put(JSONObject().put("role", message.role).put("content", contentJson))
             }
         }
-    }
 
     /** 追加 assistant(tool_calls) + 各 tool 的执行结果消息。 */
     private fun appendToolMessages(
@@ -357,8 +338,5 @@ class LlmChatClient {
 
     companion object {
         private const val MAX_TOOL_ROUNDS = 6
-        /** 每次请求最多重发多少条"带图片"的历史消息（更早的图片以文字标记代替）。 */
-        internal const val MAX_IMAGE_HISTORY_MESSAGES = 2
-        private const val OMITTED_IMAGE_MARKER = "[更早的图片已省略]"
     }
 }
