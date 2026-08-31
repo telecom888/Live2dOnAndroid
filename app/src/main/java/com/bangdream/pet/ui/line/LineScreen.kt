@@ -3,6 +3,7 @@
 package com.bangdream.pet.ui.line
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -99,6 +100,12 @@ fun LineScreen(appData: AppData?, modifier: Modifier = Modifier) {
         openConversationId != null -> 2
         selectedRole != null -> 1
         else -> 0
+    }
+    BackHandler(enabled = level != 0) {
+        when (level) {
+            2 -> openConversationId = null
+            else -> selectedRole = null
+        }
     }
     AnimatedContent(
         targetState = level,
