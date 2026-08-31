@@ -144,6 +144,12 @@ fun BangDreamPetApp(
     val appContext = context.applicationContext
     var appData by remember { mutableStateOf<AppData?>(null) }
     var selectedScreen by rememberSaveable { mutableStateOf(Screen.Live2D) }
+    val lineNavEnabled = loadLineNavEnabled(appContext)
+    LaunchedEffect(lineNavEnabled) {
+        if (!lineNavEnabled && selectedScreen == Screen.Line) {
+            selectedScreen = Screen.Live2D
+        }
+    }
     var selectedBandId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedCharacterId by remember { mutableStateOf(loadSelectedCharacterId(appContext)) }
     var selectedModel by remember { mutableStateOf<ModelChoice?>(null) }
@@ -248,7 +254,7 @@ fun BangDreamPetApp(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         tonalElevation = 0.dp,
                     ) {
-                        Screen.entries.forEach { screen ->
+                        Screen.entries.filter { it != Screen.Line || lineNavEnabled }.forEach { screen ->
                             NavigationBarItem(
                                 selected = selectedScreen == screen,
                                 onClick = {

@@ -614,6 +614,18 @@ fun saveCharacterCustomPrompt(context: Context, characterId: String, prompt: Str
         }.apply()
 }
 
+// ==================== 导航栏 Line（实验性） ====================
+const val KEY_LINE_NAV_ENABLED = "line_nav_enabled"
+
+fun loadLineNavEnabled(context: Context): Boolean =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getBoolean(KEY_LINE_NAV_ENABLED, false)
+
+fun saveLineNavEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_LINE_NAV_ENABLED, enabled).apply()
+}
+
 // ==================== Line UI（仿 LINE 对话界面） ====================
 const val KEY_LINE_UI_ENABLED = "line_ui_enabled"
 

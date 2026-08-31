@@ -99,6 +99,8 @@ import com.bangdream.pet.VoiceSettings
 import com.bangdream.pet.loadBubbleEnabled
 import com.bangdream.pet.loadLineUiEnabled
 import com.bangdream.pet.saveLineUiEnabled
+import com.bangdream.pet.loadLineNavEnabled
+import com.bangdream.pet.saveLineNavEnabled
 import com.bangdream.pet.loadBubbleDurationSeconds
 import com.bangdream.pet.saveBubbleDurationSeconds
 import com.bangdream.pet.loadReplyVoiceEnabled
@@ -252,6 +254,8 @@ private fun LineUiSettingsCard() {
     val context = LocalContext.current
     val appContext = context.applicationContext
     var lineUiEnabled by remember { mutableStateOf(loadLineUiEnabled(appContext)) }
+    var lineNavEnabled by remember { mutableStateOf(loadLineNavEnabled(appContext)) }
+    var showLineNavWarning by remember { mutableStateOf(false) }
     var userAvatarTick by remember { mutableStateOf(0) }
     val userAvatarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -286,6 +290,31 @@ private fun LineUiSettingsCard() {
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("导航栏 Line（实验性）", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "开启后底部导航显示 Line；功能不保证稳定",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = lineNavEnabled,
+                    onCheckedChange = { enabled ->
+                        if (enabled) {
+                            showLineNavWarning = true
+                        } else {
+                            lineNavEnabled = false
+                            saveLineNavEnabled(appContext, false)
+                        }
+                    },
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 UserAvatarPreview(userAvatarTick)
@@ -308,6 +337,26 @@ private fun LineUiSettingsCard() {
                 FilledTonalButton(onClick = { userAvatarLauncher.launch("image/*") }) { Text("设置") }
             }
         }
+    }
+
+    if (showLineNavWarning) {
+        AlertDialog(
+            onDismissRequest = { showLineNavWarning = false },
+            title = { Text("实验性功能") },
+            text = {
+                Text("Line 多角色旁观对话为实验性功能，不保证稳定性，可能出现异常或性能问题。是否开启导航栏 Line？")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    lineNavEnabled = true
+                    saveLineNavEnabled(appContext, true)
+                    showLineNavWarning = false
+                }) { Text("开启") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLineNavWarning = false }) { Text("取消") }
+            },
+        )
     }
 }
 
