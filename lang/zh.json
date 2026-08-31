@@ -162,5 +162,6 @@
   "settings_llm_save": "保存设置",
   "settings_llm_saved": "已保存",
   "settings_llm_clear_all": "清空全部聊天记录",
-  "settings_llm_clear_all_confirm": "确定清空所有角色的聊天记录吗？此操作无法撤销。"
+  "settings_llm_clear_all_confirm": "确定清空所有角色的聊天记录吗？此操作无法撤销。",
+  "chat_add_image": "添加图片"
 }

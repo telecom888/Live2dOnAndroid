@@ -54,7 +54,7 @@ class ChatHistoryRepository internal constructor(
     fun saveConversation(conversation: ChatConversation): ChatConversation {
         val normalized = conversation.copy(
             title = conversation.title.ifBlank { titleFromMessages(conversation.messages) },
-            messages = conversation.messages.takeLast(MAX_STORED_MESSAGES),
+            messages = conversation.messages,
         )
         val file = conversationFile(normalized.characterId, normalized.id)
             ?: throw IllegalArgumentException("Invalid conversation id")
@@ -147,7 +147,7 @@ class ChatHistoryRepository internal constructor(
 
     private fun readLegacyMessages(file: File, characterId: String): List<ChatMessage>? = runCatching {
         val array = JSONArray(file.readText())
-        parseMessages(array, characterId).takeLast(MAX_STORED_MESSAGES)
+        parseMessages(array, characterId)
     }.getOrNull()
 
     private fun readConversation(file: File, expectedCharacterId: String): ChatConversation? = runCatching {
@@ -158,7 +158,6 @@ class ChatHistoryRepository internal constructor(
         val id = payload.optString("id", file.nameWithoutExtension)
         if (!VALID_CONVERSATION_ID.matches(id) || id != file.nameWithoutExtension) return@runCatching null
         val messages = parseMessages(payload.optJSONArray("messages") ?: JSONArray(), id)
-            .takeLast(MAX_STORED_MESSAGES)
         val fallbackTimestamp = file.lastModified().takeIf { it > 0L } ?: 0L
         val createdAt = payload.optLong("createdAt", fallbackTimestamp)
         val updatedAt = payload.optLong("updatedAt", createdAt)
@@ -263,7 +262,6 @@ class ChatHistoryRepository internal constructor(
         characterId.replace(Regex("[^A-Za-z0-9_.-]"), "_")
 
     companion object {
-        const val MAX_STORED_MESSAGES = 2000
         private const val SCHEMA_VERSION = 2
         private const val LEGACY_CONVERSATION_ID = "legacy"
         private const val TITLE_MAX_CODE_POINTS = 32

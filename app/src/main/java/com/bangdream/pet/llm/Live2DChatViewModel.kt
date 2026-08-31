@@ -189,16 +189,16 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             )
         }
 
-    fun send(model: ModelChoice, input: String): Boolean {
+    fun send(model: ModelChoice, input: String, images: List<String> = emptyList()): Boolean {
         val text = input.trim()
         val current = mutableState.value
         if (
-            text.isEmpty() ||
+            (text.isEmpty() && images.isEmpty()) ||
             requestJob?.isActive == true ||
             current.isHistoryLoading ||
             current.characterId != model.characterId
         ) return false
-        startRequest(model, text, appendUser = true)
+        startRequest(model, text, appendUser = true, images = images)
         return true
     }
 
@@ -233,7 +233,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun startRequest(model: ModelChoice, input: String, appendUser: Boolean) {
+    private fun startRequest(model: ModelChoice, input: String, appendUser: Boolean, images: List<String> = emptyList()) {
         requestJob = viewModelScope.launch {
             val current = mutableState.value
             if (current.characterId != model.characterId) return@launch
@@ -246,7 +246,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 if (appendUser) ChatHistoryRepository.titleFromFirstMessage(input) else existingSummary?.title.orEmpty()
             }
             val messages = if (appendUser) {
-                (current.messages + newMessage("user", input)).takeLast(ChatHistoryRepository.MAX_STORED_MESSAGES)
+                (current.messages + newMessage("user", input).copy(images = images))
             } else {
                 current.messages
             }
@@ -407,7 +407,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         val finalMessages = if (result.text.isNotBlank()) {
             (request.messages + newMessage("assistant", result.text).copy(
                 reasoning = reasoning.takeIf(String::isNotBlank),
-            )).takeLast(ChatHistoryRepository.MAX_STORED_MESSAGES)
+            ))
         } else {
             request.messages
         }

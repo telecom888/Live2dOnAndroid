@@ -429,6 +429,24 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
                         }
                     }
                 }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("图片输入（多模态）", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "mimo-v2.5 / deepseek-v4-flash-vision-exp 支持；开启后输入框可附加图片（单张或多张）",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Switch(
+                        checked = draft.imageInputEnabled,
+                        onCheckedChange = { draft = draft.copy(imageInputEnabled = it); saved = false },
+                    )
+                }
                 OutlinedTextField(
                     value = mimoKey,
                     onValueChange = { mimoKey = it },

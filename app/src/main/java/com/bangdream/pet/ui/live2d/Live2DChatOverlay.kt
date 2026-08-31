@@ -1,6 +1,8 @@
 package com.bangdream.pet.ui.live2d
 
 import android.graphics.Rect
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -10,6 +12,8 @@ import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +42,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddComment
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Check
@@ -68,6 +73,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.Dp
@@ -94,8 +100,12 @@ import com.bangdream.pet.llm.ChatTextSearch
 import com.bangdream.pet.llm.ChatUiState
 import com.bangdream.pet.llm.Live2DChatViewModel
 import com.bangdream.pet.llm.LlmSettings
+import com.bangdream.pet.ui.chat.PickedImage
+import com.bangdream.pet.ui.chat.PickedImageThumb
+import com.bangdream.pet.ui.chat.contentUriToImageDataUrl
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.launch
 
 @Composable
 fun Live2DChatOverlay(
@@ -282,6 +292,22 @@ private fun ChatPanelContent(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val imageInputEnabled = settings.imageInputEnabled
+    var selectedImages by remember { mutableStateOf<List<PickedImage>>(emptyList()) }
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(maxItems = 9),
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            scope.launch {
+                val picked = uris.mapNotNull { uri ->
+                    contentUriToImageDataUrl(context, uri)?.let { PickedImage(uri, it) }
+                }
+                selectedImages = (selectedImages + picked).distinctBy { it.uri }
+            }
+        }
+    }
 
     if (showingHistory) {
         ChatHistoryPanel(
@@ -367,10 +393,34 @@ private fun ChatPanelContent(
                     }
                 }
             }
+            if (!compactForIme && selectedImages.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    selectedImages.forEach { image ->
+                        PickedImageThumb(
+                            uri = image.uri,
+                            onRemove = { selectedImages = selectedImages - image },
+                        )
+                    }
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Bottom,
             ) {
+                if (imageInputEnabled) {
+                    IconButton(
+                        onClick = { imagePicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        enabled = !state.isGenerating,
+                    ) {
+                        Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = I18n.t("chat_add_image"))
+                    }
+                }
                 OutlinedTextField(
                     value = input.value,
                     onValueChange = { input.value = it },
@@ -381,8 +431,10 @@ private fun ChatPanelContent(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = {
                         val message = input.value
-                        if (message.isNotBlank()) {
-                            if (viewModel.send(model, message)) input.value = ""
+                        val images = selectedImages.map { it.dataUrl }
+                        if ((message.isNotBlank() || images.isNotEmpty()) && viewModel.send(model, message, images)) {
+                            input.value = ""
+                            selectedImages = emptyList()
                         }
                     }),
                     shape = RoundedCornerShape(22.dp),
@@ -391,13 +443,17 @@ private fun ChatPanelContent(
                 FilledIconButton(
                     onClick = {
                         val message = input.value
+                        val images = selectedImages.map { it.dataUrl }
                         if (state.isGenerating) {
                             viewModel.stop()
-                        } else if (message.isNotBlank()) {
-                            if (viewModel.send(model, message)) input.value = ""
+                        } else if (message.isNotBlank() || images.isNotEmpty()) {
+                            if (viewModel.send(model, message, images)) {
+                                input.value = ""
+                                selectedImages = emptyList()
+                            }
                         }
                     },
-                    enabled = state.isGenerating || input.value.isNotBlank(),
+                    enabled = state.isGenerating || input.value.isNotBlank() || selectedImages.isNotEmpty(),
                     modifier = Modifier.size(48.dp),
                 ) {
                     Icon(

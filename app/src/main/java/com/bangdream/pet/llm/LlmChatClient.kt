@@ -102,10 +102,25 @@ class LlmChatClient {
         messages: List<ChatMessage>,
     ): JSONObject {
         val requestMessages = JSONArray().put(JSONObject().put("role", "system").put("content", systemPrompt))
-        // 不设上下文上限：发送全部历史消息（存储由 MAX_STORED_MESSAGES 兜底），
+        // 不设上下文上限：发送全部历史消息（存储不设限），
         // 充分利用模型 1M 上下文窗口；占用情况由对话详情页进度条展示。
+        // 带图片的消息（mimo-v2.5 / deepseek-v4-flash-vision-exp 多模态）按 OpenAI 内容块格式发送。
         messages.forEach { message ->
-            requestMessages.put(JSONObject().put("role", message.role).put("content", message.content))
+            val contentJson: Any = if (message.images.isEmpty()) {
+                message.content
+            } else {
+                JSONArray().apply {
+                    message.images.forEach { imageUrl ->
+                        put(
+                            JSONObject()
+                                .put("type", "image_url")
+                                .put("image_url", JSONObject().put("url", imageUrl)),
+                        )
+                    }
+                    put(JSONObject().put("type", "text").put("text", message.content))
+                }
+            }
+            requestMessages.put(JSONObject().put("role", message.role).put("content", contentJson))
         }
         return JSONObject()
             .put("model", settings.model)

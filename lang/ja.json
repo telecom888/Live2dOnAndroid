@@ -162,5 +162,6 @@
   "settings_llm_save": "設定を保存",
   "settings_llm_saved": "保存済み",
   "settings_llm_clear_all": "すべてのチャット履歴を消去",
-  "settings_llm_clear_all_confirm": "全キャラクターのチャット履歴を消去しますか？元に戻せません。"
+  "settings_llm_clear_all_confirm": "全キャラクターのチャット履歴を消去しますか？元に戻せません。",
+  "chat_add_image": "画像を追加"
 }

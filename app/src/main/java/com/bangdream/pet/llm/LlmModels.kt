@@ -25,6 +25,7 @@ data class LlmSettings(
     val temperature: Float = 0.8f,
     val maxTokens: Int = 1024,
     val contextTokens: Int = DEFAULT_CONTEXT_TOKENS,
+    val imageInputEnabled: Boolean = false,
 ) {
     val isConfigured: Boolean
         get() = baseUrl.isNotBlank() && apiKey.isNotBlank() && model.isNotBlank()
@@ -54,6 +55,7 @@ data class LlmSettings(
             .putFloat(KEY_LLM_TEMPERATURE, value.temperature)
             .putInt(KEY_LLM_MAX_TOKENS, value.maxTokens)
             .putInt(KEY_LLM_CONTEXT_TOKENS, value.contextTokens)
+            .putBoolean(KEY_LLM_IMAGE_INPUT_ENABLED, value.imageInputEnabled)
             .apply()
     }
 
@@ -73,6 +75,7 @@ data class LlmSettings(
                 maxTokens = prefs.getInt(KEY_LLM_MAX_TOKENS, 1024).coerceIn(1, 32_768),
                 contextTokens = prefs.getInt(KEY_LLM_CONTEXT_TOKENS, DEFAULT_CONTEXT_TOKENS)
                     .coerceIn(MIN_CONTEXT_TOKENS, MAX_CONTEXT_TOKENS),
+                imageInputEnabled = prefs.getBoolean(KEY_LLM_IMAGE_INPUT_ENABLED, false),
             )
         }
     }
@@ -86,6 +89,8 @@ data class ChatMessage(
     val content: String,
     val timestamp: Long,
     val reasoning: String? = null,
+    /** 随本条消息发送给模型的图片（base64 data URL）。仅用于当次请求，不写入历史。 */
+    val images: List<String> = emptyList(),
 )
 
 @Immutable
@@ -128,3 +133,4 @@ private const val KEY_LLM_THINKING_MODE = "llm_thinking_mode"
 private const val KEY_LLM_TEMPERATURE = "llm_temperature"
 private const val KEY_LLM_MAX_TOKENS = "llm_max_tokens"
 private const val KEY_LLM_CONTEXT_TOKENS = "llm_context_tokens"
+private const val KEY_LLM_IMAGE_INPUT_ENABLED = "llm_image_input_enabled"

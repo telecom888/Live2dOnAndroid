@@ -162,5 +162,6 @@
   "settings_llm_save": "Save settings",
   "settings_llm_saved": "Saved",
   "settings_llm_clear_all": "Clear all chat history",
-  "settings_llm_clear_all_confirm": "Clear chat history for every character? This cannot be undone."
+  "settings_llm_clear_all_confirm": "Clear chat history for every character? This cannot be undone.",
+  "chat_add_image": "Add image"
 }

@@ -4,6 +4,8 @@ package com.bangdream.pet.ui.chat
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -11,6 +13,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +34,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddComment
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
@@ -525,6 +530,20 @@ private fun ConversationDetailScreen(
         state.messages.sumOf { ChatTextSearch.estimateTokens(it.content) }
     }
     val usageRatio = (usedTokens.toFloat() / contextTokens.toFloat()).coerceIn(0f, 1f)
+    val imageInputEnabled = remember { LlmSettings.load(context.applicationContext).imageInputEnabled }
+    var selectedImages by remember { mutableStateOf<List<PickedImage>>(emptyList()) }
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(maxItems = 9),
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            scope.launch {
+                val picked = uris.mapNotNull { uri ->
+                    contentUriToImageDataUrl(context, uri)?.let { PickedImage(uri, it) }
+                }
+                selectedImages = (selectedImages + picked).distinctBy { it.uri }
+            }
+        }
+    }
     BackHandler(enabled = searchMode) {
         searchMode = false
         searchQuery = ""
@@ -541,7 +560,14 @@ private fun ConversationDetailScreen(
 
     fun send() {
         val text = input.value.trim()
-        if (text.isNotEmpty() && viewModel.send(character, text)) input.value = ""
+        val images = selectedImages.map { it.dataUrl }
+        if (
+            (text.isNotEmpty() || images.isNotEmpty()) &&
+            viewModel.send(character, text, images)
+        ) {
+            input.value = ""
+            selectedImages = emptyList()
+        }
     }
 
     Column(modifier.fillMaxSize().imePadding()) {
@@ -659,10 +685,34 @@ private fun ConversationDetailScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }
+        if (selectedImages.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                selectedImages.forEach { image ->
+                    PickedImageThumb(
+                        uri = image.uri,
+                        onRemove = { selectedImages = selectedImages - image },
+                    )
+                }
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
+            if (imageInputEnabled) {
+                IconButton(
+                    onClick = { imagePicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    enabled = !state.isGenerating,
+                ) {
+                    Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = "添加图片")
+                }
+            }
             OutlinedTextField(
                 value = input.value,
                 onValueChange = { input.value = it },
@@ -674,7 +724,7 @@ private fun ConversationDetailScreen(
             Spacer(Modifier.width(8.dp))
             FilledIconButton(
                 onClick = { if (state.isGenerating) viewModel.stop() else send() },
-                enabled = state.isGenerating || input.value.isNotBlank(),
+                enabled = state.isGenerating || input.value.isNotBlank() || selectedImages.isNotEmpty(),
                 modifier = Modifier.size(48.dp),
             ) {
                 Icon(
