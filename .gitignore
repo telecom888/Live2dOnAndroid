@@ -47,6 +47,9 @@ jniLibs/
 
 # --- tools temp artifacts ---
 tools/gen_tmp/
+# 测试中间文件归档（本机本地保留，不入库的部分）
+tools/archive/01_logs/
+tools/archive/03_gen_tmp/
 tools/__pycache__/
 tools/_*.py
 *.err
