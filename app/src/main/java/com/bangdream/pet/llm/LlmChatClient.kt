@@ -53,6 +53,16 @@ class LlmChatClient {
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("Accept", "text/event-stream")
             setRequestProperty("Authorization", "Bearer ${normalized.apiKey}")
+            // 用户自定义请求头（OpenCode Go 的 x-opencode-session 等）；保留关键头不被覆盖
+            normalized.headers.forEach { header ->
+                if (header.value.isBlank()) return@forEach
+                val name = header.name
+                if (name.equals("Content-Type", ignoreCase = true) ||
+                    name.equals("Accept", ignoreCase = true) ||
+                    name.equals("Authorization", ignoreCase = true)
+                ) return@forEach
+                setRequestProperty(name, header.value)
+            }
         }
         val cancellationHandle = currentCoroutineContext().job.invokeOnCompletion(
             onCancelling = true,

@@ -3,6 +3,9 @@ package com.bangdream.pet.llm
 import android.content.Context
 import androidx.compose.runtime.Immutable
 import com.bangdream.pet.SETTINGS_PREFS
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.UUID
 
 enum class ThinkingMode(val value: String) {
     Auto("auto"),
@@ -16,6 +19,12 @@ enum class ThinkingMode(val value: String) {
 }
 
 @Immutable
+data class LlmHeader(
+    val name: String = "",
+    val value: String = "",
+)
+
+@Immutable
 data class LlmSettings(
     val baseUrl: String = "https://api.deepseek.com",
     val apiKey: String = "",
@@ -26,6 +35,8 @@ data class LlmSettings(
     val maxTokens: Int = 1024,
     val contextTokens: Int = DEFAULT_CONTEXT_TOKENS,
     val imageInputEnabled: Boolean = false,
+    /** 自定义请求头（如 OpenCode Go 的 x-opencode-session）。 */
+    val headers: List<LlmHeader> = emptyList(),
 ) {
     val isConfigured: Boolean
         get() = baseUrl.isNotBlank() && apiKey.isNotBlank() && model.isNotBlank()
@@ -38,6 +49,9 @@ data class LlmSettings(
         temperature = temperature.coerceIn(0f, 2f),
         maxTokens = maxTokens.coerceIn(1, 32_768),
         contextTokens = contextTokens.coerceIn(MIN_CONTEXT_TOKENS, MAX_CONTEXT_TOKENS),
+        headers = headers
+            .map { LlmHeader(name = it.name.trim(), value = it.value.trim()) }
+            .filter { it.name.isNotEmpty() },
     )
 
     fun endpoint(): String {
@@ -56,6 +70,7 @@ data class LlmSettings(
             .putInt(KEY_LLM_MAX_TOKENS, value.maxTokens)
             .putInt(KEY_LLM_CONTEXT_TOKENS, value.contextTokens)
             .putBoolean(KEY_LLM_IMAGE_INPUT_ENABLED, value.imageInputEnabled)
+            .putString(KEY_LLM_HEADERS, encodeHeaders(value.headers))
             .apply()
     }
 
@@ -76,6 +91,7 @@ data class LlmSettings(
                 contextTokens = prefs.getInt(KEY_LLM_CONTEXT_TOKENS, DEFAULT_CONTEXT_TOKENS)
                     .coerceIn(MIN_CONTEXT_TOKENS, MAX_CONTEXT_TOKENS),
                 imageInputEnabled = prefs.getBoolean(KEY_LLM_IMAGE_INPUT_ENABLED, false),
+                headers = decodeHeaders(prefs.getString(KEY_LLM_HEADERS, null)),
             )
         }
     }
@@ -136,3 +152,36 @@ private const val KEY_LLM_TEMPERATURE = "llm_temperature"
 private const val KEY_LLM_MAX_TOKENS = "llm_max_tokens"
 private const val KEY_LLM_CONTEXT_TOKENS = "llm_context_tokens"
 private const val KEY_LLM_IMAGE_INPUT_ENABLED = "llm_image_input_enabled"
+private const val KEY_LLM_HEADERS = "llm_headers"
+
+/** OpenCode Go 等要求的稳定会话 ID：每个安装保持一个稳定值，可手动在自定义请求头里修改。 */
+const val KEY_OPENCODE_SESSION_ID = "opencode_session_id"
+
+fun loadOrCreateSessionId(context: Context): String {
+    val prefs = context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+    prefs.getString(KEY_OPENCODE_SESSION_ID, null)?.takeIf(String::isNotBlank)?.let { return it }
+    val id = UUID.randomUUID().toString()
+    prefs.edit().putString(KEY_OPENCODE_SESSION_ID, id).apply()
+    return id
+}
+
+private fun encodeHeaders(headers: List<LlmHeader>): String {
+    val array = JSONArray()
+    headers.forEach { header ->
+        array.put(JSONObject().put("name", header.name).put("value", header.value))
+    }
+    return array.toString()
+}
+
+private fun decodeHeaders(value: String?): List<LlmHeader> {
+    if (value.isNullOrBlank()) return emptyList()
+    return runCatching {
+        val array = JSONArray(value)
+        buildList {
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                add(LlmHeader(name = obj.optString("name"), value = obj.optString("value")))
+            }
+        }
+    }.getOrDefault(emptyList())
+}

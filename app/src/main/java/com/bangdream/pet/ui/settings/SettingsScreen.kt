@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -121,7 +122,9 @@ import com.bangdream.pet.ui.ImageBitmapCache
 import com.bangdream.pet.ui.SampledImageDecoder
 import com.bangdream.pet.isWallpaperEnabled
 import com.bangdream.pet.llm.ChatHistoryRepository
+import com.bangdream.pet.llm.LlmHeader
 import com.bangdream.pet.llm.LlmSettings
+import com.bangdream.pet.llm.loadOrCreateSessionId
 import com.bangdream.pet.llm.ThinkingMode
 import com.bangdream.pet.loadWallpaperMode
 import com.bangdream.pet.saveWallpaperMode
@@ -441,6 +444,59 @@ private val LLM_PROVIDER_PRESETS = listOf(
     Triple("小米 mimo", "https://api.xiaomimimo.com/v1", "mimo-v2.5"),
 )
 
+/** LLM 自定义请求头编辑：OpenCode Go 等需要 x-opencode-session（稳定会话 ID）之类的请求头。 */
+@Composable
+private fun LlmHeadersEditor(
+    headers: List<LlmHeader>,
+    onHeadersChange: (List<LlmHeader>) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("自定义请求头（可选）", fontWeight = FontWeight.SemiBold)
+        Text(
+            "随每个模型请求附加的 HTTP 头。选择 OpenCode Go 预设会自动预填 x-opencode-session（稳定会话 ID）；也可自行添加其它头。Authorization / Content-Type / Accept 由应用自动设置，无需重复。",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        if (headers.isEmpty()) {
+            Text("未设置", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+        headers.forEachIndexed { index, header ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = header.name,
+                    onValueChange = { value ->
+                        onHeadersChange(headers.mapIndexed { i, h -> if (i == index) h.copy(name = value) else h })
+                    },
+                    modifier = Modifier.weight(0.7f),
+                    label = { Text("名称") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = header.value,
+                    onValueChange = { value ->
+                        onHeadersChange(headers.mapIndexed { i, h -> if (i == index) h.copy(value = value) else h })
+                    },
+                    modifier = Modifier.weight(1f),
+                    label = { Text("值") },
+                    singleLine = true,
+                )
+                IconButton(onClick = {
+                    onHeadersChange(headers.filterIndexed { i, _ -> i != index })
+                }) {
+                    Icon(Icons.Outlined.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+        FilledTonalButton(onClick = { onHeadersChange(headers + LlmHeader()) }) {
+            Text("＋ 添加请求头")
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun LlmSettingsScreen(onBack: () -> Unit) {
@@ -487,7 +543,31 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
                     LLM_PROVIDER_PRESETS.forEach { (label, presetBaseUrl, presetModel) ->
                         FilledTonalButton(
                             onClick = {
-                                draft = draft.copy(baseUrl = presetBaseUrl, model = presetModel)
+                                var next = draft.copy(baseUrl = presetBaseUrl, model = presetModel)
+                                if (label == "OpenCode Go") {
+                                    // OpenCode Go：自动预填 x-opencode-session（名称 + 稳定会话 ID 值），UI 会直接显示该行
+                                    val session = loadOrCreateSessionId(appContext)
+                                    val existing = next.headers.indexOfFirst {
+                                        it.name.equals("x-opencode-session", ignoreCase = true)
+                                    }
+                                    next = if (existing >= 0) {
+                                        next.copy(
+                                            headers = next.headers.mapIndexed { i, h ->
+                                                if (i == existing && h.value.isBlank()) h.copy(value = session) else h
+                                            },
+                                        )
+                                    } else {
+                                        next.copy(headers = next.headers + LlmHeader(name = "x-opencode-session", value = session))
+                                    }
+                                } else {
+                                    // 其它 provider：移除自动加的 opencode 会话头（用户自填的其它头保留）
+                                    next = next.copy(
+                                        headers = next.headers.filterNot {
+                                            it.name.equals("x-opencode-session", ignoreCase = true)
+                                        },
+                                    )
+                                }
+                                draft = next
                                 saved = false
                             },
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
@@ -633,6 +713,13 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
                         onCheckedChange = { draft = draft.copy(imageInputEnabled = it); saved = false },
                     )
                 }
+                LlmHeadersEditor(
+                    headers = draft.headers,
+                    onHeadersChange = { updated ->
+                        draft = draft.copy(headers = updated)
+                        saved = false
+                    },
+                )
                 OutlinedTextField(
                     value = mimoKey,
                     onValueChange = { mimoKey = it },
