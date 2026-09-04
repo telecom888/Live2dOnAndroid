@@ -57,11 +57,24 @@ object BuiltinVoiceManager {
     fun assetVoicePath(characterId: String, language: BuiltinVoiceLanguage, index: Int): String =
         "voices_builtin/$characterId/${language.value}/$index.mp3"
 
-    fun randomLineWithVoice(context: Context, characterId: String, language: BuiltinVoiceLanguage): BuiltinLine? {
+    fun randomLineWithVoice(
+        context: Context,
+        characterId: String,
+        language: BuiltinVoiceLanguage,
+        motionBase: String? = null,
+    ): BuiltinLine? {
         val voiced = loadLines(context, characterId, language).filter { it.hasWav(context) }
-        if (voiced.isEmpty()) return null
-        return voiced.random()
+        val matched = if (motionBase.isNullOrBlank()) {
+            voiced
+        } else {
+            voiced.filter { baseMotionName(it.motion) == motionBase }
+        }
+        if (matched.isEmpty()) return null
+        return matched.random()
     }
+
+    /** 动作名与台词 motion 归一化：smile01 → smile。 */
+    private fun baseMotionName(name: String): String = name.replace(Regex("\\d+$"), "")
 
     fun clear(context: Context, characterId: String, language: BuiltinVoiceLanguage) {
         builtinDir(context, characterId, language).deleteRecursively()

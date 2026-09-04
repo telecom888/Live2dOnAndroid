@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bangdream.pet.loadBubbleEnabled
+import com.bangdream.pet.loadDesktopLipSyncEnabled
 import com.bangdream.pet.loadPersistedModelChoice
 import com.bangdream.pet.live2d.NativeLive2D
 import com.bangdream.pet.voice.VoicePlayer
@@ -89,14 +90,19 @@ private fun WallpaperChatPanel(onDismiss: () -> Unit) {
     var status by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
 
-    // 说话口型驱动
+    // 说话口型驱动（受「桌面口型同步」开关控制）
     LaunchedEffect(busy) {
+        var lastOpen = 0f
         while (isActive) {
-            if (VoicePlayer.isPlaying()) {
+            val playing = loadDesktopLipSyncEnabled(appContext) && VoicePlayer.isPlaying()
+            val open = if (playing) {
                 val t = System.currentTimeMillis() / 90.0
-                val open = (0.2 + 0.6 * abs(sin(t))).toFloat()
-                NativeLive2D.setLipSync(Live2DWallpaperService.activeHandle, open, 1f)
+                (0.2 + 0.6 * abs(sin(t))).toFloat()
+            } else {
+                0f
             }
+            if (open != lastOpen) NativeLive2D.setLipSync(Live2DWallpaperService.activeHandle, open, 1f)
+            lastOpen = open
             delay(90)
         }
         NativeLive2D.setLipSync(Live2DWallpaperService.activeHandle, 0f, 1f)

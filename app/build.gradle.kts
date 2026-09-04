@@ -50,6 +50,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // 与已装 release（com.bangdream.pet）区分，便于同机共存调试 moc3 渲染
+            applicationIdSuffix = ".debug"
+        }
         release {
             signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true

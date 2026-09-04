@@ -11,6 +11,7 @@ import com.bangdream.pet.RenderSettings
 import com.bangdream.pet.KEY_FPS_DISPLAY_ENABLED
 import com.bangdream.pet.KEY_FPS_LIMIT
 import com.bangdream.pet.KEY_GAZE_FOLLOW_ENABLED
+import com.bangdream.pet.KEY_DESKTOP_LIP_SYNC_ENABLED
 import com.bangdream.pet.KEY_RENDER_RESOLUTION
 import com.bangdream.pet.KEY_SELECTED_CHARACTER_ID
 import com.bangdream.pet.KEY_SELECTED_MODEL_ASSET_PATH
@@ -33,8 +34,8 @@ import com.bangdream.pet.chat.PetRuntime
 import com.bangdream.pet.chat.WallpaperBubbleService
 import com.bangdream.pet.chat.WallpaperChatActivity
 import com.bangdream.pet.loadBubbleEnabled
-import com.bangdream.pet.loadBuiltinVoiceEnabled
 import com.bangdream.pet.loadBuiltinVoiceLanguage
+import com.bangdream.pet.loadDesktopVoiceEnabled
 import com.bangdream.pet.loadIdleAnimationEnabled
 import com.bangdream.pet.loadSelectedCharacterId
 import com.bangdream.pet.loadIdleAnimations
@@ -60,6 +61,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
@@ -102,7 +104,10 @@ class Live2DWallpaperService : WallpaperService() {
         private var touchDownY = 0f
         /** 视线跟随开关缓存：MOVE 事件每秒上百次，之前每次都整份 load SharedPreferences。 */
         private var gazeFollowEnabled = false
+        /** 口型同步开关缓存：口型驱动每帧读取，避免整份 load SharedPreferences。 */
+        private var lipSyncEnabled = false
         private var idleJob: Job? = null
+        private var lipSyncJob: Job? = null
         private var lastInteractionAt = 0L
         private val renderSettingsListener = SharedPreferences.OnSharedPreferenceChangeListener { preferences, key ->
             scope.launch {
@@ -126,6 +131,8 @@ class Live2DWallpaperService : WallpaperService() {
                     }
                     KEY_GAZE_FOLLOW_ENABLED ->
                         gazeFollowEnabled = preferences.getBoolean(KEY_GAZE_FOLLOW_ENABLED, false)
+                    KEY_DESKTOP_LIP_SYNC_ENABLED ->
+                        lipSyncEnabled = preferences.getBoolean(KEY_DESKTOP_LIP_SYNC_ENABLED, false)
                     KEY_WALLPAPER_OFFSET_X, KEY_WALLPAPER_OFFSET_Y, KEY_WALLPAPER_SCALE -> {
                         if (wallpaperMode == WallpaperMode.SINGLE) applyWallpaperTransform()
                     }
@@ -153,6 +160,7 @@ class Live2DWallpaperService : WallpaperService() {
             settingsPreferences = applicationContext.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE).also {
                 it.registerOnSharedPreferenceChangeListener(renderSettingsListener)
                 gazeFollowEnabled = it.getBoolean(KEY_GAZE_FOLLOW_ENABLED, false)
+                lipSyncEnabled = it.getBoolean(KEY_DESKTOP_LIP_SYNC_ENABLED, false)
             }
             setTouchEventsEnabled(true)
             gestureHandler = WallpaperGestureHandler(
@@ -351,6 +359,7 @@ class Live2DWallpaperService : WallpaperService() {
                 }
                 replayRecentAction()
                 startIdleLoop()
+                startLipSyncLoop()
             }
         }
 
@@ -440,6 +449,7 @@ class Live2DWallpaperService : WallpaperService() {
             if (generation == loadGeneration) {
                 replayRecentAction()
                 startIdleLoop()
+                startLipSyncLoop()
             }
         }
 
@@ -478,6 +488,23 @@ class Live2DWallpaperService : WallpaperService() {
                 NativeLive2D.playActionAt(handle, slot, action)
             } else {
                 NativeLive2D.playAction(handle, action)
+            }
+            // 台词内容只由「动作语音」产生；「壁纸文字气泡」是纯显示开关，不自行产生内容
+            if (!loadDesktopVoiceEnabled(applicationContext)) return
+            val charId = if (wallpaperMode == WallpaperMode.MULTI) {
+                slot?.let { slotModels[it]?.placement?.characterId }
+            } else {
+                loadSelectedCharacterId(applicationContext)
+            } ?: return
+            val line = BuiltinVoiceManager.randomLineWithVoice(
+                applicationContext,
+                charId,
+                loadBuiltinVoiceLanguage(applicationContext),
+                baseMotionName(action),
+            ) ?: return
+            line.readWav(applicationContext)?.let { VoicePlayer.play(applicationContext, it) }
+            if (loadBubbleEnabled(applicationContext)) {
+                WallpaperBubbleService.show(applicationContext, line.display)
             }
         }
 
@@ -563,7 +590,12 @@ class Live2DWallpaperService : WallpaperService() {
             } else {
                 loadSelectedCharacterId(applicationContext)
             }
-            if (loadBuiltinVoiceEnabled(applicationContext) && charId != null) {
+            val voiceEnabled = loadDesktopVoiceEnabled(applicationContext)
+            val animEnabled = loadIdleAnimationEnabled(applicationContext)
+            if (!voiceEnabled && !animEnabled) return
+            // 解耦：待机台词（由「动作语音」产生）与待机随机动画相互独立，都可能时随机分配本次类型
+            val wantLine = voiceEnabled && (!animEnabled || kotlin.random.Random.nextBoolean())
+            if (wantLine && charId != null) {
                 val line = BuiltinVoiceManager.randomLineWithVoice(
                         applicationContext,
                         charId,
@@ -584,6 +616,8 @@ class Live2DWallpaperService : WallpaperService() {
                     return
                 }
             }
+            // 无声随机动画：仅当「待机随机动画」开关开启时播放
+            if (!animEnabled) return
             val choices = loadIdleAnimations(applicationContext)
             if (choices.isEmpty()) return
             val action = choices.random()
@@ -602,7 +636,8 @@ class Live2DWallpaperService : WallpaperService() {
             idleJob = scope.launch {
                 while (true) {
                     delay(loadIdleIntervalMs(applicationContext))
-                    if (!loadIdleAnimationEnabled(applicationContext)) continue
+                    // 待机台词（由「动作语音」产生）与待机随机动画解耦：任一开启都会定时触发
+                    if (!loadIdleAnimationEnabled(applicationContext) && !loadDesktopVoiceEnabled(applicationContext)) continue
                     if (System.currentTimeMillis() - lastInteractionAt < 2_000L) continue
                     playIdleAction()
                 }
@@ -621,6 +656,7 @@ class Live2DWallpaperService : WallpaperService() {
             Log.d(TAG, "disableModelRendering handle=$handle slots=${slotModels.keys}")
             idleJob?.cancel()
             idleJob = null
+            stopLipSyncLoop()
             loadGeneration++
             loading = false
             clearLastWallpaperAction(applicationContext)
@@ -639,12 +675,46 @@ class Live2DWallpaperService : WallpaperService() {
         private fun stopRenderer() {
             idleJob?.cancel()
             idleJob = null
+            stopLipSyncLoop()
             loadGeneration++
             loading = false
             modelCanvas = null
             hitArea = null
             slotModels.clear()
             destroyHandle()
+        }
+
+        /** 桌面口型同步：语音播放期间按正弦驱动嘴部开合。全局口型参数，多模型模式会同步开合。 */
+        private fun startLipSyncLoop() {
+            lipSyncJob?.cancel()
+            lipSyncJob = scope.launch {
+                var lastOpen = 0f
+                while (isActive) {
+                    if (handle == 0L) {
+                        lastOpen = 0f
+                        delay(LIP_SYNC_POLL_MS)
+                        continue
+                    }
+                    val playing = visible && lipSyncEnabled && VoicePlayer.isPlaying()
+                    val open = if (playing) {
+                        val t = System.currentTimeMillis() / 90.0
+                        (0.2 + 0.6 * kotlin.math.abs(kotlin.math.sin(t))).toFloat()
+                    } else {
+                        0f
+                    }
+                    if (open != lastOpen) {
+                        NativeLive2D.setLipSync(handle, open, 1f)
+                        lastOpen = open
+                    }
+                    delay(LIP_SYNC_POLL_MS)
+                }
+            }
+        }
+
+        private fun stopLipSyncLoop() {
+            lipSyncJob?.cancel()
+            lipSyncJob = null
+            if (handle != 0L) NativeLive2D.setLipSync(handle, 0f, 1f)
         }
 
         private fun destroyHandle() {
@@ -666,5 +736,6 @@ class Live2DWallpaperService : WallpaperService() {
         // 50ms 对拖动滑杆过短：一次拖动会触发数十次完整重建（EGL + Lua + 解压）
         const val RESTART_DEBOUNCE_MS = 180L
         const val LAST_ACTION_REPLAY_WINDOW_MS = 10_000L
+        const val LIP_SYNC_POLL_MS = 90L
     }
 }

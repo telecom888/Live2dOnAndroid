@@ -107,10 +107,12 @@ import com.bangdream.pet.loadBubbleDurationSeconds
 import com.bangdream.pet.saveBubbleDurationSeconds
 import com.bangdream.pet.loadReplyVoiceEnabled
 import com.bangdream.pet.BuiltinVoiceLanguage
-import com.bangdream.pet.loadBuiltinVoiceEnabled
 import com.bangdream.pet.loadBuiltinVoiceLanguage
+import com.bangdream.pet.loadDesktopLipSyncEnabled
+import com.bangdream.pet.loadDesktopVoiceEnabled
 import com.bangdream.pet.saveBuiltinVoiceLanguage
-import com.bangdream.pet.saveBuiltinVoiceEnabled
+import com.bangdream.pet.saveDesktopLipSyncEnabled
+import com.bangdream.pet.saveDesktopVoiceEnabled
 import com.bangdream.pet.saveReplyVoiceEnabled
 import com.bangdream.pet.saveBubbleEnabled
 import com.bangdream.pet.data.ModelChoice
@@ -1545,8 +1547,24 @@ private fun InteractionSettingsCard() {
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
+                    Text("动作语音", fontWeight = FontWeight.SemiBold)
+                    Text("动作触发时是否播放台词音频（台词内容由此开关产生）", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+                var actionVoiceEnabled by remember { mutableStateOf(loadDesktopVoiceEnabled(appContext)) }
+                Switch(checked = actionVoiceEnabled, onCheckedChange = { actionVoiceEnabled = it; saveDesktopVoiceEnabled(appContext, it) })
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("口型同步", fontWeight = FontWeight.SemiBold)
+                    Text("桌面播放语音时，角色嘴部随语音开合", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+                var lipSyncEnabled by remember { mutableStateOf(loadDesktopLipSyncEnabled(appContext)) }
+                Switch(checked = lipSyncEnabled, onCheckedChange = { lipSyncEnabled = it; saveDesktopLipSyncEnabled(appContext, it) })
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
                     Text("壁纸文字气泡", fontWeight = FontWeight.SemiBold)
-                    Text("对话回复/台词以悬浮气泡显示", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    Text("有台词/回复时以悬浮气泡显示文本（纯显示开关，不自行产生内容）", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
                 var bubbleEnabled by remember { mutableStateOf(loadBubbleEnabled(appContext)) }
                 Switch(checked = bubbleEnabled, onCheckedChange = { bubbleEnabled = it; saveBubbleEnabled(appContext, it) })
@@ -1781,7 +1799,6 @@ private fun BuiltinVoiceCard(selectedModel: ModelChoice?) {
     val context = LocalContext.current
     val appContext = context.applicationContext
     var language by remember { mutableStateOf(loadBuiltinVoiceLanguage(appContext)) }
-    var builtinEnabled by remember { mutableStateOf(loadBuiltinVoiceEnabled(appContext)) }
 
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1805,13 +1822,11 @@ private fun BuiltinVoiceCard(selectedModel: ModelChoice?) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("待机播放内置语音", fontWeight = FontWeight.SemiBold)
-                    Text("待机时随机播台词（动作+语音+气泡）", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                }
-                Switch(checked = builtinEnabled, onCheckedChange = { builtinEnabled = it; saveBuiltinVoiceEnabled(appContext, it) })
-            }
+            Text(
+                "提示：在「桌面壁纸 → 壁纸交互与动画」开启「动作语音」后，桌面模型触发动作会按动作播放以上台词（待机说话与「待机随机动画」开关相互独立）；「壁纸文字气泡」只控制是否显示台词文本，「口型同步」控制说话时嘴部开合。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }

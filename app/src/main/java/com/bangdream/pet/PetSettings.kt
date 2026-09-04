@@ -687,6 +687,37 @@ fun saveBuiltinVoiceEnabled(context: Context, enabled: Boolean) {
         .edit().putBoolean(KEY_BUILTIN_VOICE_ENABLED, enabled).apply()
 }
 
+// ==================== 桌面动作语音 / 口型（桌面模型触发动作后） ====================
+const val KEY_DESKTOP_VOICE_ENABLED = "desktop_voice_enabled"
+const val KEY_DESKTOP_LIP_SYNC_ENABLED = "desktop_lip_sync_enabled"
+
+/** 桌面动作语音：桌面模型触发动作（触摸/滑动/待机）时按动作播放内置台词语音。 */
+fun loadDesktopVoiceEnabled(context: Context): Boolean =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .let { prefs ->
+            if (prefs.contains(KEY_DESKTOP_VOICE_ENABLED)) {
+                prefs.getBoolean(KEY_DESKTOP_VOICE_ENABLED, false)
+            } else {
+                // 兼容旧版「待机播放内置语音」开关
+                prefs.getBoolean(KEY_BUILTIN_VOICE_ENABLED, false)
+            }
+        }
+
+fun saveDesktopVoiceEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_DESKTOP_VOICE_ENABLED, enabled).apply()
+}
+
+/** 桌面口型同步：桌面播放语音（内置台词/克隆语音）时角色口型随语音开合。 */
+fun loadDesktopLipSyncEnabled(context: Context): Boolean =
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .getBoolean(KEY_DESKTOP_LIP_SYNC_ENABLED, false)
+
+fun saveDesktopLipSyncEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_DESKTOP_LIP_SYNC_ENABLED, enabled).apply()
+}
+
 // ==================== 内置语音语言（中文 / 日本語） ====================
 const val KEY_BUILTIN_VOICE_LANGUAGE = "builtin_voice_language"
 
