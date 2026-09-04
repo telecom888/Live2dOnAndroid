@@ -13,6 +13,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.UUID
 
 class LlmChatClient {
 
@@ -27,12 +28,13 @@ class LlmChatClient {
         settings: LlmSettings,
         systemPrompt: String,
         messages: List<ChatMessage>,
+        sessionKey: String = "",
     ): Flow<LlmStreamEvent> = flow {
         val normalized = settings.normalized()
         var requestMessages = messagesToJsonArray(systemPrompt, messages)
         var remainingRounds = MAX_TOOL_ROUNDS
         while (true) {
-            val result = runSingleRequest(normalized, requestMessages) { event -> emit(event) }
+            val result = runSingleRequest(normalized, requestMessages, sessionKey) { event -> emit(event) }
             if (result.content.isNotBlank() || result.toolCalls.isEmpty() || remainingRounds <= 0) break
             requestMessages = appendToolMessages(requestMessages, result.toolCalls)
             remainingRounds--
@@ -43,6 +45,7 @@ class LlmChatClient {
     private suspend fun runSingleRequest(
         normalized: LlmSettings,
         requestMessages: JSONArray,
+        sessionKey: String,
         onEvent: suspend (LlmStreamEvent) -> Unit,
     ): SingleRequestResult {
         val connection = (URL(normalized.endpoint()).openConnection() as HttpURLConnection).apply {
@@ -53,16 +56,7 @@ class LlmChatClient {
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("Accept", "text/event-stream")
             setRequestProperty("Authorization", "Bearer ${normalized.apiKey}")
-            // 用户自定义请求头（OpenCode Go 的 x-opencode-session 等）；保留关键头不被覆盖
-            normalized.headers.forEach { header ->
-                if (header.value.isBlank()) return@forEach
-                val name = header.name
-                if (name.equals("Content-Type", ignoreCase = true) ||
-                    name.equals("Accept", ignoreCase = true) ||
-                    name.equals("Authorization", ignoreCase = true)
-                ) return@forEach
-                setRequestProperty(name, header.value)
-            }
+            applyExtraHeaders(normalized, sessionKey)
         }
         val cancellationHandle = currentCoroutineContext().job.invokeOnCompletion(
             onCancelling = true,
@@ -233,6 +227,7 @@ class LlmChatClient {
     suspend fun complete(
         settings: LlmSettings,
         messages: List<Pair<String, String>>,
+        sessionKey: String = "",
     ): String = withContext(Dispatchers.IO) {
         val normalized = settings.normalized()
         val body = JSONObject()
@@ -263,6 +258,7 @@ class LlmChatClient {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Authorization", "Bearer ${normalized.apiKey}")
+                applyExtraHeaders(normalized, sessionKey)
             }
             try {
                 connection.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body.toString()) }
@@ -363,6 +359,37 @@ class LlmChatClient {
         private const val MAX_TOOL_ROUNDS = 6
     }
 }
+
+/** 附加用户自定义请求头。
+ * 以设置里可见的行为准：
+ * - 行名 x-opencode-session 且值留空 → 应用按每条对话自动生成稳定会话 ID（仅 opencode 端点生效）；
+ * - 行值非空 → 按用户填写原样发送（覆盖自动值）；
+ * - 删除该行 → 不发送该请求头。
+ * Authorization / Content-Type / Accept 由应用自动设置，同名的用户行会被忽略。
+ */
+private fun HttpURLConnection.applyExtraHeaders(settings: LlmSettings, sessionKey: String) {
+    settings.headers.forEach { header ->
+        val name = header.name.trim()
+        if (name.isEmpty()) return@forEach
+        if (name.equals("Content-Type", ignoreCase = true) ||
+            name.equals("Accept", ignoreCase = true) ||
+            name.equals("Authorization", ignoreCase = true)
+        ) return@forEach
+        val explicitValue = header.value.trim()
+        val effectiveValue =
+            if (isOpencodeSessionHeader(name) && explicitValue.isBlank() && isOpencodeEndpoint(settings.baseUrl)) {
+                // 自动：每条对话一个稳定会话 ID；调用方未传会话 key 时兜底生成一个
+                sessionKey.ifBlank { UUID.randomUUID().toString() }
+            } else {
+                explicitValue
+            }
+        if (effectiveValue.isBlank()) return@forEach
+        setRequestProperty(name, effectiveValue)
+    }
+}
+
+private fun isOpencodeEndpoint(baseUrl: String): Boolean =
+    runCatching { URL(baseUrl).host.lowercase().contains("opencode") }.getOrDefault(false)
 
 /**
  * 文本格式工具调用剥离器：部分模型（如 mimo）会在 content 里直接输出

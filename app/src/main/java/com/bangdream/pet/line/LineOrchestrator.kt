@@ -143,7 +143,7 @@ class LineOrchestrator(private val context: Context) {
 2) 如果这轮不想说话，直接输出 [silent]。
 3) 如果觉得这个对话可以结束，在你的消息最后加 [scene_end]。
 不要解释，直接输出消息内容："""
-        val response = client.complete(settings, listOf("system" to system, "user" to user))
+        val response = client.complete(settings, listOf("system" to system, "user" to user), conv.id)
         if (response.isBlank()) return Decision.silent()
         val lower = response.lowercase()
         if (lower.contains("[silent]")) return Decision.silent()
@@ -159,7 +159,7 @@ class LineOrchestrator(private val context: Context) {
 ${roleNames[senderId] ?: senderId}给你发来一条新消息：
 「$content」
 你是否阅读这条消息？只回答 是 或 否。"""
-        val response = client.complete(settings, listOf("system" to persona(readerId), "user" to prompt))
+        val response = client.complete(settings, listOf("system" to persona(readerId), "user" to prompt), conv.id)
         val lower = response.lowercase()
         return lower.contains("是") || lower.contains("true") || lower.contains("read")
     }

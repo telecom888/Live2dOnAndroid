@@ -63,11 +63,13 @@ class WallpaperChatEngine(private val context: Context) {
         val now = System.currentTimeMillis()
         val userMessage = ChatMessage(UUID.randomUUID().toString(), "user", userText, now)
         val baseMessages = active?.messages.orEmpty()
+        // OpenCode Go：x-opencode-session 每条对话一个稳定值；复用会话 id（无会话时先预生成）
+        val sessionId = active?.id ?: UUID.randomUUID().toString()
 
         val parser = ActionTagParser(prompt.allowedActionTags)
         var error: String? = null
         try {
-            client.streamCompletion(settings, systemText, baseMessages + userMessage).collect { event ->
+            client.streamCompletion(settings, systemText, baseMessages + userMessage, sessionId).collect { event ->
                 coroutineContext.ensureActive()
                 when (event) {
                     is LlmStreamEvent.Reasoning -> Unit
@@ -99,7 +101,7 @@ class WallpaperChatEngine(private val context: Context) {
                 updatedAt = System.currentTimeMillis(),
                 messages = baseMessages + userMessage + assistantMessage,
             ) ?: ChatConversation(
-                id = UUID.randomUUID().toString(),
+                id = sessionId,
                 characterId = characterId,
                 title = userText.take(24),
                 createdAt = now,

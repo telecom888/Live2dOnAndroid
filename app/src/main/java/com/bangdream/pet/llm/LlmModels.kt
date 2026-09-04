@@ -5,7 +5,12 @@ import androidx.compose.runtime.Immutable
 import com.bangdream.pet.SETTINGS_PREFS
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.UUID
+
+/** OpenCode Go 要求的稳定会话请求头名称：值留空时由应用按每条对话自动生成稳定 ID。 */
+const val OPENCODE_SESSION_HEADER = "x-opencode-session"
+
+fun isOpencodeSessionHeader(name: String): Boolean =
+    name.equals(OPENCODE_SESSION_HEADER, ignoreCase = true)
 
 enum class ThinkingMode(val value: String) {
     Auto("auto"),
@@ -153,17 +158,6 @@ private const val KEY_LLM_MAX_TOKENS = "llm_max_tokens"
 private const val KEY_LLM_CONTEXT_TOKENS = "llm_context_tokens"
 private const val KEY_LLM_IMAGE_INPUT_ENABLED = "llm_image_input_enabled"
 private const val KEY_LLM_HEADERS = "llm_headers"
-
-/** OpenCode Go 等要求的稳定会话 ID：每个安装保持一个稳定值，可手动在自定义请求头里修改。 */
-const val KEY_OPENCODE_SESSION_ID = "opencode_session_id"
-
-fun loadOrCreateSessionId(context: Context): String {
-    val prefs = context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
-    prefs.getString(KEY_OPENCODE_SESSION_ID, null)?.takeIf(String::isNotBlank)?.let { return it }
-    val id = UUID.randomUUID().toString()
-    prefs.edit().putString(KEY_OPENCODE_SESSION_ID, id).apply()
-    return id
-}
 
 private fun encodeHeaders(headers: List<LlmHeader>): String {
     val array = JSONArray()

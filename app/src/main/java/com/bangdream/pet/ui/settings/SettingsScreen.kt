@@ -122,9 +122,10 @@ import com.bangdream.pet.ui.ImageBitmapCache
 import com.bangdream.pet.ui.SampledImageDecoder
 import com.bangdream.pet.isWallpaperEnabled
 import com.bangdream.pet.llm.ChatHistoryRepository
+import com.bangdream.pet.llm.OPENCODE_SESSION_HEADER
+import com.bangdream.pet.llm.isOpencodeSessionHeader
 import com.bangdream.pet.llm.LlmHeader
 import com.bangdream.pet.llm.LlmSettings
-import com.bangdream.pet.llm.loadOrCreateSessionId
 import com.bangdream.pet.llm.ThinkingMode
 import com.bangdream.pet.loadWallpaperMode
 import com.bangdream.pet.saveWallpaperMode
@@ -444,7 +445,11 @@ private val LLM_PROVIDER_PRESETS = listOf(
     Triple("小米 mimo", "https://api.xiaomimimo.com/v1", "mimo-v2.5"),
 )
 
-/** LLM 自定义请求头编辑：OpenCode Go 等需要 x-opencode-session（稳定会话 ID）之类的请求头。 */
+/** LLM 自定义请求头编辑。
+ * - OpenCode Go 预设会自动补一行 x-opencode-session（值留空 = 按每条对话自动生成稳定会话 ID）；
+ * - 该行值可填固定值覆盖，也可删除（删除后不再发送该请求头）；
+ * - 其余自定义请求头（任意 provider）手动增删，名称/值均可编辑。
+ */
 @Composable
 private fun LlmHeadersEditor(
     headers: List<LlmHeader>,
@@ -453,7 +458,7 @@ private fun LlmHeadersEditor(
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("自定义请求头（可选）", fontWeight = FontWeight.SemiBold)
         Text(
-            "随每个模型请求附加的 HTTP 头。选择 OpenCode Go 预设会自动预填 x-opencode-session（稳定会话 ID）；也可自行添加其它头。Authorization / Content-Type / Accept 由应用自动设置，无需重复。",
+            "选择「OpenCode Go」预设会自动添加一行 x-opencode-session：值留空时应用按每条对话自动生成稳定会话 ID（同一对话内不变）；填入固定值则按固定值发送；删除该行则不发送。其余 provider 的自定义请求头可在此手动增删。Authorization / Content-Type / Accept 由应用自动设置，无需重复。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
@@ -461,6 +466,8 @@ private fun LlmHeadersEditor(
             Text("未设置", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         }
         headers.forEachIndexed { index, header ->
+            // x-opencode-session 且值为空：应用按对话自动生成稳定 ID，值框留空并显示占位说明（可填固定值覆盖）
+            val isAutoSession = isOpencodeSessionHeader(header.name) && header.value.isBlank()
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -481,7 +488,10 @@ private fun LlmHeadersEditor(
                         onHeadersChange(headers.mapIndexed { i, h -> if (i == index) h.copy(value = value) else h })
                     },
                     modifier = Modifier.weight(1f),
-                    label = { Text("值") },
+                    label = if (isAutoSession) null else ({ Text("值") }),
+                    placeholder = if (isAutoSession) {
+                        ({ Text("留空=自动生成（每条对话）") })
+                    } else null,
                     singleLine = true,
                 )
                 IconButton(onClick = {
@@ -545,27 +555,11 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
                             onClick = {
                                 var next = draft.copy(baseUrl = presetBaseUrl, model = presetModel)
                                 if (label == "OpenCode Go") {
-                                    // OpenCode Go：自动预填 x-opencode-session（名称 + 稳定会话 ID 值），UI 会直接显示该行
-                                    val session = loadOrCreateSessionId(appContext)
-                                    val existing = next.headers.indexOfFirst {
-                                        it.name.equals("x-opencode-session", ignoreCase = true)
+                                    // OpenCode Go：自动补一行 x-opencode-session（值留空 = 按对话自动生成稳定 ID），已存在则不重复添加
+                                    val hasSessionHeader = next.headers.any { isOpencodeSessionHeader(it.name) }
+                                    if (!hasSessionHeader) {
+                                        next = next.copy(headers = next.headers + LlmHeader(name = OPENCODE_SESSION_HEADER))
                                     }
-                                    next = if (existing >= 0) {
-                                        next.copy(
-                                            headers = next.headers.mapIndexed { i, h ->
-                                                if (i == existing && h.value.isBlank()) h.copy(value = session) else h
-                                            },
-                                        )
-                                    } else {
-                                        next.copy(headers = next.headers + LlmHeader(name = "x-opencode-session", value = session))
-                                    }
-                                } else {
-                                    // 其它 provider：移除自动加的 opencode 会话头（用户自填的其它头保留）
-                                    next = next.copy(
-                                        headers = next.headers.filterNot {
-                                            it.name.equals("x-opencode-session", ignoreCase = true)
-                                        },
-                                    )
                                 }
                                 draft = next
                                 saved = false
