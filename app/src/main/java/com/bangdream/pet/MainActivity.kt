@@ -147,6 +147,7 @@ fun BangDreamPetApp(
     val appContext = context.applicationContext
     var appData by remember { mutableStateOf<AppData?>(null) }
     var selectedScreen by rememberSaveable { mutableStateOf(Screen.Live2D) }
+    var settingsDetailActive by remember { mutableStateOf(false) }
     // 之前每次重组都同步读一次 SharedPreferences；改为读一次 + 监听变更，
     // 设置页里开关 Line 导航时导航栏也能即时刷新。
     var lineNavEnabled by remember { mutableStateOf(loadLineNavEnabled(appContext)) }
@@ -354,7 +355,7 @@ fun BangDreamPetApp(
                             Screen.Line -> com.bangdream.pet.ui.line.LineScreen(
                                 appData = appData,
                             )
-                            Screen.Settings -> Box(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                            Screen.Settings -> Box(Modifier.fillMaxSize().padding(horizontal = if (settingsDetailActive) 0.dp else 16.dp)) {
                                 SettingsScreen(
                                 selectedModel = selectedModel,
                                 themeSettings = themeSettings,
@@ -362,13 +363,14 @@ fun BangDreamPetApp(
                                 renderSettings = renderSettings,
                                 onRenderSettingsChanged = updateRenderSettings,
                                 topInset = topInset,
+                                onDetailActiveChange = { settingsDetailActive = it },
                             )
                             }
                     }
                 }
             }
             }
-            if (selectedScreen != Screen.Model && selectedScreen != Screen.Chat && selectedScreen != Screen.Line) {
+            if (selectedScreen != Screen.Model && selectedScreen != Screen.Chat && selectedScreen != Screen.Line && !(selectedScreen == Screen.Settings && settingsDetailActive)) {
                 AppTopBar(
                     selectedModel = selectedModel,
                     glassEnabled = liquidGlass,

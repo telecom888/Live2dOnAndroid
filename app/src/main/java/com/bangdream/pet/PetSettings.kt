@@ -132,13 +132,13 @@ data class ThemeSettings(
         val ACCENT_OPTIONS = listOf(ACCENT_PINK, ACCENT_MONET, ACCENT_MINT, ACCENT_SKY, ACCENT_SUNSET, ACCENT_LAVENDER, ACCENT_ROSE)
 
         fun accentLabel(value: String): String = when (value) {
-            ACCENT_MONET -> "莫奈取色"
-            ACCENT_MINT -> "薄荷绿"
-            ACCENT_SKY -> "天空蓝"
-            ACCENT_SUNSET -> "落日橙"
-            ACCENT_LAVENDER -> "薰衣草紫"
-            ACCENT_ROSE -> "玫瑰红"
-            else -> "默认粉"
+            ACCENT_MONET -> I18n.t("settings_accent_monet")
+            ACCENT_MINT -> I18n.t("settings_accent_mint")
+            ACCENT_SKY -> I18n.t("settings_accent_sky")
+            ACCENT_SUNSET -> I18n.t("settings_accent_sunset")
+            ACCENT_LAVENDER -> I18n.t("settings_accent_lavender")
+            ACCENT_ROSE -> I18n.t("settings_accent_rose")
+            else -> I18n.t("settings_accent_default")
         }
 
         fun load(context: Context): ThemeSettings {

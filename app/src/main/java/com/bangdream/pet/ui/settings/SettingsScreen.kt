@@ -68,6 +68,9 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -165,95 +168,27 @@ fun SettingsScreen(
     renderSettings: RenderSettings,
     onRenderSettingsChanged: (RenderSettings) -> Unit,
     topInset: Dp = 0.dp,
+    onDetailActiveChange: (Boolean) -> Unit = {},
 ) {
-    val context = LocalContext.current
-    val appContext = context.applicationContext
-    val scope = rememberCoroutineScope()
-    var wallpaperEnabled by remember { mutableStateOf(isWallpaperEnabled(appContext)) }
-    var wallpaperBackgroundUri by remember { mutableStateOf(loadWallpaperBackgroundUri(appContext)) }
-    var wallpaperMode by remember { mutableStateOf(loadWallpaperMode(appContext)) }
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = topInset + 4.dp, bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item(key = "section_appearance") { SettingsSectionHeader("外观") }
-        item(key = "theme") {
-            ThemeSettingsCard(
-                settings = themeSettings,
-                onSettingsChanged = onThemeSettingsChanged,
-            )
-        }
-        item(key = "line_ui") {
-            LineUiSettingsCard()
-        }
-        item(key = "render") {
-            RenderSettingsCard(
-                settings = renderSettings,
-                onSettingsChanged = { settings ->
-                    onRenderSettingsChanged(settings)
-                },
-            )
-        }
-        item(key = "section_desktop") { SettingsSectionHeader("桌面壁纸") }
-        item(key = "wallpaper") {
-            WallpaperSettingsCard(
-                enabled = wallpaperEnabled,
-                backgroundUri = wallpaperBackgroundUri,
-                mode = wallpaperMode,
-                onModeChanged = { mode ->
-                    wallpaperMode = mode
-                    saveWallpaperMode(appContext, mode)
-                },
-                onEnabledChanged = { enabled ->
-                    wallpaperEnabled = enabled
-                    setWallpaperEnabled(appContext, enabled)
-                },
-                onBackgroundChanged = { uri ->
-                    wallpaperBackgroundUri = uri
-                    saveWallpaperBackgroundUri(appContext, uri)
-                },
-                onAdjustPosition = {
-                    if (wallpaperMode == com.bangdream.pet.WallpaperMode.MULTI) {
-                        context.startActivity(Intent(context, com.bangdream.pet.MultiWallpaperManageActivity::class.java))
-                    } else {
-                        context.startActivity(Intent(context, com.bangdream.pet.WallpaperAdjustActivity::class.java))
-                    }
-                },
-            )
-        }
-        item(key = "original_wallpaper") {
-            OriginalWallpaperCard(
-                onCaptured = { uri ->
-                    wallpaperBackgroundUri = uri
-                    saveWallpaperBackgroundUri(appContext, uri)
-                },
-            )
-        }
-        item(key = "interaction") {
-            InteractionSettingsCard()
-        }
-        item(key = "section_ai") { SettingsSectionHeader("AI 对话") }
-        item(key = "llm") {
-            LlmSettingsEntryCard()
-        }
-        item(key = "section_voice") { SettingsSectionHeader("语音") }
-        item(key = "voice_settings") {
-            VoiceSettingsCard()
-        }
-        item(key = "builtin_voice") {
-            BuiltinVoiceCard(selectedModel = selectedModel)
-        }
-        item(key = "voice_samples") {
-            VoiceSamplesCard(selectedModel = selectedModel)
-        }
-        item(key = "section_about") { SettingsSectionHeader("关于") }
-        item(key = "info") {
-            InfoCard(
-                I18n.t("settings_about"),
-                I18n.t("settings_about_text"),
-            )
-        }
+    var route by remember { mutableStateOf<SettingsDetail?>(null) }
+    LaunchedEffect(route) { onDetailActiveChange(route != null) }
+    BackHandler(enabled = route != null) { route = null }
+    when (route) {
+        SettingsDetail.WALLPAPER -> DesktopWallpaperPage(topInset = topInset, onBack = { route = null })
+        SettingsDetail.INTERACTION -> DesktopInteractionPage(topInset = topInset, onBack = { route = null })
+        SettingsDetail.RENDER -> RenderPerformancePage(
+            settings = renderSettings,
+            onSettingsChanged = onRenderSettingsChanged,
+            topInset = topInset,
+            onBack = { route = null },
+        )
+        SettingsDetail.VOICE -> VoicePage(selectedModel = selectedModel, topInset = topInset, onBack = { route = null })
+        null -> SettingsHomeList(
+            themeSettings = themeSettings,
+            onThemeSettingsChanged = onThemeSettingsChanged,
+            onOpenDetail = { route = it },
+            topInset = topInset,
+        )
     }
 }
 
@@ -268,69 +203,47 @@ private fun LineUiSettingsCard() {
     val userAvatarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             val ok = AvatarManager.importUserAvatar(appContext, uri)
-            Toast.makeText(appContext, if (ok) "我的头像已设置" else "头像导入失败", Toast.LENGTH_SHORT).show()
+            Toast.makeText(appContext, if (ok) I18n.t("settings_avatar_set_done") else I18n.t("settings_avatar_import_failed"), Toast.LENGTH_SHORT).show()
             userAvatarTick++
         }
     }
     SettingsSectionCard {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("对话界面", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Line UI（仿 LINE 气泡）", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "开启后消息列表使用 LINE 风格气泡并显示角色头像",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                Switch(
-                    checked = lineUiEnabled,
-                    onCheckedChange = {
-                        lineUiEnabled = it
-                        saveLineUiEnabled(appContext, it)
-                    },
-                )
+        Column(Modifier.padding(vertical = 4.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp).padding(top = 10.dp, bottom = 6.dp)) {
+                Text(I18n.t("settings_chat_ui_title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
+            SettingsSwitchRow(
+                title = I18n.t("settings_line_ui"),
+                subtitle = I18n.t("settings_line_ui_desc"),
+                checked = lineUiEnabled,
+                onCheckedChange = {
+                    lineUiEnabled = it
+                    saveLineUiEnabled(appContext, it)
+                },
+            )
+            SettingsSwitchRow(
+                title = I18n.t("settings_line_nav"),
+                subtitle = I18n.t("settings_line_nav_desc"),
+                checked = lineNavEnabled,
+                onCheckedChange = { enabled ->
+                    if (enabled) {
+                        showLineNavWarning = true
+                    } else {
+                        lineNavEnabled = false
+                        saveLineNavEnabled(appContext, false)
+                    }
+                },
+            )
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("导航栏 Line（实验性）", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "开启后底部导航显示 Line；功能不保证稳定",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                Switch(
-                    checked = lineNavEnabled,
-                    onCheckedChange = { enabled ->
-                        if (enabled) {
-                            showLineNavWarning = true
-                        } else {
-                            lineNavEnabled = false
-                            saveLineNavEnabled(appContext, false)
-                        }
-                    },
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 UserAvatarPreview(userAvatarTick)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("我的头像", fontWeight = FontWeight.SemiBold)
+                    Text(I18n.t("settings_avatar_title"), fontWeight = FontWeight.SemiBold)
                     Text(
-                        "默认不显示；设置后显示在 Line 消息右侧",
+                        I18n.t("settings_avatar_desc"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -339,10 +252,10 @@ private fun LineUiSettingsCard() {
                     TextButton(onClick = {
                         AvatarManager.clearUserAvatar(appContext)
                         userAvatarTick++
-                        Toast.makeText(appContext, "已清除我的头像", Toast.LENGTH_SHORT).show()
-                    }) { Text("清除") }
+                        Toast.makeText(appContext, I18n.t("settings_avatar_cleared"), Toast.LENGTH_SHORT).show()
+                    }) { Text(I18n.t("settings_action_clear")) }
                 }
-                FilledTonalButton(onClick = { userAvatarLauncher.launch("image/*") }) { Text("设置") }
+                FilledTonalButton(onClick = { userAvatarLauncher.launch("image/*") }) { Text(I18n.t("settings_action_set")) }
             }
         }
     }
@@ -350,19 +263,19 @@ private fun LineUiSettingsCard() {
     if (showLineNavWarning) {
         AlertDialog(
             onDismissRequest = { showLineNavWarning = false },
-            title = { Text("实验性功能") },
+            title = { Text(I18n.t("settings_experimental_title")) },
             text = {
-                Text("Line 多角色旁观对话为实验性功能，不保证稳定性，可能出现异常或性能问题。是否开启导航栏 Line？")
+                Text(I18n.t("settings_experimental_line_body"))
             },
             confirmButton = {
                 TextButton(onClick = {
                     lineNavEnabled = true
                     saveLineNavEnabled(appContext, true)
                     showLineNavWarning = false
-                }) { Text("开启") }
+                }) { Text(I18n.t("settings_action_enable")) }
             },
             dismissButton = {
-                TextButton(onClick = { showLineNavWarning = false }) { Text("取消") }
+                TextButton(onClick = { showLineNavWarning = false }) { Text(I18n.t("cancel")) }
             },
         )
     }
@@ -456,14 +369,14 @@ private fun LlmHeadersEditor(
     onHeadersChange: (List<LlmHeader>) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("自定义请求头（可选）", fontWeight = FontWeight.SemiBold)
+        Text(I18n.t("settings_headers_title"), fontWeight = FontWeight.SemiBold)
         Text(
-            "选择「OpenCode Go」预设会自动添加一行 x-opencode-session：值留空时应用按每条对话自动生成稳定会话 ID（同一对话内不变）；填入固定值则按固定值发送；删除该行则不发送。其余 provider 的自定义请求头可在此手动增删。Authorization / Content-Type / Accept 由应用自动设置，无需重复。",
+            I18n.t("settings_headers_desc"),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
         if (headers.isEmpty()) {
-            Text("未设置", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            Text(I18n.t("settings_not_set"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         }
         headers.forEachIndexed { index, header ->
             // x-opencode-session 且值为空：应用按对话自动生成稳定 ID，值框留空并显示占位说明（可填固定值覆盖）
@@ -479,7 +392,7 @@ private fun LlmHeadersEditor(
                         onHeadersChange(headers.mapIndexed { i, h -> if (i == index) h.copy(name = value) else h })
                     },
                     modifier = Modifier.weight(0.7f),
-                    label = { Text("名称") },
+                    label = { Text(I18n.t("settings_headers_name")) },
                     singleLine = true,
                 )
                 OutlinedTextField(
@@ -488,21 +401,21 @@ private fun LlmHeadersEditor(
                         onHeadersChange(headers.mapIndexed { i, h -> if (i == index) h.copy(value = value) else h })
                     },
                     modifier = Modifier.weight(1f),
-                    label = if (isAutoSession) null else ({ Text("值") }),
+                    label = if (isAutoSession) null else ({ Text(I18n.t("settings_headers_value")) }),
                     placeholder = if (isAutoSession) {
-                        ({ Text("留空=自动生成（每条对话）") })
+                        ({ Text(I18n.t("settings_headers_auto_hint")) })
                     } else null,
                     singleLine = true,
                 )
                 IconButton(onClick = {
                     onHeadersChange(headers.filterIndexed { i, _ -> i != index })
                 }) {
-                    Icon(Icons.Outlined.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
+                    Icon(Icons.Outlined.Delete, contentDescription = I18n.t("settings_action_delete"), tint = MaterialTheme.colorScheme.error)
                 }
             }
         }
         FilledTonalButton(onClick = { onHeadersChange(headers + LlmHeader()) }) {
-            Text("＋ 添加请求头")
+            Text(I18n.t("settings_headers_add"))
         }
     }
 }
@@ -661,9 +574,9 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("上下文窗口（预估基准）", fontWeight = FontWeight.SemiBold)
+                        Text(I18n.t("settings_llm_context_window"), fontWeight = FontWeight.SemiBold)
                         Text(
-                            "不限制发送；仅用于对话详情页上下文占用预估显示",
+                            I18n.t("settings_llm_context_window_desc"),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -695,9 +608,9 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("图片输入（多模态）", fontWeight = FontWeight.SemiBold)
+                        Text(I18n.t("settings_llm_image_input"), fontWeight = FontWeight.SemiBold)
                         Text(
-                            "mimo-v2.5 / deepseek-v4-flash-vision-exp 支持；开启后输入框可附加图片（单张或多张）",
+                            I18n.t("settings_llm_image_input_desc"),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -718,8 +631,8 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
                     value = mimoKey,
                     onValueChange = { mimoKey = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("mimo TTS 音色克隆 Key（免费）") },
-                    supportingText = { Text("用于 docs/mimo-tts-voiceclone.txt 的语音合成") },
+                    label = { Text(I18n.t("settings_voice_mimo_key")) },
+                    supportingText = { Text(I18n.t("settings_voice_mimo_key_desc")) },
                     visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     singleLine = true,
                 )
@@ -835,12 +748,9 @@ private fun ThemeSettingsCard(
     settings: ThemeSettings,
     onSettingsChanged: (ThemeSettings) -> Unit,
 ) {
-    var darkModeMenuExpanded by remember { mutableStateOf(false) }
-    var accentMenuExpanded by remember { mutableStateOf(false) }
-
     SettingsSectionCard {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(vertical = 4.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp).padding(top = 10.dp, bottom = 6.dp)) {
                 Text(I18n.t("settings_theme_title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
                     I18n.t("settings_theme_desc"),
@@ -848,127 +758,44 @@ private fun ThemeSettingsCard(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("主题色", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        ThemeSettings.accentLabel(settings.accentColor),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
+            SettingsDropdownRow(
+                title = I18n.t("settings_theme_accent"),
+                subtitle = null,
+                selected = settings.accentColor,
+                options = ThemeSettings.ACCENT_OPTIONS.map { accent -> accent to ThemeSettings.accentLabel(accent) },
+                onSelected = { accent ->
+                    onSettingsChanged(
+                        settings.copy(
+                            accentColor = accent,
+                            dynamicColorEnabled = accent == ThemeSettings.ACCENT_MONET,
+                        ),
                     )
-                }
-                Box {
-                    Row(
-                        modifier = Modifier.clickable { accentMenuExpanded = true },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            modifier = Modifier.size(20.dp).clip(CircleShape)
-                                .background(accentSwatchColor(settings.accentColor)),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(ThemeSettings.accentLabel(settings.accentColor))
-                    }
-                    DropdownMenu(
-                        expanded = accentMenuExpanded,
-                        onDismissRequest = { accentMenuExpanded = false },
-                    ) {
-                        ThemeSettings.ACCENT_OPTIONS.forEach { accent ->
-                            DropdownMenuItem(
-                                text = { Text(ThemeSettings.accentLabel(accent)) },
-                                onClick = {
-                                    onSettingsChanged(
-                                        settings.copy(
-                                            accentColor = accent,
-                                            dynamicColorEnabled = accent == ThemeSettings.ACCENT_MONET,
-                                        ),
-                                    )
-                                    accentMenuExpanded = false
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(I18n.t("settings_dynamic_color"), fontWeight = FontWeight.SemiBold)
-                    Text(
-                        if (settings.dynamicColorEnabled) I18n.t("settings_dynamic_color_on") else I18n.t("settings_dynamic_color_off"),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                Switch(
-                    checked = settings.dynamicColorEnabled,
-                    onCheckedChange = { enabled ->
-                        onSettingsChanged(settings.copy(dynamicColorEnabled = enabled))
-                    },
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("毛玻璃", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        if (settings.liquidGlassEnabled) "已开启，低配设备自动降级" else "已关闭",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                Switch(
-                    checked = settings.liquidGlassEnabled,
-                    onCheckedChange = { enabled ->
-                        onSettingsChanged(settings.copy(liquidGlassEnabled = enabled))
-                    },
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(I18n.t("settings_dark_mode"), fontWeight = FontWeight.SemiBold)
-                    Text(
-                        darkModeDescription(settings.darkMode),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                Box {
-                    TextButton(onClick = { darkModeMenuExpanded = true }) {
-                        Text(darkModeLabel(settings.darkMode))
-                    }
-                    DropdownMenu(
-                        expanded = darkModeMenuExpanded,
-                        onDismissRequest = { darkModeMenuExpanded = false },
-                        shape = RoundedCornerShape(16.dp),
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ) {
-                        DarkModeSetting.entries.forEach { mode ->
-                            DropdownMenuItem(
-                                text = { Text(darkModeLabel(mode)) },
-                                onClick = {
-                                    darkModeMenuExpanded = false
-                                    onSettingsChanged(settings.copy(darkMode = mode))
-                                },
-                            )
-                        }
-                    }
-                }
-            }
+                },
+            )
+            SettingsSwitchRow(
+                title = I18n.t("settings_dynamic_color"),
+                subtitle = if (settings.dynamicColorEnabled) I18n.t("settings_dynamic_color_on") else I18n.t("settings_dynamic_color_off"),
+                checked = settings.dynamicColorEnabled,
+                onCheckedChange = { enabled ->
+                    onSettingsChanged(settings.copy(dynamicColorEnabled = enabled))
+                },
+            )
+            SettingsDropdownRow(
+                title = I18n.t("settings_dark_mode"),
+                subtitle = darkModeDescription(settings.darkMode),
+                selected = settings.darkMode,
+                options = DarkModeSetting.entries.map { mode -> mode to darkModeLabel(mode) },
+                onSelected = { mode -> onSettingsChanged(settings.copy(darkMode = mode)) },
+            )
+            SettingsSwitchRow(
+                title = I18n.t("settings_liquid_glass"),
+                subtitle = if (settings.liquidGlassEnabled) I18n.t("settings_liquid_glass_on") else I18n.t("settings_liquid_glass_off"),
+                checked = settings.liquidGlassEnabled,
+                onCheckedChange = { enabled ->
+                    onSettingsChanged(settings.copy(liquidGlassEnabled = enabled))
+                },
+                divider = false,
+            )
         }
     }
 }
@@ -1160,6 +987,7 @@ private fun WallpaperSettingsCard(
     onEnabledChanged: (Boolean) -> Unit,
     onBackgroundChanged: (String?) -> Unit,
     onAdjustPosition: () -> Unit,
+    showMaster: Boolean = true,
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
@@ -1189,6 +1017,7 @@ private fun WallpaperSettingsCard(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
+            if (showMaster) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1233,7 +1062,7 @@ private fun WallpaperSettingsCard(
                                 if (!restored) {
                                     Toast.makeText(
                                         appContext,
-                                        "未找到原壁纸备份，无法自动恢复（模型将由壁纸服务停止渲染）",
+                                        I18n.t("settings_wallpaper_restore_failed"),
                                         Toast.LENGTH_SHORT,
                                     ).show()
                                 }
@@ -1241,16 +1070,16 @@ private fun WallpaperSettingsCard(
                         }
                     },
                 )
-            }
+            }            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("渲染模式", fontWeight = FontWeight.SemiBold)
+                    Text(I18n.t("settings_wallpaper_mode"), fontWeight = FontWeight.SemiBold)
                     Text(
-                        if (mode == com.bangdream.pet.WallpaperMode.MULTI) "多模型：桌面同时放置多个角色" else "单模型：沿用当前选择的一个角色",
+                        if (mode == com.bangdream.pet.WallpaperMode.MULTI) I18n.t("settings_wallpaper_mode_multi_desc") else I18n.t("settings_wallpaper_mode_single_desc"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -1261,7 +1090,7 @@ private fun WallpaperSettingsCard(
                             selected = mode == option,
                             onClick = { onModeChanged(option) },
                             shape = SegmentedButtonDefaults.itemShape(index = index, count = com.bangdream.pet.WallpaperMode.entries.size),
-                        ) { Text(option.label) }
+                        ) { Text(wallpaperModeLabel(option)) }
                     }
                 }
             }
@@ -1271,7 +1100,7 @@ private fun WallpaperSettingsCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("当前壁纸状态", fontWeight = FontWeight.SemiBold)
+                    Text(I18n.t("settings_wallpaper_status"), fontWeight = FontWeight.SemiBold)
                     Text(
                         wallpaperStatus,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1286,17 +1115,17 @@ private fun WallpaperSettingsCard(
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
-                        if (mode == com.bangdream.pet.WallpaperMode.MULTI) "管理桌面模型" else I18n.t("settings_wallpaper_adjust"),
+                        if (mode == com.bangdream.pet.WallpaperMode.MULTI) I18n.t("settings_wallpaper_manage_title") else I18n.t("settings_wallpaper_adjust"),
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        if (mode == com.bangdream.pet.WallpaperMode.MULTI) "添加/移除桌面角色，逐个调整位置与大小" else I18n.t("settings_wallpaper_adjust_desc"),
+                        if (mode == com.bangdream.pet.WallpaperMode.MULTI) I18n.t("settings_wallpaper_manage_desc") else I18n.t("settings_wallpaper_adjust_desc"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
                 FilledTonalButton(onClick = onAdjustPosition) {
-                    Text(if (mode == com.bangdream.pet.WallpaperMode.MULTI) "管理" else I18n.t("settings_wallpaper_adjust_btn"))
+                    Text(if (mode == com.bangdream.pet.WallpaperMode.MULTI) I18n.t("settings_wallpaper_manage_btn") else I18n.t("settings_wallpaper_adjust_btn"))
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1342,7 +1171,7 @@ private fun WallpaperSettingsCard(
                             showAllFilesAccessDialog = false
                             Toast.makeText(
                                 appContext,
-                                "无法打开授权页，请到：系统设置 → 应用 → 权限 → 所有文件访问",
+                                I18n.t("settings_allfiles_goto_failed"),
                                 Toast.LENGTH_LONG,
                             ).show()
                         }
@@ -1410,6 +1239,12 @@ private fun darkModeDescription(mode: DarkModeSetting): String = when (mode) {
     DarkModeSetting.System -> I18n.t("settings_dark_mode_system_desc")
 }
 
+
+private fun wallpaperModeLabel(mode: com.bangdream.pet.WallpaperMode): String = when (mode) {
+    com.bangdream.pet.WallpaperMode.SINGLE -> I18n.t("settings_wallpaper_mode_single")
+    com.bangdream.pet.WallpaperMode.MULTI -> I18n.t("settings_wallpaper_mode_multi")
+}
+
 private fun renderResolutionLabel(resolution: RenderResolution): String = when (resolution) {
     RenderResolution.SuperSampling -> I18n.t("settings_render_resolution_x2")
     RenderResolution.PointToPoint -> I18n.t("settings_render_resolution_point_to_point")
@@ -1440,7 +1275,7 @@ private fun openLiveWallpaperPicker(context: android.content.Context) {
     }
     Toast.makeText(
         context,
-        "未找到系统壁纸选择器，请到：系统设置 → 壁纸 → 动态壁纸 → 选择 BangDream Live2D",
+        I18n.t("settings_wallpaper_picker_not_found"),
         Toast.LENGTH_LONG,
     ).show()
 }
@@ -1457,9 +1292,9 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
     }
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("保留系统原壁纸", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(I18n.t("settings_original_wallpaper_title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
-                "开启桌面渲染时会自动捕获当前系统壁纸作为背景层（模型在壁纸与桌面图标之间）；这里可手动重新捕获或恢复系统壁纸。",
+                I18n.t("settings_original_wallpaper_desc"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -1476,9 +1311,9 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
                                     Toast.makeText(
                                         appContext,
                                         if (result.fromBackup) {
-                                            "已复用旧备份作为背景（本次未能读取当前壁纸）"
+                                            I18n.t("settings_original_wallpaper_reused_backup")
                                         } else {
-                                            "已捕获原壁纸并设为背景"
+                                            I18n.t("settings_original_wallpaper_captured")
                                         },
                                         Toast.LENGTH_LONG,
                                     ).show()
@@ -1490,9 +1325,9 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
                                     Toast.makeText(
                                         appContext,
                                         if (info != null) {
-                                            "当前系统壁纸是动态壁纸（${info.component.flattenToShortString()}）。要恢复原静态壁纸：系统设置 → 壁纸 → 换成静态图片；或直接用「壁纸背景 → 选择照片」"
+                                            I18n.t("settings_wallpaper_live_detected", info.component.flattenToShortString())
                                         } else {
-                                            "系统限制无法读取壁纸，请直接用「壁纸背景 → 选择照片」"
+                                            I18n.t("settings_original_wallpaper_unreadable")
                                         },
                                         Toast.LENGTH_LONG,
                                     ).show()
@@ -1501,7 +1336,7 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
                         }
                     },
                 ) {
-                    Text("使用原壁纸为背景")
+                    Text(I18n.t("settings_original_wallpaper_capture_btn"))
                 }
                 FilledTonalButton(
                     onClick = {
@@ -1509,11 +1344,11 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
                             val ok = withContext(Dispatchers.IO) {
                                 WallpaperBackup.restoreSystemWallpaper(appContext)
                             }
-                            Toast.makeText(appContext, if (ok) "已恢复系统壁纸" else "没有可恢复的备份", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(appContext, if (ok) I18n.t("settings_original_wallpaper_restored") else I18n.t("settings_original_wallpaper_no_backup"), Toast.LENGTH_SHORT).show()
                         }
                     },
                 ) {
-                    Text("恢复系统壁纸")
+                    Text(I18n.t("settings_original_wallpaper_restore_btn"))
                 }
             }
             if (showAllFilesAccessDialog) {
@@ -1528,7 +1363,7 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
                                 showAllFilesAccessDialog = false
                                 Toast.makeText(
                                     appContext,
-                                    "无法打开授权页，请到：系统设置 → 应用 → 权限 → 所有文件访问",
+                                    I18n.t("settings_allfiles_goto_failed"),
                                     Toast.LENGTH_LONG,
                                 ).show()
                             }
@@ -1543,19 +1378,17 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
 private fun AllFilesAccessPermissionDialog(onDismiss: () -> Unit, onGrant: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("需要「所有文件访问」权限") },
+        title = { Text(I18n.t("settings_allfiles_title")) },
         text = {
             Text(
-                "Android 13 及以上系统限制普通应用读取系统壁纸。\n\n" +
-                    "请授予「所有文件访问」权限，" +
-                    "授权返回后重新点击「使用原壁纸为背景」即可捕获当前壁纸。",
+                I18n.t("settings_allfiles_dialog_text"),
             )
         },
         confirmButton = {
-            TextButton(onClick = onGrant) { Text("去授权") }
+            TextButton(onClick = onGrant) { Text(I18n.t("settings_allfiles_grant_btn")) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(I18n.t("cancel")) }
         },
     )
 }
@@ -1574,12 +1407,12 @@ private fun InteractionSettingsCard() {
 
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("壁纸交互与动画", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(I18n.t("settings_interaction_title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("触摸播放动画", fontWeight = FontWeight.SemiBold)
-                    Text("单击/滑动抚摸时随机播放勾选动作", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    Text(I18n.t("settings_touch_animation"), fontWeight = FontWeight.SemiBold)
+                    Text(I18n.t("settings_touch_animation_desc"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = touchEnabled, onCheckedChange = { touchEnabled = it; saveTouchAnimationEnabled(appContext, it) })
             }
@@ -1594,16 +1427,16 @@ private fun InteractionSettingsCard() {
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("滑动抚摸动画", fontWeight = FontWeight.SemiBold)
-                    Text("在模型上滑动触发随机动作", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    Text(I18n.t("settings_swipe_animation"), fontWeight = FontWeight.SemiBold)
+                    Text(I18n.t("settings_swipe_animation_desc"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = swipeEnabled, onCheckedChange = { swipeEnabled = it; saveSwipeAnimationEnabled(appContext, it) })
             }
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("待机随机动画", fontWeight = FontWeight.SemiBold)
-                    Text("空闲时每隔一段时间随机播放勾选动作", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    Text(I18n.t("settings_idle_animation"), fontWeight = FontWeight.SemiBold)
+                    Text(I18n.t("settings_idle_animation_desc"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = idleEnabled, onCheckedChange = { idleEnabled = it; saveIdleAnimationEnabled(appContext, it) })
             }
@@ -1616,7 +1449,7 @@ private fun InteractionSettingsCard() {
                 },
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("间隔：${(idleInterval / 1000).toInt()} 秒", modifier = Modifier.width(110.dp), style = MaterialTheme.typography.bodyMedium)
+                Text(I18n.t("settings_idle_interval_sec", (idleInterval / 1000).toInt()), modifier = Modifier.width(110.dp), style = MaterialTheme.typography.bodyMedium)
                 Slider(
                     value = idleInterval,
                     onValueChange = { idleInterval = it },
@@ -1628,30 +1461,30 @@ private fun InteractionSettingsCard() {
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("动作语音", fontWeight = FontWeight.SemiBold)
-                    Text("动作触发时是否播放台词音频（台词内容由此开关产生）", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    Text(I18n.t("settings_action_voice"), fontWeight = FontWeight.SemiBold)
+                    Text(I18n.t("settings_action_voice_desc"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
                 var actionVoiceEnabled by remember { mutableStateOf(loadDesktopVoiceEnabled(appContext)) }
                 Switch(checked = actionVoiceEnabled, onCheckedChange = { actionVoiceEnabled = it; saveDesktopVoiceEnabled(appContext, it) })
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("口型同步", fontWeight = FontWeight.SemiBold)
-                    Text("桌面播放语音时，角色嘴部随语音开合", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    Text(I18n.t("settings_lip_sync"), fontWeight = FontWeight.SemiBold)
+                    Text(I18n.t("settings_lip_sync_desc"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
                 var lipSyncEnabled by remember { mutableStateOf(loadDesktopLipSyncEnabled(appContext)) }
                 Switch(checked = lipSyncEnabled, onCheckedChange = { lipSyncEnabled = it; saveDesktopLipSyncEnabled(appContext, it) })
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("壁纸文字气泡", fontWeight = FontWeight.SemiBold)
-                    Text("有台词/回复时以悬浮气泡显示文本（纯显示开关，不自行产生内容）", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    Text(I18n.t("settings_bubble"), fontWeight = FontWeight.SemiBold)
+                    Text(I18n.t("settings_bubble_desc"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
                 var bubbleEnabled by remember { mutableStateOf(loadBubbleEnabled(appContext)) }
                 Switch(checked = bubbleEnabled, onCheckedChange = { bubbleEnabled = it; saveBubbleEnabled(appContext, it) })
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("气泡展示：${bubbleDurationSeconds} 秒", modifier = Modifier.width(130.dp), style = MaterialTheme.typography.bodyMedium)
+                Text(I18n.t("settings_bubble_duration_sec", bubbleDurationSeconds), modifier = Modifier.width(130.dp), style = MaterialTheme.typography.bodyMedium)
                 Slider(
                     value = bubbleDurationSeconds.toFloat(),
                     onValueChange = { bubbleDurationSeconds = it.toInt() },
@@ -1661,7 +1494,7 @@ private fun InteractionSettingsCard() {
                 )
             }
             Text(
-                "提示：双击模型弹出输入框对话；长按桌面任意位置停止当前对话/语音。",
+                I18n.t("settings_interaction_hint"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -1676,10 +1509,10 @@ private fun AnimationMultiSelect(
     onToggle: (String) -> Unit,
 ) {
     val labels = mapOf(
-        "smile" to "微笑", "kandou" to "感动", "kime" to "决胜", "sad" to "难过",
-        "cry" to "哭泣", "serious" to "认真", "thinking" to "思考", "surprised" to "惊讶",
-        "angry" to "生气", "shame" to "害羞", "sing" to "唱歌", "nf" to "NF",
-        "nnf" to "NNF", "bye" to "再见",
+        "smile" to I18n.t("settings_anim_smile"), "kandou" to I18n.t("settings_anim_kandou"), "kime" to I18n.t("settings_anim_kime"), "sad" to I18n.t("settings_anim_sad"),
+        "cry" to I18n.t("settings_anim_cry"), "serious" to I18n.t("settings_anim_serious"), "thinking" to I18n.t("settings_anim_thinking"), "surprised" to I18n.t("settings_anim_surprised"),
+        "angry" to I18n.t("settings_anim_angry"), "shame" to I18n.t("settings_anim_shame"), "sing" to I18n.t("settings_anim_sing"), "nf" to "NF",
+        "nnf" to "NNF", "bye" to I18n.t("settings_anim_bye"),
     )
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1714,18 +1547,18 @@ private fun VoiceSettingsCard() {
 
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("语音合成（音色克隆 TTS）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(I18n.t("settings_voice_tts_title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("服务商", fontWeight = FontWeight.SemiBold)
-                    Text(if (settings.provider == VOICE_PROVIDER_MIMO) "mimo 预设（免费）" else "自定义 OpenAI 兼容", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(I18n.t("settings_voice_provider"), fontWeight = FontWeight.SemiBold)
+                    Text(if (settings.provider == VOICE_PROVIDER_MIMO) I18n.t("settings_voice_provider_mimo_preset") else I18n.t("settings_voice_provider_custom"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Box {
                     TextButton(onClick = { providerMenuExpanded = true }) {
-                        Text(if (settings.provider == VOICE_PROVIDER_MIMO) "mimo" else "自定义")
+                        Text(if (settings.provider == VOICE_PROVIDER_MIMO) "mimo" else I18n.t("settings_voice_custom_label"))
                     }
                     DropdownMenu(expanded = providerMenuExpanded, onDismissRequest = { providerMenuExpanded = false }) {
-                        DropdownMenuItem(text = { Text("mimo 预设（免费）") }, onClick = {
+                        DropdownMenuItem(text = { Text(I18n.t("settings_voice_provider_mimo_preset")) }, onClick = {
                             settings = settings.copy(
                                 provider = VOICE_PROVIDER_MIMO,
                                 baseUrl = "https://api.xiaomimimo.com/v1",
@@ -1734,7 +1567,7 @@ private fun VoiceSettingsCard() {
                             saved = false
                             providerMenuExpanded = false
                         })
-                        DropdownMenuItem(text = { Text("自定义 OpenAI 兼容") }, onClick = {
+                        DropdownMenuItem(text = { Text(I18n.t("settings_voice_provider_custom")) }, onClick = {
                             settings = settings.copy(provider = VOICE_PROVIDER_CUSTOM)
                             saved = false
                             providerMenuExpanded = false
@@ -1746,15 +1579,15 @@ private fun VoiceSettingsCard() {
                 value = settings.model,
                 onValueChange = { settings = settings.copy(model = it); saved = false },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text(if (settings.provider == VOICE_PROVIDER_MIMO) "mimo 模型名称" else "模型名称") },
-                supportingText = { Text(if (settings.provider == VOICE_PROVIDER_MIMO) "默认 mimo-v2.5-tts-voiceclone，防止未来变动可自行改" else "如 deepseek-v4-tts-voiceclone / gpt-4o-audio") },
+                label = { Text(if (settings.provider == VOICE_PROVIDER_MIMO) I18n.t("settings_voice_mimo_model") else I18n.t("settings_voice_model")) },
+                supportingText = { Text(if (settings.provider == VOICE_PROVIDER_MIMO) I18n.t("settings_voice_mimo_model_hint") else I18n.t("settings_voice_model_hint")) },
                 singleLine = true,
             )
             OutlinedTextField(
                 value = settings.apiKey,
                 onValueChange = { settings = settings.copy(apiKey = it); saved = false },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("密钥") },
+                label = { Text(I18n.t("settings_voice_api_key")) },
                 visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
                     IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
@@ -1768,7 +1601,7 @@ private fun VoiceSettingsCard() {
                     value = settings.baseUrl,
                     onValueChange = { settings = settings.copy(baseUrl = it); saved = false },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Base URL（OpenAI 兼容）") },
+                    label = { Text(I18n.t("settings_voice_base_url")) },
                     singleLine = true,
                 )
             }
@@ -1778,13 +1611,13 @@ private fun VoiceSettingsCard() {
                 onClick = {
                     settings.normalized().save(appContext)
                     saved = true
-                    Toast.makeText(appContext, "语音设置已保存", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(appContext, I18n.t("settings_voice_saved"), Toast.LENGTH_SHORT).show()
                 },
-            ) { Text(if (saved) "已保存" else "保存") }
+            ) { Text(if (saved) I18n.t("settings_saved") else I18n.t("settings_action_save")) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("回复后播放语音", fontWeight = FontWeight.SemiBold)
-                    Text("模型回复完成后用当前音色合成并播放", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    Text(I18n.t("settings_reply_voice"), fontWeight = FontWeight.SemiBold)
+                    Text(I18n.t("settings_reply_voice_desc"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(
                     checked = replyVoiceEnabled,
@@ -1795,7 +1628,7 @@ private fun VoiceSettingsCard() {
                 )
             }
             Text(
-                "文档：docs/mimo-tts-voiceclone.txt（样本 ≤10MB，mp3/wav；返回 WAV）",
+                I18n.t("settings_voice_docs_hint"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -1812,7 +1645,7 @@ private fun VoiceSamplesCard(selectedModel: ModelChoice?) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null && selectedModel != null) {
             val ok = VoiceSamples.importSample(appContext, selectedModel.characterId, uri)
-            Toast.makeText(appContext, if (ok) "已导入并设为当前音色" else "导入失败（仅支持 mp3/wav，≤10MB）", Toast.LENGTH_SHORT).show()
+            Toast.makeText(appContext, if (ok) I18n.t("settings_voice_sample_imported") else I18n.t("settings_voice_sample_import_failed"), Toast.LENGTH_SHORT).show()
             refreshTick++
         }
     }
@@ -1827,21 +1660,21 @@ private fun VoiceSamplesCard(selectedModel: ModelChoice?) {
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                selectedModel?.let { "语音样本 · ${it.characterName}" } ?: "语音样本",
+                selectedModel?.let { I18n.t("settings_voice_samples_title_char", it.characterName) } ?: I18n.t("settings_voice_samples_title"),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
             if (selectedModel == null) {
-                Text("请先在模型页选择角色", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(I18n.t("settings_voice_select_model_first"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (samples.isEmpty()) {
-                Text("暂无样本，导入一个音频作为克隆音色", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(I18n.t("settings_voice_samples_empty"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 samples.forEach { sample ->
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(sample.name, fontWeight = if (sample.active) FontWeight.Bold else FontWeight.Normal)
                             Text(
-                                if (sample.active) "当前音色" else "未启用",
+                                if (sample.active) I18n.t("settings_voice_current_voice") else I18n.t("settings_voice_sample_inactive"),
                                 color = if (sample.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall,
                             )
@@ -1850,12 +1683,12 @@ private fun VoiceSamplesCard(selectedModel: ModelChoice?) {
                             TextButton(onClick = {
                                 VoiceSamples.setActiveSample(appContext, selectedModel.characterId, sample.file.name)
                                 refreshTick++
-                            }) { Text("选择") }
+                            }) { Text(I18n.t("settings_select")) }
                         }
                         TextButton(onClick = {
                             VoiceSamples.deleteSample(appContext, selectedModel.characterId, sample.file.name)
                             refreshTick++
-                        }) { Text("删除") }
+                        }) { Text(I18n.t("settings_action_delete")) }
                     }
                 }
             }
@@ -1863,9 +1696,9 @@ private fun VoiceSamplesCard(selectedModel: ModelChoice?) {
                 modifier = Modifier.fillMaxWidth(),
                 enabled = selectedModel != null,
                 onClick = { launcher.launch("audio/*") },
-            ) { Text("导入音色样本") }
+            ) { Text(I18n.t("settings_voice_import_sample")) }
             Text(
-                "支持 mp3/wav，≤10MB；一个角色可存多个样本，选择其中一个作为当前克隆音色。",
+                I18n.t("settings_voice_samples_hint"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -1883,7 +1716,7 @@ private fun BuiltinVoiceCard(selectedModel: ModelChoice?) {
 
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("内置语音", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(I18n.t("settings_builtin_voice_title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 BuiltinVoiceLanguage.entries.forEachIndexed { index, option ->
                     SegmentedButton(
@@ -1898,13 +1731,18 @@ private fun BuiltinVoiceCard(selectedModel: ModelChoice?) {
             }
             Text(
                 selectedModel?.let {
-                    "使用 ${it.characterName} 的${if (language == BuiltinVoiceLanguage.JA) "日语" else "中文"}台词（共 ${BuiltinVoiceManager.loadLines(appContext, it.characterId, language).size} 条，预生成语音随版本内置）"
-                } ?: "请先选择角色",
+                    I18n.t(
+                        "settings_builtin_voice_summary",
+                        it.characterName,
+                        I18n.t(if (language == BuiltinVoiceLanguage.JA) "settings_lang_ja" else "settings_lang_zh"),
+                        BuiltinVoiceManager.loadLines(appContext, it.characterId, language).size,
+                    )
+                } ?: I18n.t("settings_select_character"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                "提示：在「桌面壁纸 → 壁纸交互与动画」开启「动作语音」后，桌面模型触发动作会按动作播放以上台词（待机说话与「待机随机动画」开关相互独立）；「壁纸文字气泡」只控制是否显示台词文本，「口型同步」控制说话时嘴部开合。",
+                I18n.t("settings_builtin_voice_hint"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -1912,3 +1750,433 @@ private fun BuiltinVoiceCard(selectedModel: ModelChoice?) {
     }
 }
 
+
+// ==================== 设置页重排：路由 / 行组件 / 详情子页 ====================
+
+private enum class SettingsDetail { WALLPAPER, INTERACTION, RENDER, VOICE }
+
+@Composable
+private fun SettingsHomeList(
+    themeSettings: ThemeSettings,
+    onThemeSettingsChanged: (ThemeSettings) -> Unit,
+    onOpenDetail: (SettingsDetail) -> Unit,
+    topInset: Dp,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(top = topInset + 4.dp, bottom = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item(key = "section_appearance") { SettingsSectionHeader(I18n.t("settings_section_appearance")) }
+        item(key = "theme") { ThemeSettingsCard(settings = themeSettings, onSettingsChanged = onThemeSettingsChanged) }
+        item(key = "section_chat_ai") { SettingsSectionHeader(I18n.t("settings_section_chat_ai")) }
+        item(key = "llm") { LlmSettingsEntryCard() }
+        item(key = "line_ui") { LineUiSettingsCard() }
+        item(key = "section_desktop") { SettingsSectionHeader(I18n.t("settings_section_desktop")) }
+        item(key = "desktop") {
+            DesktopHomeCard(
+                onOpenWallpaper = { onOpenDetail(SettingsDetail.WALLPAPER) },
+                onOpenInteraction = { onOpenDetail(SettingsDetail.INTERACTION) },
+                onOpenRender = { onOpenDetail(SettingsDetail.RENDER) },
+            )
+        }
+        item(key = "section_voice") { SettingsSectionHeader(I18n.t("settings_section_voice")) }
+        item(key = "voice") { VoiceHomeCard(onOpenVoice = { onOpenDetail(SettingsDetail.VOICE) }) }
+        item(key = "info") { InfoCard(I18n.t("settings_about"), I18n.t("settings_about_text")) }
+    }
+}
+
+@Composable
+private fun SettingsDivider() {
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+}
+
+@Composable
+private fun SettingsRowBase(
+    title: String,
+    subtitle: String? = null,
+    onClick: (() -> Unit)? = null,
+    divider: Boolean = true,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                if (subtitle != null) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (trailing != null) {
+                Spacer(Modifier.width(12.dp))
+                trailing()
+            }
+        }
+        if (divider) SettingsDivider()
+    }
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String? = null,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    divider: Boolean = true,
+) {
+    SettingsRowBase(
+        title = title,
+        subtitle = subtitle,
+        onClick = null,
+        divider = divider,
+        trailing = { Switch(checked = checked, onCheckedChange = onCheckedChange) },
+    )
+}
+
+@Composable
+private fun SettingsNavRow(
+    title: String,
+    subtitle: String? = null,
+    onClick: () -> Unit,
+    divider: Boolean = true,
+) {
+    SettingsRowBase(
+        title = title,
+        subtitle = subtitle,
+        onClick = onClick,
+        divider = divider,
+        trailing = {
+            Icon(
+                Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+    )
+}
+
+@Composable
+private fun <T> SettingsDropdownRow(
+    title: String,
+    subtitle: String? = null,
+    selected: T,
+    options: List<Pair<T, String>>,
+    onSelected: (T) -> Unit,
+    divider: Boolean = true,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = options.firstOrNull { it.first == selected }?.second
+    Column {
+        Box {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = true }
+                    .padding(horizontal = 16.dp, vertical = 13.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                    if (subtitle != null) {
+                        Text(
+                            subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (selectedLabel != null) {
+                    Spacer(Modifier.width(12.dp))
+                    Text(selectedLabel, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                }
+                Icon(
+                    Icons.Outlined.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                shape = RoundedCornerShape(16.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                options.forEach { (value, label) ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        onClick = {
+                            onSelected(value)
+                            expanded = false
+                        },
+                    )
+                }
+            }
+        }
+        if (divider) SettingsDivider()
+    }
+}
+
+@Composable
+private fun DesktopHomeCard(
+    onOpenWallpaper: () -> Unit,
+    onOpenInteraction: () -> Unit,
+    onOpenRender: () -> Unit,
+) {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val scope = rememberCoroutineScope()
+    var wallpaperEnabled by remember { mutableStateOf(isWallpaperEnabled(appContext)) }
+    var showAllFilesAccessDialog by remember { mutableStateOf(false) }
+    val allFilesAccessLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        showAllFilesAccessDialog = false
+    }
+    SettingsSectionCard {
+        Column(Modifier.padding(vertical = 4.dp)) {
+            SettingsSwitchRow(
+                title = I18n.t("settings_wallpaper_enable"),
+                subtitle = if (wallpaperEnabled) I18n.t("settings_wallpaper_enable_on") else I18n.t("settings_wallpaper_enable_off"),
+                checked = wallpaperEnabled,
+                onCheckedChange = { newEnabled ->
+                    wallpaperEnabled = newEnabled
+                    setWallpaperEnabled(appContext, newEnabled)
+                    if (newEnabled) {
+                        scope.launch {
+                            if (loadWallpaperBackgroundUri(appContext).isNullOrBlank()) {
+                                when (val result = withContext(Dispatchers.IO) {
+                                    WallpaperBackup.captureAndUseAsBackgroundResult(appContext)
+                                }) {
+                                    is WallpaperBackup.WallpaperCaptureResult.Success ->
+                                        saveWallpaperBackgroundUri(appContext, result.uri)
+                                    WallpaperBackup.WallpaperCaptureResult.NeedAllFilesAccess ->
+                                        showAllFilesAccessDialog = true
+                                    WallpaperBackup.WallpaperCaptureResult.Failed -> Unit
+                                }
+                            }
+                            openLiveWallpaperPicker(context)
+                        }
+                    } else {
+                        scope.launch {
+                            val restored = withContext(Dispatchers.IO) {
+                                WallpaperBackup.restoreSystemWallpaper(appContext)
+                            }
+                            if (!restored) {
+                                Toast.makeText(
+                                    appContext,
+                                    I18n.t("settings_wallpaper_restore_failed"),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        }
+                    }
+                },
+            )
+            SettingsNavRow(
+                title = I18n.t("settings_desktop_wallpaper_entry"),
+                subtitle = I18n.t("settings_desktop_wallpaper_entry_desc"),
+                onClick = onOpenWallpaper,
+            )
+            SettingsNavRow(
+                title = I18n.t("settings_desktop_interaction_entry"),
+                subtitle = I18n.t("settings_desktop_interaction_entry_desc"),
+                onClick = onOpenInteraction,
+            )
+            SettingsNavRow(
+                title = I18n.t("settings_desktop_render_entry"),
+                subtitle = I18n.t("settings_desktop_render_entry_desc"),
+                onClick = onOpenRender,
+                divider = false,
+            )
+        }
+    }
+    if (showAllFilesAccessDialog) {
+        AllFilesAccessPermissionDialog(
+            onDismiss = { showAllFilesAccessDialog = false },
+            onGrant = {
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    .setData(Uri.parse("package:${appContext.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                runCatching { allFilesAccessLauncher.launch(intent) }
+                    .onFailure {
+                        showAllFilesAccessDialog = false
+                        Toast.makeText(
+                            appContext,
+                            I18n.t("settings_allfiles_goto_failed"),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+            },
+        )
+    }
+}
+
+@Composable
+private fun VoiceHomeCard(onOpenVoice: () -> Unit) {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val voice = remember { VoiceSettings.load(appContext) }
+    SettingsSectionCard {
+        Column(Modifier.padding(vertical = 4.dp)) {
+            SettingsNavRow(
+                title = I18n.t("settings_voice_entry"),
+                subtitle = if (voice.provider == VOICE_PROVIDER_MIMO) {
+                    I18n.t("settings_voice_provider_mimo_preset")
+                } else {
+                    I18n.t("settings_voice_provider_custom")
+                },
+                onClick = onOpenVoice,
+                divider = false,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsDetailPage(
+    title: String,
+    topInset: Dp,
+    onBack: () -> Unit,
+    subtitle: String? = null,
+    content: LazyListScope.() -> Unit,
+) {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val hazeState = rememberLiquidGlassState()
+    val glassEnabled = remember(appContext) {
+        ThemeSettings.load(appContext).liquidGlassEnabled && VisualGuard.supportsLiquidGlass(appContext)
+    }
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().appHazeSource(hazeState),
+            contentPadding = PaddingValues(start = 16.dp, top = topInset + 72.dp, end = 16.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = content,
+        )
+        CenterAlignedTopAppBar(
+            modifier = Modifier.align(Alignment.TopCenter).appLiquidGlass(hazeState, enabled = glassEnabled),
+            title = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(title, style = MaterialTheme.typography.titleLarge)
+                    if (subtitle != null) {
+                        Text(
+                            subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            },
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Outlined.ArrowBack, contentDescription = I18n.t("back"))
+                }
+            },
+            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent),
+        )
+    }
+}
+
+@Composable
+private fun DesktopWallpaperPage(topInset: Dp, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    var wallpaperEnabled by remember { mutableStateOf(isWallpaperEnabled(appContext)) }
+    var wallpaperBackgroundUri by remember { mutableStateOf(loadWallpaperBackgroundUri(appContext)) }
+    var wallpaperMode by remember { mutableStateOf(loadWallpaperMode(appContext)) }
+    SettingsDetailPage(
+        title = I18n.t("settings_desktop_wallpaper_entry"),
+        subtitle = I18n.t("settings_desktop_wallpaper_entry_desc"),
+        topInset = topInset,
+        onBack = onBack,
+    ) {
+        item(key = "wallpaper") {
+            WallpaperSettingsCard(
+                enabled = wallpaperEnabled,
+                backgroundUri = wallpaperBackgroundUri,
+                mode = wallpaperMode,
+                onModeChanged = { mode ->
+                    wallpaperMode = mode
+                    saveWallpaperMode(appContext, mode)
+                },
+                onEnabledChanged = { wallpaperEnabled = it },
+                onBackgroundChanged = { uri ->
+                    wallpaperBackgroundUri = uri
+                    saveWallpaperBackgroundUri(appContext, uri)
+                },
+                onAdjustPosition = {
+                    if (wallpaperMode == com.bangdream.pet.WallpaperMode.MULTI) {
+                        context.startActivity(Intent(context, com.bangdream.pet.MultiWallpaperManageActivity::class.java))
+                    } else {
+                        context.startActivity(Intent(context, com.bangdream.pet.WallpaperAdjustActivity::class.java))
+                    }
+                },
+                showMaster = false,
+            )
+        }
+        item(key = "original_wallpaper") {
+            OriginalWallpaperCard(
+                onCaptured = { uri ->
+                    wallpaperBackgroundUri = uri
+                    saveWallpaperBackgroundUri(appContext, uri)
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun DesktopInteractionPage(topInset: Dp, onBack: () -> Unit) {
+    SettingsDetailPage(
+        title = I18n.t("settings_desktop_interaction_entry"),
+        subtitle = I18n.t("settings_desktop_interaction_entry_desc"),
+        topInset = topInset,
+        onBack = onBack,
+    ) {
+        item(key = "interaction") { InteractionSettingsCard() }
+    }
+}
+
+@Composable
+private fun RenderPerformancePage(
+    settings: RenderSettings,
+    onSettingsChanged: (RenderSettings) -> Unit,
+    topInset: Dp,
+    onBack: () -> Unit,
+) {
+    SettingsDetailPage(
+        title = I18n.t("settings_desktop_render_entry"),
+        subtitle = I18n.t("settings_live2d_desc"),
+        topInset = topInset,
+        onBack = onBack,
+    ) {
+        item(key = "render") {
+            RenderSettingsCard(settings = settings, onSettingsChanged = onSettingsChanged)
+        }
+    }
+}
+
+@Composable
+private fun VoicePage(selectedModel: ModelChoice?, topInset: Dp, onBack: () -> Unit) {
+    SettingsDetailPage(
+        title = I18n.t("settings_voice_entry"),
+        subtitle = I18n.t("settings_voice_entry_desc"),
+        topInset = topInset,
+        onBack = onBack,
+    ) {
+        item(key = "voice_settings") { VoiceSettingsCard() }
+        item(key = "voice_samples") { VoiceSamplesCard(selectedModel = selectedModel) }
+        item(key = "builtin_voice") { BuiltinVoiceCard(selectedModel = selectedModel) }
+    }
+}
