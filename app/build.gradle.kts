@@ -1,5 +1,6 @@
 import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.Sync
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -7,10 +8,18 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val releaseStorePath = providers.gradleProperty("BANGDREAM_RELEASE_STORE_FILE").orNull
-val releaseStorePassword = providers.gradleProperty("BANGDREAM_RELEASE_STORE_PASSWORD").orNull
-val releaseKeyAlias = providers.gradleProperty("BANGDREAM_RELEASE_KEY_ALIAS").orNull
-val releaseKeyPassword = providers.gradleProperty("BANGDREAM_RELEASE_KEY_PASSWORD").orNull
+// Local credentials stay out of Git; Gradle properties can still override them in CI.
+val localSigningProperties = Properties().apply {
+    val localFile = rootProject.file("release-signing.properties")
+    if (localFile.isFile) localFile.reader(Charsets.UTF_8).use { load(it) }
+}
+fun releaseProperty(name: String): String? =
+    providers.gradleProperty(name).orNull ?: localSigningProperties.getProperty(name)
+
+val releaseStorePath = releaseProperty("BANGDREAM_RELEASE_STORE_FILE")
+val releaseStorePassword = releaseProperty("BANGDREAM_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = releaseProperty("BANGDREAM_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = releaseProperty("BANGDREAM_RELEASE_KEY_PASSWORD")
 val hasReleaseSigning = listOf(
     releaseStorePath,
     releaseStorePassword,
@@ -197,5 +206,3 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }
-
-
