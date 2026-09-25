@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Spacer
@@ -101,6 +102,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.bangdream.pet.DarkModeSetting
 import com.bangdream.pet.ChatDisplayPreferences
+import com.bangdream.pet.LineBackgroundImageStore
 import com.bangdream.pet.I18n
 import com.bangdream.pet.RenderResolution
 import com.bangdream.pet.RenderSettings
@@ -138,6 +140,7 @@ import com.bangdream.pet.saveBubbleEnabled
 import com.bangdream.pet.data.ModelChoice
 import com.bangdream.pet.AvatarManager
 import com.bangdream.pet.ui.ImageBitmapCache
+import com.bangdream.pet.ui.chat.LineChatBackground
 import com.bangdream.pet.ui.SampledImageDecoder
 import com.bangdream.pet.isWallpaperEnabled
 import com.bangdream.pet.llm.ChatHistoryRepository
@@ -2192,6 +2195,7 @@ private fun PersonalizationPage(topInset: Dp, onBack: () -> Unit) {
     }
     SettingsDetailPage(title = I18n.t("settings_personalization_title"), subtitle = I18n.t("settings_personalization_desc"), topInset = topInset, onBack = onBack) {
         item(key = "line_ui") { LineUiSettingsCard() }
+        item(key = "line_appearance") { LineAppearanceSettingsCard(display, ::update) }
         item(key = "chat_display") {
             SettingsSectionCard {
                 Column(Modifier.padding(vertical = 4.dp)) {
@@ -2240,6 +2244,105 @@ private fun PersonalizationPage(topInset: Dp, onBack: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LineAppearanceSettingsCard(
+    display: ChatDisplayPreferences,
+    onChange: (ChatDisplayPreferences) -> Unit,
+) {
+    val context = LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch {
+            runCatching { LineBackgroundImageStore.import(context, uri) }
+                .onSuccess { path ->
+                    val oldPath = display.lineBackgroundImagePath
+                    onChange(display.copy(lineBackgroundImagePath = path))
+                    LineBackgroundImageStore.deleteOwned(context, oldPath)
+                }
+                .onFailure {
+                    Toast.makeText(context, I18n.t("settings_line_image_error"), Toast.LENGTH_LONG).show()
+                }
+        }
+    }
+    SettingsSectionCard {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(I18n.t("settings_line_appearance"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(I18n.t("settings_line_appearance_desc"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            LineColorSetting(I18n.t("settings_line_own_bubble_color"), display.lineOwnBubbleColor) {
+                onChange(display.copy(lineOwnBubbleColor = it))
+            }
+            LineColorSetting(I18n.t("settings_line_other_bubble_color"), display.lineOtherBubbleColor) {
+                onChange(display.copy(lineOtherBubbleColor = it))
+            }
+            LineColorSetting(I18n.t("settings_line_background_color"), display.lineBackgroundColor) {
+                onChange(display.copy(lineBackgroundColor = it))
+            }
+            Text(I18n.t("settings_line_color_format"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            Text(I18n.t("settings_line_background_image"), fontWeight = FontWeight.SemiBold)
+            Text(I18n.t("settings_line_background_image_desc"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            if (!display.lineBackgroundImagePath.isNullOrBlank()) {
+                Box(
+                    Modifier.fillMaxWidth().height(110.dp).clip(RoundedCornerShape(12.dp))
+                        .background(Color(display.lineBackgroundColor)),
+                ) {
+                    LineChatBackground(display.lineBackgroundImagePath, Modifier.fillMaxSize())
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                FilledTonalButton(onClick = {
+                    imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }) { Text(I18n.t("settings_line_choose_image")) }
+                if (!display.lineBackgroundImagePath.isNullOrBlank()) {
+                    TextButton(onClick = {
+                        val oldPath = display.lineBackgroundImagePath
+                        onChange(display.copy(lineBackgroundImagePath = null))
+                        LineBackgroundImageStore.deleteOwned(context, oldPath)
+                    }) { Text(I18n.t("settings_line_use_color")) }
+                }
+            }
+            TextButton(onClick = {
+                val oldPath = display.lineBackgroundImagePath
+                onChange(display.copy(
+                    lineOwnBubbleColor = ChatDisplayPreferences.DEFAULT_LINE_OWN_BUBBLE_COLOR,
+                    lineOtherBubbleColor = ChatDisplayPreferences.DEFAULT_LINE_OTHER_BUBBLE_COLOR,
+                    lineBackgroundColor = ChatDisplayPreferences.DEFAULT_LINE_BACKGROUND_COLOR,
+                    lineBackgroundImagePath = null,
+                ))
+                LineBackgroundImageStore.deleteOwned(context, oldPath)
+            }) { Text(I18n.t("settings_line_reset_colors")) }
+        }
+    }
+}
+
+@Composable
+private fun LineColorSetting(label: String, value: Int, onChange: (Int) -> Unit) {
+    var text by remember(value) { mutableStateOf("#%06X".format(value and 0xFFFFFF)) }
+    val valid = Regex("^#?[0-9a-fA-F]{6}$").matches(text)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        androidx.compose.material3.Surface(
+            modifier = Modifier.size(30.dp),
+            shape = CircleShape,
+            color = Color(value),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {}
+        OutlinedTextField(
+            value = text,
+            onValueChange = { input ->
+                if (input.length <= 7) {
+                    text = input
+                    if (Regex("^#?[0-9a-fA-F]{6}$").matches(input)) {
+                        onChange((0xFF000000L or input.removePrefix("#").toLong(16)).toInt())
+                    }
+                }
+            },
+            label = { Text(label) },
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            isError = text.isNotBlank() && !valid,
+        )
     }
 }
 

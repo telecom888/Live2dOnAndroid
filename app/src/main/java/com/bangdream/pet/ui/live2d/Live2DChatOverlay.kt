@@ -102,6 +102,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.LocalContext
@@ -129,6 +130,7 @@ import com.bangdream.pet.ui.ImageBitmapCache
 import com.bangdream.pet.ui.SampledImageDecoder
 import com.bangdream.pet.ui.chat.PickedImage
 import com.bangdream.pet.ui.chat.PickedImageThumb
+import com.bangdream.pet.ui.chat.LineChatBackground
 import com.bangdream.pet.ui.chat.contentUriToImageDataUrl
 import java.text.DateFormat
 import java.text.SimpleDateFormat
@@ -222,7 +224,9 @@ fun Live2DChatOverlay(
                 val bottomPadding = if (compactForIme) 4.dp + imeOverlap else 18.dp - 2.dp * morphProgress
                 val cornerRadius = 26.dp + (28.dp - 26.dp) * morphProgress
                 val launcherColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.96f)
-                val panelColor = if (loadLineUiEnabled(context)) Color(0xFFAAC2D3) else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.98f)
+                val lineUiEnabled = loadLineUiEnabled(context)
+                val panelColor = if (lineUiEnabled) Color(ChatDisplayPreferences.load(context).lineBackgroundColor) else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.98f)
+                val panelTextColor = if (lineUiEnabled && panelColor.luminance() < 0.45f) Color.White else Color(0xFF1B1B1B)
 
                 Surface(
                     modifier = Modifier
@@ -237,7 +241,7 @@ fun Live2DChatOverlay(
                         },
                     shape = RoundedCornerShape(cornerRadius),
                     color = lerp(launcherColor, panelColor, morphProgress),
-                    contentColor = if (loadLineUiEnabled(context)) Color(0xFF1B1B1B) else MaterialTheme.colorScheme.onSurface,
+                    contentColor = if (lineUiEnabled) panelTextColor else MaterialTheme.colorScheme.onSurface,
                     tonalElevation = 6.dp + 4.dp * morphProgress,
                     shadowElevation = 6.dp + 4.dp * morphProgress,
                 ) {
@@ -325,6 +329,9 @@ private fun ChatPanelContent(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val lineMode = loadLineUiEnabled(context)
+    val lineBackgroundColor = Color(ChatDisplayPreferences.load(context).lineBackgroundColor)
+    val lineForegroundColor = if (lineBackgroundColor.luminance() < 0.45f) Color.White else Color(0xFF1B1B1B)
     val scope = rememberCoroutineScope()
     val imageInputEnabled = settings.imageInputEnabled
     var selectedImages by remember { mutableStateOf<List<PickedImage>>(emptyList()) }
@@ -368,7 +375,7 @@ private fun ChatPanelContent(
                     Text(
                         "本机模式 · ${settings.model.ifBlank { I18n.t("chat_not_configured_short") }}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (lineMode) lineForegroundColor.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 IconButton(onClick = onHistoryRequest) {
@@ -724,8 +731,10 @@ internal fun ChatMessageList(
     }
     BoxWithConstraints(modifier = modifier) {
         val bubbleMaxWidth = (maxWidth * if (lineMode && displayPreferences.showMessageTime && displayPreferences.showMonthDay) 0.56f else if (lineMode) 0.68f else 0.82f).coerceAtMost(560.dp)
+        Box(Modifier.fillMaxSize().then(if (lineMode) Modifier.background(Color(displayPreferences.lineBackgroundColor)) else Modifier)) {
+            if (lineMode) LineChatBackground(displayPreferences.lineBackgroundImagePath, Modifier.fillMaxSize())
         LazyColumn(
-            modifier = Modifier.fillMaxSize().then(if (lineMode) Modifier.background(Color(0xFFAAC2D3)) else Modifier),
+            modifier = Modifier.fillMaxSize(),
             state = listState,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -784,6 +793,7 @@ internal fun ChatMessageList(
                     )
                 }
             }
+        }
         }
     }
     actionMessage?.let { selected ->
@@ -912,6 +922,8 @@ internal fun ChatBubble(
     maxBubbleWidth: Dp = 420.dp,
 ) {
     val fromUser = role == "user"
+    val lineBubbleColor = Color(if (fromUser) displayPreferences.lineOwnBubbleColor else displayPreferences.lineOtherBubbleColor)
+    val lineBubbleTextColor = if (lineBubbleColor.luminance() < 0.45f) Color.White else Color(0xFF1B1B1B)
     val context = LocalContext.current
     var previewImage by remember { mutableStateOf<String?>(null) }
     Column(
@@ -948,6 +960,7 @@ internal fun ChatBubble(
                         LineMessageMetadata(
                             time = if (displayPreferences.showMessageTime) formatMessageTime(context, timestamp, displayPreferences.showMonthDay) else "",
                             read = read,
+                            displayPreferences = displayPreferences,
                             modifier = Modifier.padding(end = 6.dp),
                         )
                     }
@@ -961,10 +974,8 @@ internal fun ChatBubble(
                         bottomStart = if (fromUser) 20.dp else 6.dp,
                         bottomEnd = if (fromUser) 6.dp else 20.dp,
                     ),
-                    color = if (lineMode && fromUser) {
-                        Color(0xFFFFE327)
-                    } else if (lineMode) {
-                        Color.White
+                    color = if (lineMode) {
+                        lineBubbleColor
                     } else if (fromUser) {
                         MaterialTheme.colorScheme.primaryContainer
                     } else {
@@ -979,12 +990,12 @@ internal fun ChatBubble(
                     )) {
                         if (thinking) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = if (lineMode) lineBubbleTextColor else MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.width(8.dp))
                                 Text(
                                     I18n.t("chat_thinking"),
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = if (lineMode) lineBubbleTextColor else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -997,7 +1008,7 @@ internal fun ChatBubble(
                         }
                         if (onLongPress == null) SelectionContainer {
                             if (ranges.isEmpty()) {
-                                Text(content, style = MaterialTheme.typography.bodyMedium, color = if (lineMode) Color(0xFF1B1B1B) else Color.Unspecified)
+                                Text(content, style = MaterialTheme.typography.bodyMedium, color = if (lineMode) lineBubbleTextColor else Color.Unspecified)
                             } else {
                                 val annotated = buildAnnotatedString {
                                     var last = 0
@@ -1017,10 +1028,10 @@ internal fun ChatBubble(
                                     }
                                     if (last < content.length) append(content.substring(last))
                                 }
-                                Text(annotated, style = MaterialTheme.typography.bodyMedium, color = if (lineMode) Color(0xFF1B1B1B) else Color.Unspecified)
+                                Text(annotated, style = MaterialTheme.typography.bodyMedium, color = if (lineMode) lineBubbleTextColor else Color.Unspecified)
                             }
                         } else {
-                            Text(content, style = MaterialTheme.typography.bodyMedium, color = if (lineMode) Color(0xFF1B1B1B) else Color.Unspecified)
+                            Text(content, style = MaterialTheme.typography.bodyMedium, color = if (lineMode) lineBubbleTextColor else Color.Unspecified)
                         }
                         if (images.isNotEmpty()) {
                             Row(
@@ -1041,6 +1052,7 @@ internal fun ChatBubble(
                         LineMessageMetadata(
                             time = if (displayPreferences.showMessageTime) formatMessageTime(context, timestamp, displayPreferences.showMonthDay) else "",
                             read = false,
+                            displayPreferences = displayPreferences,
                             modifier = Modifier.padding(start = 6.dp),
                         )
                     }
@@ -1296,11 +1308,21 @@ private fun formatMessageTime(context: android.content.Context, timestamp: Long,
 }
 
 @Composable
-private fun LineMessageMetadata(time: String, read: Boolean, modifier: Modifier = Modifier) {
+private fun LineMessageMetadata(
+    time: String,
+    read: Boolean,
+    displayPreferences: ChatDisplayPreferences,
+    modifier: Modifier = Modifier,
+) {
     if (time.isBlank() && !read) return
-    Column(modifier, horizontalAlignment = Alignment.End) {
-        if (read) Text(I18n.t("chat_read_receipt"), style = MaterialTheme.typography.labelSmall, color = Color(0xFF435B69))
-        if (time.isNotBlank()) Text(time, style = MaterialTheme.typography.labelSmall, color = Color(0xFF435B69))
+    val imageBackground = !displayPreferences.lineBackgroundImagePath.isNullOrBlank()
+    val textColor = if (imageBackground || Color(displayPreferences.lineBackgroundColor).luminance() < 0.45f) Color.White else Color(0xFF435B69)
+    val metadataModifier = if (imageBackground) {
+        modifier.background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(5.dp)).padding(horizontal = 3.dp, vertical = 2.dp)
+    } else modifier
+    Column(metadataModifier, horizontalAlignment = Alignment.End) {
+        if (read) Text(I18n.t("chat_read_receipt"), style = MaterialTheme.typography.labelSmall, color = textColor)
+        if (time.isNotBlank()) Text(time, style = MaterialTheme.typography.labelSmall, color = textColor)
     }
 }
 

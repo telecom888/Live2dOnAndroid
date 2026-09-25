@@ -55,12 +55,14 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -70,6 +72,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -562,6 +565,8 @@ private fun ConversationDetailScreen(
     val context = LocalContext.current
     val lineMode = loadLineUiEnabled(context)
     val displayPreferences = ChatDisplayPreferences.load(context)
+    val lineBackgroundColor = Color(displayPreferences.lineBackgroundColor)
+    val lineForegroundColor = if (lineBackgroundColor.luminance() < 0.45f) Color.White else Color(0xFF1B1B1B)
     val scope = rememberCoroutineScope()
     val contextTokens = remember { LlmSettings.load(context.applicationContext).contextTokens }
     val usedTokens = remember(state.messages) {
@@ -611,7 +616,8 @@ private fun ConversationDetailScreen(
         }
     }
 
-    Column(modifier.fillMaxSize().then(if (lineMode) Modifier.background(Color(0xFFAAC2D3)) else Modifier).navigationBarsPadding().imePadding()) {
+    CompositionLocalProvider(LocalContentColor provides if (lineMode) lineForegroundColor else LocalContentColor.current) {
+    Column(modifier.fillMaxSize().then(if (lineMode) Modifier.background(lineBackgroundColor) else Modifier).navigationBarsPadding().imePadding()) {
         Row(
             modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -627,8 +633,8 @@ private fun ConversationDetailScreen(
                     placeholder = { Text(I18n.t("chat_search_messages")) },
                     singleLine = true,
                     colors = if (lineMode) OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color(0xFF1B1B1B), unfocusedTextColor = Color(0xFF1B1B1B),
-                        focusedBorderColor = Color(0xFF435B69), unfocusedBorderColor = Color(0xFF435B69),
+                        focusedTextColor = lineForegroundColor, unfocusedTextColor = lineForegroundColor,
+                        focusedBorderColor = lineForegroundColor, unfocusedBorderColor = lineForegroundColor.copy(alpha = 0.75f),
                     ) else OutlinedTextFieldDefaults.colors(),
                 )
                 IconButton(onClick = { searchMode = false; searchQuery = ""; scrollTarget = null }) {
@@ -639,7 +645,7 @@ private fun ConversationDetailScreen(
                     state.conversationTitle.ifBlank { I18n.t("chat_new_conversation") },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (lineMode) Color(0xFF1B1B1B) else Color.Unspecified,
+                    color = if (lineMode) lineForegroundColor else Color.Unspecified,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
@@ -662,12 +668,12 @@ private fun ConversationDetailScreen(
                 Text(
                     I18n.t("chat_context_usage_estimate"),
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (lineMode) Color(0xFF435B69) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (lineMode) lineForegroundColor.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
                     "${formatTokens(usedTokens)} / ${formatTokens(contextTokens)}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (lineMode) Color(0xFF435B69) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (lineMode) lineForegroundColor.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -826,6 +832,7 @@ private fun ConversationDetailScreen(
                 )
             }
         }
+    }
     }
 
     if (renameDialog) {

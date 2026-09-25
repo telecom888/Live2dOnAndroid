@@ -9,6 +9,10 @@ data class ChatDisplayPreferences(
     val showRetryIcon: Boolean = true,
     val showContextUsage: Boolean = true,
     val showModelTimeControl: Boolean = true,
+    val lineOwnBubbleColor: Int = DEFAULT_LINE_OWN_BUBBLE_COLOR,
+    val lineOtherBubbleColor: Int = DEFAULT_LINE_OTHER_BUBBLE_COLOR,
+    val lineBackgroundColor: Int = DEFAULT_LINE_BACKGROUND_COLOR,
+    val lineBackgroundImagePath: String? = null,
 ) {
     fun save(context: Context) {
         context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE).edit()
@@ -18,10 +22,21 @@ data class ChatDisplayPreferences(
             .putBoolean("chat_show_retry_icon", showRetryIcon)
             .putBoolean("chat_show_context_usage", showContextUsage)
             .putBoolean("chat_show_model_time_control", showModelTimeControl)
+            .putInt("chat_line_own_bubble_color", lineOwnBubbleColor)
+            .putInt("chat_line_other_bubble_color", lineOtherBubbleColor)
+            .putInt("chat_line_background_color", lineBackgroundColor)
+            .apply {
+                if (lineBackgroundImagePath.isNullOrBlank()) remove("chat_line_background_image_path")
+                else putString("chat_line_background_image_path", lineBackgroundImagePath)
+            }
             .apply()
     }
 
     companion object {
+        val DEFAULT_LINE_OWN_BUBBLE_COLOR: Int = 0xFFFFE327.toInt()
+        val DEFAULT_LINE_OTHER_BUBBLE_COLOR: Int = 0xFFFFFFFF.toInt()
+        val DEFAULT_LINE_BACKGROUND_COLOR: Int = 0xFFAAC2D3.toInt()
+
         fun load(context: Context): ChatDisplayPreferences {
             val prefs = context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
             return ChatDisplayPreferences(
@@ -31,6 +46,10 @@ data class ChatDisplayPreferences(
                 showRetryIcon = prefs.getBoolean("chat_show_retry_icon", true),
                 showContextUsage = prefs.getBoolean("chat_show_context_usage", true),
                 showModelTimeControl = prefs.getBoolean("chat_show_model_time_control", true),
+                lineOwnBubbleColor = prefs.getInt("chat_line_own_bubble_color", DEFAULT_LINE_OWN_BUBBLE_COLOR),
+                lineOtherBubbleColor = prefs.getInt("chat_line_other_bubble_color", DEFAULT_LINE_OTHER_BUBBLE_COLOR),
+                lineBackgroundColor = prefs.getInt("chat_line_background_color", DEFAULT_LINE_BACKGROUND_COLOR),
+                lineBackgroundImagePath = prefs.getString("chat_line_background_image_path", null),
             )
         }
     }
