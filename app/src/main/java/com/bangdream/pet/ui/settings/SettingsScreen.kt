@@ -2033,9 +2033,13 @@ private fun DesktopHomeCard(
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
     var wallpaperEnabled by remember { mutableStateOf(isWallpaperEnabled(appContext)) }
+    var overlayAllowed by remember { mutableStateOf(Settings.canDrawOverlays(appContext)) }
     var showAllFilesAccessDialog by remember { mutableStateOf(false) }
     val allFilesAccessLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         showAllFilesAccessDialog = false
+    }
+    val overlayPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        overlayAllowed = Settings.canDrawOverlays(appContext)
     }
     SettingsSectionCard {
         Column(Modifier.padding(vertical = 4.dp)) {
@@ -2091,6 +2095,25 @@ private fun DesktopHomeCard(
                 title = I18n.t("settings_desktop_render_entry"),
                 subtitle = I18n.t("settings_desktop_render_entry_desc"),
                 onClick = onOpenRender,
+            )
+            SettingsNavRow(
+                title = I18n.t("settings_overlay_permission_title"),
+                subtitle = I18n.t(
+                    if (overlayAllowed) "settings_overlay_permission_granted" else "settings_overlay_permission_not_granted",
+                ),
+                onClick = {
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:${appContext.packageName}"),
+                    )
+                    runCatching { overlayPermissionLauncher.launch(intent) }
+                        .recoverCatching {
+                            overlayPermissionLauncher.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+                        }
+                        .onFailure {
+                            Toast.makeText(appContext, I18n.t("settings_overlay_permission_open_failed"), Toast.LENGTH_LONG).show()
+                        }
+                },
                 divider = false,
             )
         }
