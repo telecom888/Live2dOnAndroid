@@ -13,6 +13,9 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 class LlmChatClient {
@@ -155,8 +158,16 @@ class LlmChatClient {
         JSONArray().apply {
             put(JSONObject().put("role", "system").put("content", systemPrompt))
             messages.forEach { message ->
-                val contentJson: Any = if (message.images.isEmpty()) {
+                val requestText = if (message.role == "user" && message.timeContextEnabled && message.timestamp > 0L) {
+                    val zone = runCatching { ZoneId.of(message.timeZoneId ?: "UTC") }.getOrDefault(ZoneId.of("UTC"))
+                    val sentAt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm XXX")
+                        .withZone(zone).format(Instant.ofEpochMilli(message.timestamp))
+                    "[此消息发送时间：$sentAt]\n${message.content}"
+                } else {
                     message.content
+                }
+                val contentJson: Any = if (message.images.isEmpty()) {
+                    requestText
                 } else {
                     JSONArray().apply {
                         message.images.forEach { imageUrl ->
@@ -166,7 +177,7 @@ class LlmChatClient {
                                     .put("image_url", JSONObject().put("url", imageUrl)),
                             )
                         }
-                        put(JSONObject().put("type", "text").put("text", message.content))
+                        put(JSONObject().put("type", "text").put("text", requestText))
                     }
                 }
                 put(JSONObject().put("role", message.role).put("content", contentJson))

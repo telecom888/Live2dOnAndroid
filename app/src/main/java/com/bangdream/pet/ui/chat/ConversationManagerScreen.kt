@@ -13,6 +13,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -46,12 +48,15 @@ import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -78,6 +83,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bangdream.pet.data.AppData
+import com.bangdream.pet.ChatDisplayPreferences
+import com.bangdream.pet.I18n
 import com.bangdream.pet.loadLineUiEnabled
 import com.bangdream.pet.ui.design.appEntrance
 import com.bangdream.pet.data.CharacterInfo
@@ -88,6 +95,7 @@ import com.bangdream.pet.llm.ChatTextSearch
 import com.bangdream.pet.llm.ChatUiState
 import com.bangdream.pet.llm.LlmSettings
 import com.bangdream.pet.llm.Live2DChatViewModel
+import com.bangdream.pet.llm.TimeContextOverride
 import com.bangdream.pet.ui.design.emphasizedTween
 import com.bangdream.pet.ui.design.expressiveTween
 import com.bangdream.pet.ui.live2d.ChatMessageList
@@ -105,6 +113,7 @@ import kotlinx.coroutines.withContext
 fun ConversationManagerScreen(
     appData: AppData?,
     repository: DataRepository,
+    onDetailActiveChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val viewModel: Live2DChatViewModel = viewModel()
@@ -120,6 +129,7 @@ fun ConversationManagerScreen(
         openConversationId == null -> 1
         else -> 2
     }
+    LaunchedEffect(level) { onDetailActiveChange(level == 2) }
     BackHandler(enabled = level != 0) {
         when (level) {
             3 -> showCharacterSettings = false
@@ -164,7 +174,7 @@ fun ConversationManagerScreen(
                             characterId = character.id,
                             characterName = character.display,
                             costumeId = "",
-                            costumeName = "未下载",
+                            costumeName = I18n.t("chat_not_downloaded"),
                             modelAssetPath = "",
                         )
                         selectedCharacter = choice
@@ -229,7 +239,7 @@ private fun CharacterListScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "角色",
+                I18n.t("chat_characters"),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f),
@@ -239,13 +249,13 @@ private fun CharacterListScreen(
             value = filter,
             onValueChange = { filter = it },
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            label = { Text("搜索角色") },
+            label = { Text(I18n.t("chat_search_characters")) },
             singleLine = true,
         )
         Spacer(Modifier.height(8.dp))
         if (filtered.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(if (characters.isEmpty()) "暂无角色数据" else "未找到角色", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(I18n.t(if (characters.isEmpty()) "chat_no_characters" else "chat_no_character_match"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(
@@ -274,7 +284,7 @@ private fun CharacterListScreen(
                                     fontWeight = FontWeight.Medium,
                                 )
                                 Text(
-                                    "${character.costumes.size} 套服装",
+                                    I18n.t("chat_costume_count", character.costumes.size),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -334,7 +344,7 @@ private fun ConversationListScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Outlined.ArrowBack, contentDescription = "返回")
+                Icon(Icons.Outlined.ArrowBack, contentDescription = I18n.t("back"))
             }
             Text(
                 character.characterName,
@@ -343,17 +353,17 @@ private fun ConversationListScreen(
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = onCharacterSettings) {
-                Icon(Icons.Outlined.Tune, contentDescription = "角色设定")
+                Icon(Icons.Outlined.Tune, contentDescription = I18n.t("chat_character_settings"))
             }
             IconButton(onClick = onNew) {
-                Icon(Icons.Outlined.AddComment, contentDescription = "新建对话")
+                Icon(Icons.Outlined.AddComment, contentDescription = I18n.t("chat_new_conversation"))
             }
         }
         OutlinedTextField(
             value = filter,
             onValueChange = { filter = it },
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            label = { Text("搜索对话") },
+            label = { Text(I18n.t("chat_search_conversations")) },
             singleLine = true,
         )
         Spacer(Modifier.height(8.dp))
@@ -362,7 +372,7 @@ private fun ConversationListScreen(
                 CircularProgressIndicator()
             }
             filtered.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("暂无对话", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(I18n.t("chat_history_empty"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -398,14 +408,14 @@ private fun ConversationListScreen(
                             }
                             Column(Modifier.weight(1f)) {
                                 HighlightText(
-                                    text = conversation.title.ifBlank { "未命名对话" },
+                                    text = conversation.title.ifBlank { I18n.t("chat_untitled_conversation") },
                                     query = queryText,
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                     maxLines = 1,
                                 )
                                 HighlightText(
-                                    text = contentSnippet ?: conversation.preview.ifBlank { "空对话" },
+                                    text = contentSnippet ?: conversation.preview.ifBlank { I18n.t("chat_empty_conversation") },
                                     query = queryText,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -421,7 +431,7 @@ private fun ConversationListScreen(
                             IconButton(onClick = {
                                 pendingDelete = conversation
                             }) {
-                                Icon(Icons.Outlined.Delete, contentDescription = "删除")
+                                Icon(Icons.Outlined.Delete, contentDescription = I18n.t("settings_action_delete"))
                             }
                         }
                     }
@@ -433,17 +443,17 @@ private fun ConversationListScreen(
     detailConversation?.let { conversation ->
         AlertDialog(
             onDismissRequest = { detailConversation = null },
-            title = { Text("对话详情") },
+            title = { Text(I18n.t("chat_conversation_details")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("消息数：${stats?.messageCount ?: "…"}")
-                    Text("消息总字数：${stats?.totalChars ?: "…"}")
-                    Text("角色设定字数：${stats?.systemPromptChars ?: "…"}")
+                    Text(I18n.t("chat_stats_messages", stats?.messageCount ?: "…"))
+                    Text(I18n.t("chat_stats_characters", stats?.totalChars ?: "…"))
+                    Text(I18n.t("chat_stats_prompt_chars", stats?.systemPromptChars ?: "…"))
                     Spacer(Modifier.height(4.dp))
                     OutlinedTextField(
                         value = renameDraft,
                         onValueChange = { renameDraft = it },
-                        label = { Text("重命名标题") },
+                        label = { Text(I18n.t("chat_rename_title")) },
                         singleLine = true,
                     )
                 }
@@ -454,15 +464,15 @@ private fun ConversationListScreen(
                         viewModel.renameConversation(character.characterId, conversation.id, renameDraft)
                     }
                     detailConversation = null
-                }) { Text("保存") }
+                }) { Text(I18n.t("settings_action_save")) }
             },
             dismissButton = {
                 Row {
-                    TextButton(onClick = { detailConversation = null }) { Text("取消") }
+                    TextButton(onClick = { detailConversation = null }) { Text(I18n.t("cancel")) }
                     TextButton(onClick = {
                         viewModel.deleteConversation(character.characterId, conversation.id)
                         detailConversation = null
-                    }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                    }) { Text(I18n.t("settings_action_delete"), color = MaterialTheme.colorScheme.error) }
                 }
             },
         )
@@ -471,17 +481,17 @@ private fun ConversationListScreen(
     actionConversation?.let { conversation ->
         AlertDialog(
             onDismissRequest = { actionConversation = null },
-            title = { Text("对话操作") },
+            title = { Text(I18n.t("chat_conversation_actions")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        conversation.title.ifBlank { "未命名对话" },
+                        conversation.title.ifBlank { I18n.t("chat_untitled_conversation") },
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "载入后，该对话将作为「${character.characterName}」的长期记忆，之后的对话会自然地带上它。",
+                        I18n.t("chat_load_memory_desc", character.characterName),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -494,18 +504,18 @@ private fun ConversationListScreen(
                         character.characterName,
                         conversation.id,
                     )
-                    Toast.makeText(context, "已载入角色记忆", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, I18n.t("chat_memory_loaded"), Toast.LENGTH_SHORT).show()
                     actionConversation = null
-                }) { Text("载入角色记忆") }
+                }) { Text(I18n.t("chat_load_memory")) }
             },
             dismissButton = {
                 Row {
-                    TextButton(onClick = { actionConversation = null }) { Text("取消") }
+                    TextButton(onClick = { actionConversation = null }) { Text(I18n.t("cancel")) }
                     TextButton(onClick = {
                         renameDraft = conversation.title
                         detailConversation = conversation
                         actionConversation = null
-                    }) { Text("对话详情") }
+                    }) { Text(I18n.t("chat_conversation_details")) }
                 }
             },
         )
@@ -514,20 +524,20 @@ private fun ConversationListScreen(
     pendingDelete?.let { conversation ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("删除对话") },
+            title = { Text(I18n.t("chat_delete_conversation")) },
             text = {
                 Text(
-                    "确定删除「${conversation.title.ifBlank { "未命名对话" }}」吗？删除后不可恢复。",
+                    I18n.t("chat_delete_conversation_confirm", conversation.title.ifBlank { I18n.t("chat_untitled_conversation") }),
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.deleteConversation(character.characterId, conversation.id)
                     pendingDelete = null
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }) { Text(I18n.t("settings_action_delete"), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+                TextButton(onClick = { pendingDelete = null }) { Text(I18n.t("cancel")) }
             },
         )
     }
@@ -547,8 +557,11 @@ private fun ConversationDetailScreen(
     var scrollTarget by remember { mutableStateOf<String?>(null) }
     var renameDialog by remember { mutableStateOf(false) }
     var renameDraft by remember { mutableStateOf("") }
+    var timeMenuExpanded by remember { mutableStateOf(false) }
     val input = remember { mutableStateOf("") }
     val context = LocalContext.current
+    val lineMode = loadLineUiEnabled(context)
+    val displayPreferences = ChatDisplayPreferences.load(context)
     val scope = rememberCoroutineScope()
     val contextTokens = remember { LlmSettings.load(context.applicationContext).contextTokens }
     val usedTokens = remember(state.messages) {
@@ -598,30 +611,35 @@ private fun ConversationDetailScreen(
         }
     }
 
-    Column(modifier.fillMaxSize().imePadding()) {
+    Column(modifier.fillMaxSize().then(if (lineMode) Modifier.background(Color(0xFFAAC2D3)) else Modifier).navigationBarsPadding().imePadding()) {
         Row(
             modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Outlined.ArrowBack, contentDescription = "返回")
+                Icon(Icons.Outlined.ArrowBack, contentDescription = I18n.t("back"))
             }
             if (searchMode) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("搜索消息…") },
+                    placeholder = { Text(I18n.t("chat_search_messages")) },
                     singleLine = true,
+                    colors = if (lineMode) OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color(0xFF1B1B1B), unfocusedTextColor = Color(0xFF1B1B1B),
+                        focusedBorderColor = Color(0xFF435B69), unfocusedBorderColor = Color(0xFF435B69),
+                    ) else OutlinedTextFieldDefaults.colors(),
                 )
                 IconButton(onClick = { searchMode = false; searchQuery = ""; scrollTarget = null }) {
-                    Icon(Icons.Outlined.Close, contentDescription = "关闭搜索")
+                    Icon(Icons.Outlined.Close, contentDescription = I18n.t("chat_close_search"))
                 }
             } else {
                 Text(
-                    state.conversationTitle.ifBlank { "新对话" },
+                    state.conversationTitle.ifBlank { I18n.t("chat_new_conversation") },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
+                    color = if (lineMode) Color(0xFF1B1B1B) else Color.Unspecified,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
@@ -629,35 +647,62 @@ private fun ConversationDetailScreen(
                 IconButton(onClick = {
                     renameDraft = state.conversationTitle
                     renameDialog = true
-                }) { Text("改", style = MaterialTheme.typography.labelLarge) }
+                }) { Text(I18n.t("chat_rename_short"), style = MaterialTheme.typography.labelLarge) }
                 IconButton(onClick = { searchMode = true }) {
-                    Icon(Icons.Outlined.Search, contentDescription = "搜索")
+                    Icon(Icons.Outlined.Search, contentDescription = I18n.t("chat_search"))
                 }
             }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "上下文占用（消息内容预估）",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                "${formatTokens(usedTokens)} / ${formatTokens(contextTokens)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        if (displayPreferences.showContextUsage) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    I18n.t("chat_context_usage_estimate"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (lineMode) Color(0xFF435B69) else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "${formatTokens(usedTokens)} / ${formatTokens(contextTokens)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (lineMode) Color(0xFF435B69) else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
-        LinearProgressIndicator(
-            progress = { usageRatio },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(5.dp),
-            color = if (usageRatio >= 0.8f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        )
-        Spacer(Modifier.height(6.dp))
+        if (displayPreferences.showModelTimeControl) {
+            Box(Modifier.padding(horizontal = 12.dp)) {
+                TextButton(onClick = { timeMenuExpanded = true }, enabled = !state.isGenerating) {
+                    Text(I18n.t("chat_time_mode", I18n.t(when (state.timeContextOverride) {
+                        TimeContextOverride.INHERIT -> "chat_time_inherit"
+                        TimeContextOverride.ENABLED -> "chat_time_enabled"
+                        TimeContextOverride.DISABLED -> "chat_time_disabled"
+                    })))
+                }
+                DropdownMenu(expanded = timeMenuExpanded, onDismissRequest = { timeMenuExpanded = false }) {
+                    listOf(
+                        TimeContextOverride.INHERIT to "chat_time_inherit",
+                        TimeContextOverride.ENABLED to "chat_time_this_enabled",
+                        TimeContextOverride.DISABLED to "chat_time_this_disabled",
+                    ).forEach { (value, label) ->
+                        DropdownMenuItem(text = { Text(I18n.t(label)) }, onClick = {
+                            viewModel.setTimeContextOverride(value)
+                            timeMenuExpanded = false
+                        })
+                    }
+                }
+            }
+        }
+        if (displayPreferences.showContextUsage) {
+            LinearProgressIndicator(
+                progress = { usageRatio },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(5.dp),
+                color = if (usageRatio >= 0.8f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            )
+            Spacer(Modifier.height(6.dp))
+        }
         if (state.isHistoryLoading) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -686,7 +731,7 @@ private fun ConversationDetailScreen(
                                 style = MaterialTheme.typography.bodySmall,
                             )
                             Text(
-                                "第 ${match.messageIndex + 1} 条 · 匹配度 ${match.score}",
+                                I18n.t("chat_search_result_meta", match.messageIndex + 1, match.score),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -696,7 +741,7 @@ private fun ConversationDetailScreen(
                 if (searchResults.isEmpty()) {
                     item(key = "empty") {
                         Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                            Text("未找到匹配消息", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(I18n.t("chat_no_message_match"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -711,7 +756,20 @@ private fun ConversationDetailScreen(
                 scrollToMessageId = scrollTarget,
                 onReplay = { message -> viewModel.replayMessage(character.characterId, message.content) },
                 characterId = character.characterId,
-                lineMode = loadLineUiEnabled(context),
+                characterName = character.characterName,
+                lineMode = lineMode,
+                displayPreferences = displayPreferences,
+                versionPositions = state.versionPositions,
+                restoreReplyId = state.restoreReplyId,
+                onSwitchVersion = if (!state.isGenerating) viewModel::switchMessageVersion else null,
+                onEditMessage = if (!state.isGenerating) { message, text, keep ->
+                    viewModel.editAndResend(character, message.id, text, keep)
+                    Unit
+                } else null,
+                onRegenerateMessage = if (!state.isGenerating) { message ->
+                    viewModel.regenerate(character, message.id)
+                    Unit
+                } else null,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }
@@ -740,16 +798,21 @@ private fun ConversationDetailScreen(
                     onClick = { imagePicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                     enabled = !state.isGenerating,
                 ) {
-                    Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = "添加图片")
+                    Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = I18n.t("chat_add_image"))
                 }
             }
             OutlinedTextField(
                 value = input.value,
                 onValueChange = { input.value = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("输入消息…") },
+                placeholder = { Text(I18n.t("chat_input_hint")) },
                 maxLines = 4,
                 enabled = !state.isGenerating,
+                colors = if (lineMode) OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color(0xFF1B1B1B), unfocusedTextColor = Color(0xFF1B1B1B),
+                    focusedContainerColor = Color.White, unfocusedContainerColor = Color.White,
+                    focusedBorderColor = Color(0xFF435B69), unfocusedBorderColor = Color(0xFF435B69),
+                ) else OutlinedTextFieldDefaults.colors(),
             )
             Spacer(Modifier.width(8.dp))
             FilledIconButton(
@@ -759,7 +822,7 @@ private fun ConversationDetailScreen(
             ) {
                 Icon(
                     if (state.isGenerating) Icons.Outlined.Stop else Icons.Outlined.Send,
-                    contentDescription = if (state.isGenerating) "停止" else "发送",
+                    contentDescription = I18n.t(if (state.isGenerating) "chat_stop" else "chat_send"),
                 )
             }
         }
@@ -768,7 +831,7 @@ private fun ConversationDetailScreen(
     if (renameDialog) {
         AlertDialog(
             onDismissRequest = { renameDialog = false },
-            title = { Text("重命名对话") },
+            title = { Text(I18n.t("chat_rename_conversation")) },
             text = {
                 OutlinedTextField(
                     value = renameDraft,
@@ -782,10 +845,10 @@ private fun ConversationDetailScreen(
                         viewModel.renameConversation(character.characterId, id, renameDraft)
                     }
                     renameDialog = false
-                }) { Text("保存") }
+                }) { Text(I18n.t("settings_action_save")) }
             },
             dismissButton = {
-                TextButton(onClick = { renameDialog = false }) { Text("取消") }
+                TextButton(onClick = { renameDialog = false }) { Text(I18n.t("cancel")) }
             },
         )
     }

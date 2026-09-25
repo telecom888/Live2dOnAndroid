@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -57,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bangdream.pet.data.AppData
@@ -148,6 +150,7 @@ fun BangDreamPetApp(
     var appData by remember { mutableStateOf<AppData?>(null) }
     var selectedScreen by rememberSaveable { mutableStateOf(Screen.Live2D) }
     var settingsDetailActive by remember { mutableStateOf(false) }
+    var chatDetailActive by remember { mutableStateOf(false) }
     // 之前每次重组都同步读一次 SharedPreferences；改为读一次 + 监听变更，
     // 设置页里开关 Line 导航时导航栏也能即时刷新。
     var lineNavEnabled by remember { mutableStateOf(loadLineNavEnabled(appContext)) }
@@ -260,12 +263,14 @@ fun BangDreamPetApp(
             val hazeState = rememberLiquidGlassState()
             val liquidGlass = themeSettings.liquidGlassEnabled && VisualGuard.supportsLiquidGlass(appContext)
             val statusBarInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
             val topInset = statusBarInset + 64.dp
             Box(Modifier.fillMaxSize()) {
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
                 topBar = {},
                 bottomBar = {
+                    if (!(selectedScreen == Screen.Chat && chatDetailActive) && !imeVisible) {
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         tonalElevation = 0.dp,
@@ -286,13 +291,14 @@ fun BangDreamPetApp(
                             )
                         }
                     }
+                    }
                 },
             ) { padding ->
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(padding)
-                        .padding(vertical = 8.dp)
+                        .then(if (selectedScreen == Screen.Chat && chatDetailActive) Modifier else Modifier.padding(padding))
+                        .padding(vertical = if (selectedScreen == Screen.Chat && chatDetailActive) 0.dp else 8.dp)
                         .appHazeSource(hazeState),
                 ) {
                     AnimatedContent(
@@ -351,11 +357,12 @@ fun BangDreamPetApp(
                             Screen.Chat -> ConversationManagerScreen(
                                 appData = appData,
                                 repository = repository,
+                                onDetailActiveChange = { chatDetailActive = it },
                             )
                             Screen.Line -> com.bangdream.pet.ui.line.LineScreen(
                                 appData = appData,
                             )
-                            Screen.Settings -> Box(Modifier.fillMaxSize().padding(horizontal = if (settingsDetailActive) 0.dp else 16.dp)) {
+                            Screen.Settings -> Box(Modifier.fillMaxSize()) {
                                 SettingsScreen(
                                 selectedModel = selectedModel,
                                 themeSettings = themeSettings,

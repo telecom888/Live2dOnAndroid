@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.bangdream.pet.ui.live2d
 
 import android.graphics.Rect
@@ -18,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -71,6 +74,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -87,9 +91,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -104,11 +114,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bangdream.pet.I18n
+import com.bangdream.pet.ChatDisplayPreferences
 import com.bangdream.pet.data.ModelChoice
 import com.bangdream.pet.llm.ChatConversationSummary
 import com.bangdream.pet.llm.ChatMessage
 import com.bangdream.pet.llm.ChatTextSearch
 import com.bangdream.pet.llm.ChatUiState
+import com.bangdream.pet.llm.MessageVersionPosition
 import com.bangdream.pet.llm.Live2DChatViewModel
 import com.bangdream.pet.llm.LlmSettings
 import com.bangdream.pet.loadLineUiEnabled
@@ -119,7 +131,9 @@ import com.bangdream.pet.ui.chat.PickedImage
 import com.bangdream.pet.ui.chat.PickedImageThumb
 import com.bangdream.pet.ui.chat.contentUriToImageDataUrl
 import java.text.DateFormat
+import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -204,10 +218,11 @@ fun Live2DChatOverlay(
                 val panelHeight = if (compactForIme) 80.dp else minOf(maxHeight * 0.60f, 620.dp)
                 val containerWidth = launcherSize + (panelWidth - launcherSize) * morphProgress
                 val containerHeight = launcherSize + (panelHeight - launcherSize) * morphProgress
-                val bottomPadding = 18.dp + ((16.dp + imeOverlap) - 18.dp) * morphProgress
+                // The host window may already be resized to the IME top. Only add actual overlap once.
+                val bottomPadding = if (compactForIme) 4.dp + imeOverlap else 18.dp - 2.dp * morphProgress
                 val cornerRadius = 26.dp + (28.dp - 26.dp) * morphProgress
                 val launcherColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.96f)
-                val panelColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.98f)
+                val panelColor = if (loadLineUiEnabled(context)) Color(0xFFAAC2D3) else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.98f)
 
                 Surface(
                     modifier = Modifier
@@ -222,7 +237,7 @@ fun Live2DChatOverlay(
                         },
                     shape = RoundedCornerShape(cornerRadius),
                     color = lerp(launcherColor, panelColor, morphProgress),
-                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    contentColor = if (loadLineUiEnabled(context)) Color(0xFF1B1B1B) else MaterialTheme.colorScheme.onSurface,
                     tonalElevation = 6.dp + 4.dp * morphProgress,
                     shadowElevation = 6.dp + 4.dp * morphProgress,
                 ) {
@@ -260,7 +275,7 @@ fun Live2DChatOverlay(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .graphicsLayer { alpha = panelContentAlpha }
-                                    .padding(if (compactForIme) 12.dp else 16.dp),
+                                    .padding(if (compactForIme) 4.dp else 16.dp),
                             )
                         }
                     }
@@ -384,7 +399,20 @@ private fun ChatPanelContent(
                     thinking = state.isThinking,
                     onReplay = null,
                     characterId = model.characterId,
+                    characterName = model.characterName,
                     lineMode = loadLineUiEnabled(context),
+                    displayPreferences = ChatDisplayPreferences.load(context),
+                    versionPositions = state.versionPositions,
+                    restoreReplyId = state.restoreReplyId,
+                    onSwitchVersion = if (!state.isGenerating) viewModel::switchMessageVersion else null,
+                    onEditMessage = if (!state.isGenerating) { message, text, keep ->
+                        viewModel.editAndResend(model, message.id, text, keep)
+                        Unit
+                    } else null,
+                    onRegenerateMessage = if (!state.isGenerating) { message ->
+                        viewModel.regenerate(model, message.id)
+                        Unit
+                    } else null,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
                 state.error?.let { error ->
@@ -404,8 +432,12 @@ private fun ChatPanelContent(
                                 style = MaterialTheme.typography.bodySmall,
                             )
                             if (isRetryableChatError(error)) {
-                                IconButton(onClick = { viewModel.retry(model) }) {
-                                    Icon(Icons.Outlined.Refresh, contentDescription = I18n.t("chat_retry"))
+                                if (ChatDisplayPreferences.load(context).showRetryIcon) {
+                                    IconButton(onClick = { viewModel.retry(model) }) {
+                                        Icon(Icons.Outlined.Refresh, contentDescription = I18n.t("chat_retry"))
+                                    }
+                                } else {
+                                    TextButton(onClick = { viewModel.retry(model) }) { Text(I18n.t("chat_retry")) }
                                 }
                             }
                         }
@@ -610,7 +642,6 @@ private fun ChatHistoryPanel(
 private val conversationTimestampFormat by lazy {
     DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
 }
-private val messageTimeFormat by lazy { DateFormat.getTimeInstance(DateFormat.SHORT) }
 
 private fun formatConversationTimestamp(timestamp: Long): String {
     if (timestamp <= 0L) return ""
@@ -651,11 +682,23 @@ internal fun ChatMessageList(
     highlightQuery: String? = null,
     scrollToMessageId: String? = null,
     characterId: String? = null,
+    characterName: String? = null,
     lineMode: Boolean = false,
+    displayPreferences: ChatDisplayPreferences = ChatDisplayPreferences(),
+    versionPositions: Map<String, MessageVersionPosition> = emptyMap(),
+    restoreReplyId: String? = null,
+    onSwitchVersion: ((String) -> Unit)? = null,
+    onEditMessage: ((ChatMessage, String, Boolean) -> Unit)? = null,
+    onRegenerateMessage: ((ChatMessage) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val avatar = if (lineMode) rememberChatAvatar(characterId) else null
-    val userAvatar = if (lineMode) rememberUserAvatar() else null
+    val userAvatar: ImageBitmap? = null
+    val context = LocalContext.current
+    var actionMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var editMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var editDraft by remember { mutableStateOf("") }
+    var keepImages by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
     val itemCount = messages.size + if (streamingText.isNotBlank() || thinking) 1 else 0
     val streamScrollBucket = streamingText.length / 24
@@ -680,9 +723,9 @@ internal fun ChatMessageList(
         consumedJump = false
     }
     BoxWithConstraints(modifier = modifier) {
-        val bubbleMaxWidth = (maxWidth * 0.82f).coerceAtMost(560.dp)
+        val bubbleMaxWidth = (maxWidth * if (lineMode && displayPreferences.showMessageTime && displayPreferences.showMonthDay) 0.56f else if (lineMode) 0.68f else 0.82f).coerceAtMost(560.dp)
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().then(if (lineMode) Modifier.background(Color(0xFFAAC2D3)) else Modifier),
             state = listState,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -691,7 +734,7 @@ internal fun ChatMessageList(
                 key = { it.id },
                 contentType = { "message" },
             ) { message ->
-                val replay = if (onReplay != null && message.role == "assistant") {
+                val replay = if (displayPreferences.showReadAloud && onReplay != null && message.role == "assistant") {
                     { onReplay(message) }
                 } else {
                     null
@@ -707,6 +750,20 @@ internal fun ChatMessageList(
                     avatar = avatar,
                     userAvatar = userAvatar,
                     lineMode = lineMode,
+                    senderName = characterName,
+                    displayPreferences = displayPreferences,
+                    versionPosition = versionPositions[message.id],
+                    onSwitchVersion = onSwitchVersion,
+                    onRestoreReply = if (message.id == messages.lastOrNull()?.id && restoreReplyId != null && onSwitchVersion != null) {
+                        { onSwitchVersion(restoreReplyId) }
+                    } else null,
+                    onRegenerate = if (message.role == "assistant" && onRegenerateMessage != null) {
+                        { onRegenerateMessage(message) }
+                    } else null,
+                    onLongPress = if ((message.role == "user" && onEditMessage != null) ||
+                        (message.role == "assistant" && onRegenerateMessage != null)) {
+                        { actionMessage = message }
+                    } else null,
                     read = message.read,
                     maxBubbleWidth = bubbleMaxWidth,
                 )
@@ -721,16 +778,115 @@ internal fun ChatMessageList(
                         avatar = avatar,
                         userAvatar = userAvatar,
                         lineMode = lineMode,
+                        senderName = characterName,
+                        displayPreferences = displayPreferences,
                         maxBubbleWidth = bubbleMaxWidth,
                     )
                 }
             }
         }
     }
+    actionMessage?.let { selected ->
+        AlertDialog(
+            onDismissRequest = { actionMessage = null },
+            title = { Text(I18n.t(if (selected.role == "user") "chat_user_message_actions" else "chat_assistant_message_actions")) },
+            text = { Text(selected.content.take(160)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    actionMessage = null
+                    if (selected.role == "user") {
+                        editDraft = selected.content
+                        keepImages = true
+                        editMessage = selected
+                    } else {
+                        onRegenerateMessage?.invoke(selected)
+                    }
+                }) { Text(I18n.t(if (selected.role == "user") "chat_edit_and_resend" else "chat_regenerate")) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("message", selected.content))
+                        actionMessage = null
+                    }) { Text(I18n.t("chat_copy")) }
+                    TextButton(onClick = { actionMessage = null }) { Text(I18n.t("cancel")) }
+                }
+            },
+        )
+    }
+    editMessage?.let { selected ->
+        AlertDialog(
+            onDismissRequest = { editMessage = null },
+            title = { Text(I18n.t("chat_edit_message")) },
+            text = {
+                Column {
+                    Text(I18n.t("chat_edit_branch_hint"))
+                    OutlinedTextField(
+                        value = editDraft,
+                        onValueChange = { editDraft = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2,
+                        maxLines = 8,
+                    )
+                    if (selected.images.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(I18n.t("chat_keep_images", selected.images.size), modifier = Modifier.weight(1f))
+                            Switch(checked = keepImages, onCheckedChange = { keepImages = it })
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onEditMessage?.invoke(selected, editDraft, keepImages)
+                    editMessage = null
+                }, enabled = editDraft.isNotBlank() || (keepImages && selected.images.isNotEmpty())) { Text(I18n.t("chat_resend_generate")) }
+            },
+            dismissButton = { TextButton(onClick = { editMessage = null }) { Text(I18n.t("cancel")) } },
+        )
+    }
 }
 
 internal fun shouldFollowNewChatContent(previousItemCount: Int, lastVisibleIndex: Int): Boolean =
     previousItemCount <= 0 || lastVisibleIndex < 0 || lastVisibleIndex >= previousItemCount - 2
+
+/** 气泡与指向头像的短尾巴共用同一轮廓，避免独立叠图留下接缝。 */
+private class LineBubbleShape(private val fromUser: Boolean) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val tail = with(density) { 7.dp.toPx() }
+        val radius = minOf(with(density) { 18.dp.toPx() }, size.height / 2f, (size.width - tail) / 2f)
+        val left = if (fromUser) 0f else tail
+        val right = if (fromUser) size.width - tail else size.width
+        val bottom = size.height
+        val path = Path().apply {
+            if (fromUser) {
+                moveTo(left + radius, 0f)
+                lineTo(right - tail, 0f)
+                quadraticTo(right - tail * 0.25f, tail * 0.55f, size.width, tail)
+                quadraticTo(right, tail * 1.4f, right, tail * 2f)
+            } else {
+                moveTo(left + tail, 0f)
+                lineTo(right - radius, 0f)
+                quadraticTo(right, 0f, right, radius)
+            }
+            lineTo(right, bottom - radius)
+            quadraticTo(right, bottom, right - radius, bottom)
+            lineTo(left + radius, bottom)
+            quadraticTo(left, bottom, left, bottom - radius)
+            if (fromUser) {
+                lineTo(left, radius)
+                quadraticTo(left, 0f, left + radius, 0f)
+            } else {
+                lineTo(left, tail * 2f)
+                quadraticTo(left, tail * 1.4f, 0f, tail)
+                quadraticTo(left + tail * 0.25f, tail * 0.55f, left + tail, 0f)
+            }
+            close()
+        }
+        return Outline.Generic(path)
+    }
+}
 
 @Composable
 internal fun ChatBubble(
@@ -745,10 +901,18 @@ internal fun ChatBubble(
     avatar: ImageBitmap? = null,
     userAvatar: ImageBitmap? = null,
     lineMode: Boolean = false,
+    senderName: String? = null,
+    displayPreferences: ChatDisplayPreferences = ChatDisplayPreferences(),
+    versionPosition: MessageVersionPosition? = null,
+    onSwitchVersion: ((String) -> Unit)? = null,
+    onRestoreReply: (() -> Unit)? = null,
+    onRegenerate: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
     read: Boolean = false,
     maxBubbleWidth: Dp = 420.dp,
 ) {
     val fromUser = role == "user"
+    val context = LocalContext.current
     var previewImage by remember { mutableStateOf<String?>(null) }
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -761,30 +925,58 @@ internal fun ChatBubble(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start,
-            verticalAlignment = Alignment.Bottom,
+            verticalAlignment = Alignment.Top,
         ) {
             if (!fromUser && lineMode) {
                 LineAvatar(avatar, isUser = false)
                 Spacer(Modifier.width(8.dp))
             }
             Column(
-                modifier = Modifier.widthIn(max = maxBubbleWidth),
+                modifier = Modifier.widthIn(max = maxBubbleWidth + if (lineMode) 80.dp else 0.dp),
                 horizontalAlignment = if (fromUser) Alignment.End else Alignment.Start,
             ) {
+                if (!fromUser && lineMode && !senderName.isNullOrBlank() && !thinking) {
+                    Text(
+                        senderName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF354B59),
+                        modifier = Modifier.padding(start = 2.dp, bottom = 3.dp),
+                    )
+                }
+                Row(verticalAlignment = Alignment.Bottom) {
+                    if (fromUser && lineMode && (displayPreferences.showMessageTime || read)) {
+                        LineMessageMetadata(
+                            time = if (displayPreferences.showMessageTime) formatMessageTime(context, timestamp, displayPreferences.showMonthDay) else "",
+                            read = read,
+                            modifier = Modifier.padding(end = 6.dp),
+                        )
+                    }
                 Surface(
-                    shape = RoundedCornerShape(
+                    modifier = Modifier.widthIn(max = maxBubbleWidth).then(
+                        if (onLongPress != null) Modifier.combinedClickable(onClick = {}, onLongClick = onLongPress) else Modifier
+                    ),
+                    shape = if (lineMode) remember(fromUser) { LineBubbleShape(fromUser) } else RoundedCornerShape(
                         topStart = 20.dp,
                         topEnd = 20.dp,
                         bottomStart = if (fromUser) 20.dp else 6.dp,
                         bottomEnd = if (fromUser) 6.dp else 20.dp,
                     ),
-                    color = if (fromUser) {
+                    color = if (lineMode && fromUser) {
+                        Color(0xFFFFE327)
+                    } else if (lineMode) {
+                        Color.White
+                    } else if (fromUser) {
                         MaterialTheme.colorScheme.primaryContainer
                     } else {
                         MaterialTheme.colorScheme.surfaceContainerHighest
                     },
                 ) {
-                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    Column(Modifier.padding(
+                        start = if (lineMode && !fromUser) 21.dp else 14.dp,
+                        end = if (lineMode && fromUser) 21.dp else 14.dp,
+                        top = 10.dp,
+                        bottom = 10.dp,
+                    )) {
                         if (thinking) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -803,9 +995,9 @@ internal fun ChatBubble(
                                 ChatTextSearch.findHighlightRanges(content, highlightQuery)
                             }
                         }
-                        SelectionContainer {
+                        if (onLongPress == null) SelectionContainer {
                             if (ranges.isEmpty()) {
-                                Text(content, style = MaterialTheme.typography.bodyMedium)
+                                Text(content, style = MaterialTheme.typography.bodyMedium, color = if (lineMode) Color(0xFF1B1B1B) else Color.Unspecified)
                             } else {
                                 val annotated = buildAnnotatedString {
                                     var last = 0
@@ -825,8 +1017,10 @@ internal fun ChatBubble(
                                     }
                                     if (last < content.length) append(content.substring(last))
                                 }
-                                Text(annotated, style = MaterialTheme.typography.bodyMedium)
+                                Text(annotated, style = MaterialTheme.typography.bodyMedium, color = if (lineMode) Color(0xFF1B1B1B) else Color.Unspecified)
                             }
+                        } else {
+                            Text(content, style = MaterialTheme.typography.bodyMedium, color = if (lineMode) Color(0xFF1B1B1B) else Color.Unspecified)
                         }
                         if (images.isNotEmpty()) {
                             Row(
@@ -841,45 +1035,14 @@ internal fun ChatBubble(
                                 }
                             }
                         }
-                        if (lineMode) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 3.dp),
-                                horizontalArrangement = Arrangement.End,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (fromUser && read) {
-                                    Text(
-                                        I18n.t("chat_read_receipt"),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                                    )
-                                    if (timestamp > 0L) Spacer(Modifier.width(4.dp))
-                                }
-                                if (timestamp > 0L) {
-                                    Text(
-                                        formatMessageTime(timestamp),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    )
-                                }
-                                if (onReplay != null) {
-                                    if (timestamp > 0L || read) Spacer(Modifier.width(4.dp))
-                                    IconButton(
-                                        onClick = onReplay,
-                                        modifier = Modifier.size(22.dp),
-                                    ) {
-                                        Icon(
-                                            Icons.Outlined.VolumeUp,
-                                            contentDescription = I18n.t("chat_speak"),
-                                            modifier = Modifier.size(13.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                    }
+                }
+                    if (!fromUser && lineMode) {
+                        LineMessageMetadata(
+                            time = if (displayPreferences.showMessageTime) formatMessageTime(context, timestamp, displayPreferences.showMonthDay) else "",
+                            read = false,
+                            modifier = Modifier.padding(start = 6.dp),
+                        )
                     }
                 }
                 if (!lineMode) {
@@ -893,17 +1056,17 @@ internal fun ChatBubble(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
                             )
-                            if (timestamp > 0L) Spacer(Modifier.width(6.dp))
+                            if (timestamp > 0L && displayPreferences.showMessageTime) Spacer(Modifier.width(6.dp))
                         }
-                        if (timestamp > 0L) {
+                        if (timestamp > 0L && displayPreferences.showMessageTime) {
                             Text(
-                                formatMessageTime(timestamp),
+                                formatMessageTime(context, timestamp, displayPreferences.showMonthDay),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         if (onReplay != null) {
-                            if (timestamp > 0L || read) Spacer(Modifier.width(6.dp))
+                            if ((timestamp > 0L && displayPreferences.showMessageTime) || read) Spacer(Modifier.width(6.dp))
                             IconButton(
                                 onClick = onReplay,
                                 modifier = Modifier.size(28.dp),
@@ -916,12 +1079,43 @@ internal fun ChatBubble(
                                 )
                             }
                         }
+                        if (onRegenerate != null && displayPreferences.showRetryIcon) {
+                            IconButton(onClick = onRegenerate, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Outlined.Refresh, contentDescription = I18n.t("chat_regenerate"), modifier = Modifier.size(16.dp))
+                            }
+                        }
                     }
                 }
-            }
-            if (fromUser && lineMode && userAvatar != null) {
-                Spacer(Modifier.width(8.dp))
-                LineAvatar(userAvatar, isUser = true)
+                if (lineMode && (onReplay != null || (onRegenerate != null && displayPreferences.showRetryIcon))) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (onReplay != null) {
+                            IconButton(onClick = onReplay, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Outlined.VolumeUp, contentDescription = I18n.t("chat_speak"), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        if (onRegenerate != null && displayPreferences.showRetryIcon) {
+                            IconButton(onClick = onRegenerate, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Outlined.Refresh, contentDescription = I18n.t("chat_regenerate"), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+                if (versionPosition != null && versionPosition.total > 1 && onSwitchVersion != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(
+                            onClick = { onSwitchVersion(versionPosition.siblingIds[versionPosition.index - 1]) },
+                            enabled = versionPosition.index > 0,
+                        ) { Text("‹") }
+                        Text("${versionPosition.index + 1}/${versionPosition.total}", style = MaterialTheme.typography.labelSmall)
+                        TextButton(
+                            onClick = { onSwitchVersion(versionPosition.siblingIds[versionPosition.index + 1]) },
+                            enabled = versionPosition.index < versionPosition.total - 1,
+                        ) { Text("›") }
+                    }
+                }
+                if (onRestoreReply != null) {
+                    TextButton(onClick = onRestoreReply) { Text(I18n.t("chat_view_previous_replies")) }
+                }
             }
         }
     }
@@ -1093,9 +1287,21 @@ private fun dataUrlToBytes(dataUrl: String): ByteArray? {
     return runCatching { Base64.decode(dataUrl.substring(comma + 1), Base64.NO_WRAP) }.getOrNull()
 }
 
-private fun formatMessageTime(timestamp: Long): String {
+private fun formatMessageTime(context: android.content.Context, timestamp: Long, showMonthDay: Boolean): String {
     if (timestamp <= 0L) return ""
-    return messageTimeFormat.format(Date(timestamp))
+    val time = android.text.format.DateFormat.getTimeFormat(context).format(Date(timestamp))
+    if (!showMonthDay) return time
+    val datePattern = android.text.format.DateFormat.getBestDateTimePattern(Locale.getDefault(), "Md")
+    return "${SimpleDateFormat(datePattern, Locale.getDefault()).format(Date(timestamp))} $time"
+}
+
+@Composable
+private fun LineMessageMetadata(time: String, read: Boolean, modifier: Modifier = Modifier) {
+    if (time.isBlank() && !read) return
+    Column(modifier, horizontalAlignment = Alignment.End) {
+        if (read) Text(I18n.t("chat_read_receipt"), style = MaterialTheme.typography.labelSmall, color = Color(0xFF435B69))
+        if (time.isNotBlank()) Text(time, style = MaterialTheme.typography.labelSmall, color = Color(0xFF435B69))
+    }
 }
 
 /** 可折叠的深度思考（思维链）块。 */

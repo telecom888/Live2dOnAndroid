@@ -23,6 +23,8 @@ enum class ThinkingMode(val value: String) {
     }
 }
 
+enum class TimeContextOverride { INHERIT, ENABLED, DISABLED }
+
 @Immutable
 data class LlmHeader(
     val name: String = "",
@@ -40,6 +42,7 @@ data class LlmSettings(
     val maxTokens: Int = 1024,
     val contextTokens: Int = DEFAULT_CONTEXT_TOKENS,
     val imageInputEnabled: Boolean = false,
+    val sendMessageTime: Boolean = false,
     /** 自定义请求头（如 OpenCode Go 的 x-opencode-session）。 */
     val headers: List<LlmHeader> = emptyList(),
 ) {
@@ -75,6 +78,7 @@ data class LlmSettings(
             .putInt(KEY_LLM_MAX_TOKENS, value.maxTokens)
             .putInt(KEY_LLM_CONTEXT_TOKENS, value.contextTokens)
             .putBoolean(KEY_LLM_IMAGE_INPUT_ENABLED, value.imageInputEnabled)
+            .putBoolean(KEY_LLM_SEND_MESSAGE_TIME, value.sendMessageTime)
             .putString(KEY_LLM_HEADERS, encodeHeaders(value.headers))
             .apply()
     }
@@ -96,6 +100,7 @@ data class LlmSettings(
                 contextTokens = prefs.getInt(KEY_LLM_CONTEXT_TOKENS, DEFAULT_CONTEXT_TOKENS)
                     .coerceIn(MIN_CONTEXT_TOKENS, MAX_CONTEXT_TOKENS),
                 imageInputEnabled = prefs.getBoolean(KEY_LLM_IMAGE_INPUT_ENABLED, false),
+                sendMessageTime = prefs.getBoolean(KEY_LLM_SEND_MESSAGE_TIME, false),
                 headers = decodeHeaders(prefs.getString(KEY_LLM_HEADERS, null)),
             )
         }
@@ -114,6 +119,10 @@ data class ChatMessage(
     val images: List<String> = emptyList(),
     /** LINE 已读状态：只对用户发送的消息显示，对方（角色）看过后为 true。 */
     val read: Boolean = false,
+    /** Whether this user message carried its local send time to the model. */
+    val timeContextEnabled: Boolean = false,
+    val timeZoneId: String? = null,
+    val parentId: String? = null,
 )
 
 @Immutable
@@ -124,6 +133,12 @@ data class ChatConversation(
     val createdAt: Long,
     val updatedAt: Long,
     val messages: List<ChatMessage>,
+    val timeContextOverride: TimeContextOverride = TimeContextOverride.INHERIT,
+    /** Complete branch tree. [messages] is only the currently selected path. */
+    val nodes: List<ChatMessage> = emptyList(),
+    val activeLeafId: String? = null,
+    val preferredChildIds: Map<String, String> = emptyMap(),
+    val titleManual: Boolean = true,
 )
 
 @Immutable
@@ -157,6 +172,7 @@ private const val KEY_LLM_TEMPERATURE = "llm_temperature"
 private const val KEY_LLM_MAX_TOKENS = "llm_max_tokens"
 private const val KEY_LLM_CONTEXT_TOKENS = "llm_context_tokens"
 private const val KEY_LLM_IMAGE_INPUT_ENABLED = "llm_image_input_enabled"
+private const val KEY_LLM_SEND_MESSAGE_TIME = "llm_send_message_time"
 private const val KEY_LLM_HEADERS = "llm_headers"
 
 private fun encodeHeaders(headers: List<LlmHeader>): String {

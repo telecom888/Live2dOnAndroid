@@ -511,19 +511,6 @@ fun saveWallpaperOriginalBackupPath(context: Context, path: String?) {
 }
 
 
-// ==================== mimo（语音克隆 TTS） ====================
-const val KEY_MIMO_API_KEY = "mimo_api_key"
-
-fun loadMimoApiKey(context: Context): String =
-    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
-        .getString(KEY_MIMO_API_KEY, null).orEmpty().trim()
-
-fun saveMimoApiKey(context: Context, key: String) {
-    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
-        .edit().putString(KEY_MIMO_API_KEY, key.trim()).apply()
-}
-
-
 // ==================== 语音合成（服务商 + 模型 + 密钥） ====================
 const val VOICE_PROVIDER_MIMO = "mimo"
 const val VOICE_PROVIDER_CUSTOM = "custom"
@@ -562,12 +549,11 @@ data class VoiceSettings(
     companion object {
         fun load(context: Context): VoiceSettings {
             val prefs = context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
-            val legacyMimoKey = prefs.getString(KEY_MIMO_API_KEY, null).orEmpty()
             return VoiceSettings(
                 provider = prefs.getString(KEY_VOICE_PROVIDER, VOICE_PROVIDER_MIMO) ?: VOICE_PROVIDER_MIMO,
                 baseUrl = prefs.getString(KEY_VOICE_BASE_URL, VOICE_MIMO_DEFAULT_BASE) ?: VOICE_MIMO_DEFAULT_BASE,
                 model = prefs.getString(KEY_VOICE_MODEL, VOICE_MIMO_DEFAULT_MODEL) ?: VOICE_MIMO_DEFAULT_MODEL,
-                apiKey = prefs.getString(KEY_VOICE_API_KEY, null)?.takeIf { it.isNotBlank() } ?: legacyMimoKey,
+                apiKey = prefs.getString(KEY_VOICE_API_KEY, null).orEmpty(),
             )
         }
     }

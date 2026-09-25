@@ -68,10 +68,9 @@ class ChatHistoryRepository internal constructor(
 
     @Synchronized
     fun saveConversation(conversation: ChatConversation): ChatConversation {
-        val normalized = conversation.copy(
+        val normalized = ChatBranchGraph.normalized(conversation.copy(
             title = conversation.title.ifBlank { titleFromMessages(conversation.messages) },
-            messages = conversation.messages,
-        )
+        ))
         val file = conversationFile(normalized.characterId, normalized.id)
             ?: throw IllegalArgumentException("Invalid conversation id")
         val payload = JSONObject()
@@ -79,12 +78,24 @@ class ChatHistoryRepository internal constructor(
             .put("id", normalized.id)
             .put("characterId", normalized.characterId)
             .put("title", normalized.title)
+            .put("titleManual", normalized.titleManual)
             .put("createdAt", normalized.createdAt)
             .put("updatedAt", normalized.updatedAt)
-            .put("messages", messagesToJson(normalized.messages))
+            .put("timeContextOverride", normalized.timeContextOverride.name)
+            .put("nodes", messagesToJson(normalized.nodes))
+            .put("activeLeafId", normalized.activeLeafId)
+            .put("preferredChildIds", JSONObject().apply {
+                normalized.preferredChildIds.forEach { (parent, child) -> put(parent, child) }
+            })
         writeAtomically(file, payload.toString())
         putSummary(file, normalized.toSummary())
         return normalized
+    }
+
+    @Synchronized
+    fun updateConversation(characterId: String, conversationId: String, transform: (ChatConversation) -> ChatConversation): ChatConversation? {
+        val current = loadConversation(characterId, conversationId) ?: return null
+        return saveConversation(transform(current))
     }
 
     @Synchronized
@@ -103,6 +114,7 @@ class ChatHistoryRepository internal constructor(
         saveConversation(
             conversation.copy(
                 title = title.trim().takeIf(String::isNotBlank) ?: conversation.title,
+                titleManual = title.isNotBlank(),
                 updatedAt = System.currentTimeMillis(),
             )
         )
@@ -177,6 +189,7 @@ class ChatHistoryRepository internal constructor(
                 createdAt = validTimestamps.firstOrNull() ?: fallbackTimestamp,
                 updatedAt = validTimestamps.lastOrNull() ?: fallbackTimestamp,
                 messages = messages,
+                titleManual = false,
             )
             saveConversation(conversation)
         }
@@ -194,22 +207,39 @@ class ChatHistoryRepository internal constructor(
     private fun readConversation(file: File, expectedCharacterId: String): ChatConversation? = runCatching {
         if (!file.isFile) return@runCatching null
         val payload = JSONObject(file.readText())
+        if (payload.optInt("schemaVersion", 2) > SCHEMA_VERSION) return@runCatching null
         val characterId = payload.optString("characterId", expectedCharacterId)
         if (characterId != expectedCharacterId) return@runCatching null
         val id = payload.optString("id", file.nameWithoutExtension)
         if (!VALID_CONVERSATION_ID.matches(id) || id != file.nameWithoutExtension) return@runCatching null
         val messages = parseMessages(payload.optJSONArray("messages") ?: JSONArray(), id)
+        val nodes = payload.optJSONArray("nodes")?.let { parseMessages(it, id) }.orEmpty()
+        val preferred = buildMap {
+            val json = payload.optJSONObject("preferredChildIds") ?: JSONObject()
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                json.optString(key).takeIf(String::isNotBlank)?.let { put(key, it) }
+            }
+        }
         val fallbackTimestamp = file.lastModified().takeIf { it > 0L } ?: 0L
         val createdAt = payload.optLong("createdAt", fallbackTimestamp)
         val updatedAt = payload.optLong("updatedAt", createdAt)
-        ChatConversation(
+        ChatBranchGraph.normalized(ChatConversation(
             id = id,
             characterId = characterId,
             title = payload.optString("title").ifBlank { titleFromMessages(messages) },
             createdAt = createdAt,
             updatedAt = updatedAt,
             messages = messages,
-        )
+            timeContextOverride = runCatching {
+                TimeContextOverride.valueOf(payload.optString("timeContextOverride", "INHERIT"))
+            }.getOrDefault(TimeContextOverride.INHERIT),
+            nodes = nodes,
+            activeLeafId = payload.optString("activeLeafId").takeIf(String::isNotBlank),
+            preferredChildIds = preferred,
+            titleManual = payload.optBoolean("titleManual", payload.optString("title") != titleFromMessages(messages)),
+        ))
     }.getOrNull()
 
     private fun parseMessages(array: JSONArray, fallbackPrefix: String): List<ChatMessage> = buildList {
@@ -226,6 +256,9 @@ class ChatHistoryRepository internal constructor(
                         ?.let { array -> buildList { for (i in 0 until array.length()) add(array.optString(i)) } }
                         .orEmpty(),
                     read = item.optBoolean("read", false),
+                    timeContextEnabled = item.optBoolean("timeContextEnabled", false),
+                    timeZoneId = item.optString("timeZoneId").takeIf(String::isNotBlank),
+                    parentId = item.optString("parentId").takeIf(String::isNotBlank),
                 ),
             )
         }
@@ -241,7 +274,10 @@ class ChatHistoryRepository internal constructor(
                     .put("reasoning", message.reasoning)
                     .put("timestamp", message.timestamp)
                     .put("images", JSONArray().apply { message.images.forEach { put(it) } })
-                    .put("read", message.read),
+                    .put("read", message.read)
+                    .put("timeContextEnabled", message.timeContextEnabled)
+                    .put("timeZoneId", message.timeZoneId)
+                    .put("parentId", message.parentId),
             )
         }
     }
@@ -309,7 +345,7 @@ class ChatHistoryRepository internal constructor(
         characterId.replace(Regex("[^A-Za-z0-9_.-]"), "_")
 
     companion object {
-        private const val SCHEMA_VERSION = 2
+        private const val SCHEMA_VERSION = 3
         private const val MAX_CACHED_SUMMARIES = 256
         private const val LEGACY_CONVERSATION_ID = "legacy"
         private const val TITLE_MAX_CODE_POINTS = 32

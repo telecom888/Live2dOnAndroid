@@ -14,6 +14,7 @@ import com.bangdream.pet.voice.VoiceCloneClient
 import com.bangdream.pet.voice.VoicePlayer
 import com.bangdream.pet.voice.VoiceSamples
 import java.util.UUID
+import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +41,10 @@ data class ChatUiState(
     val conversationTitle: String = "",
     val conversations: List<ChatConversationSummary> = emptyList(),
     val messages: List<ChatMessage> = emptyList(),
+    val activeConversation: ChatConversation? = null,
+    val versionPositions: Map<String, MessageVersionPosition> = emptyMap(),
+    val restoreReplyId: String? = null,
+    val timeContextOverride: TimeContextOverride = TimeContextOverride.INHERIT,
     val streamingText: String = "",
     val streamingReasoning: String = "",
     val isGenerating: Boolean = false,
@@ -216,6 +221,120 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         startRequest(model, failed.input, appendUser = false)
     }
 
+    fun setTimeContextOverride(value: TimeContextOverride) {
+        val current = mutableState.value
+        if (current.isGenerating || current.isHistoryLoading) return
+        val conversationId = current.conversationId
+        if (conversationId == null) {
+            mutableState.value = current.copy(timeContextOverride = value)
+            return
+        }
+        val characterId = current.characterId ?: return
+        mutableState.value = current.copy(isHistoryLoading = true)
+        launchTransition {
+            val saved = runIoCatching {
+                history.updateConversation(characterId, conversationId) { it.copy(timeContextOverride = value) }
+                    ?: error("Conversation not found")
+            }.getOrElse {
+                mutableState.value = current.copy(error = ERROR_HISTORY_SAVE)
+                return@launchTransition
+            }
+            mutableState.value = current.copy(
+                timeContextOverride = value,
+                activeConversation = saved,
+                isHistoryLoading = false,
+            )
+        }
+    }
+
+    fun switchMessageVersion(messageId: String) {
+        val current = mutableState.value
+        val conversation = current.activeConversation ?: return
+        if (current.isGenerating || current.isHistoryLoading || conversation.nodes.none { it.id == messageId }) return
+        mutableState.value = current.copy(isHistoryLoading = true)
+        launchTransition {
+            val result = runIoCatching {
+                val saved = history.updateConversation(conversation.characterId, conversation.id) {
+                    ChatBranchGraph.select(it, messageId).copy(updatedAt = System.currentTimeMillis())
+                } ?: error("Conversation not found")
+                saved to history.listConversations(saved.characterId)
+            }.getOrElse {
+                mutableState.value = current.copy(error = ERROR_HISTORY_SAVE)
+                return@launchTransition
+            }
+            lastFailedRequest = null
+            mutableState.value = ChatStateTransitions.fromConversation(result.first, result.second)
+        }
+    }
+
+    fun editAndResend(model: ModelChoice, messageId: String, text: String, keepImages: Boolean = true): Boolean {
+        val current = mutableState.value
+        val conversation = current.activeConversation ?: return false
+        val original = conversation.nodes.firstOrNull { it.id == messageId && it.role == "user" } ?: return false
+        val content = text.trim()
+        val images = if (keepImages) original.images else emptyList()
+        if (content.isEmpty() && images.isEmpty()) return false
+        if (current.isGenerating || current.isHistoryLoading || current.characterId != model.characterId) return false
+        mutableState.value = current.copy(isHistoryLoading = true)
+        launchTransition {
+            val settings = LlmSettings.load(getApplication())
+            val includeTime = when (current.timeContextOverride) {
+                TimeContextOverride.ENABLED -> true
+                TimeContextOverride.DISABLED -> false
+                TimeContextOverride.INHERIT -> settings.sendMessageTime
+            }
+            val result = runIoCatching {
+                val replacement = newMessage("user", content).copy(
+                    images = images,
+                    timeContextEnabled = includeTime,
+                    timeZoneId = if (includeTime) ZoneId.systemDefault().id else null,
+                )
+                val edited = history.updateConversation(conversation.characterId, conversation.id) {
+                    ChatBranchGraph.append(it, replacement, original.parentId).copy(updatedAt = System.currentTimeMillis())
+                } ?: error("Conversation not found")
+                edited to history.listConversations(edited.characterId)
+            }.getOrElse {
+                mutableState.value = current.copy(error = ERROR_HISTORY_SAVE)
+                return@launchTransition
+            }
+            lastFailedRequest = null
+            mutableState.value = ChatStateTransitions.fromConversation(result.first, result.second)
+            scheduleReadReceipt(result.first.characterId, result.first.id, result.first.activeLeafId)
+            startRequest(model, content, appendUser = false)
+        }
+        return true
+    }
+
+    fun regenerate(model: ModelChoice, assistantMessageId: String): Boolean {
+        val current = mutableState.value
+        val conversation = current.activeConversation ?: return false
+        val response = conversation.nodes.firstOrNull { it.id == assistantMessageId && it.role == "assistant" } ?: return false
+        if (current.isGenerating || current.isHistoryLoading || current.characterId != model.characterId) return false
+        mutableState.value = current.copy(isHistoryLoading = true)
+        launchTransition {
+            val result = runIoCatching {
+                val truncated = history.updateConversation(conversation.characterId, conversation.id) {
+                    ChatBranchGraph.truncateAt(it, response.parentId).copy(updatedAt = System.currentTimeMillis())
+                } ?: error("Conversation not found")
+                truncated to history.listConversations(truncated.characterId)
+            }.getOrElse {
+                mutableState.value = current.copy(error = ERROR_HISTORY_SAVE)
+                return@launchTransition
+            }
+            lastFailedRequest = null
+            mutableState.value = ChatStateTransitions.fromConversation(result.first, result.second)
+            startRequest(model, result.first.messages.lastOrNull { it.role == "user" }?.content.orEmpty(), appendUser = false)
+        }
+        return true
+    }
+
+    private fun scheduleReadReceipt(characterId: String, conversationId: String, messageId: String?) {
+        viewModelScope.launch {
+            delay(Random.nextLong(800L, 4_000L))
+            markUserMessageRead(characterId, conversationId, messageId)
+        }
+    }
+
     fun stop() {
         requestJob?.cancel()
     }
@@ -240,17 +359,37 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             if (current.characterId != model.characterId) return@launch
 
             val now = System.currentTimeMillis()
+            val settings = LlmSettings.load(getApplication())
+            val includeTime = when (current.timeContextOverride) {
+                TimeContextOverride.ENABLED -> true
+                TimeContextOverride.DISABLED -> false
+                TimeContextOverride.INHERIT -> settings.sendMessageTime
+            }
             val conversationId = current.conversationId ?: UUID.randomUUID().toString()
             val existingSummary = current.conversations.firstOrNull { it.id == conversationId }
             val createdAt = existingSummary?.createdAt ?: now
             val title = current.conversationTitle.ifBlank {
                 if (appendUser) ChatHistoryRepository.titleFromFirstMessage(input) else existingSummary?.title.orEmpty()
             }
-            val messages = if (appendUser) {
-                (current.messages + newMessage("user", input).copy(images = images))
+            val baseConversation = current.activeConversation ?: ChatConversation(
+                id = conversationId,
+                characterId = model.characterId,
+                title = title,
+                createdAt = createdAt,
+                updatedAt = now,
+                messages = current.messages,
+                titleManual = false,
+            )
+            val requestConversation = if (appendUser) {
+                ChatBranchGraph.append(baseConversation.copy(timeContextOverride = current.timeContextOverride), newMessage("user", input).copy(
+                    images = images,
+                    timeContextEnabled = includeTime,
+                    timeZoneId = if (includeTime) ZoneId.systemDefault().id else null,
+                ))
             } else {
-                current.messages
+                ChatBranchGraph.normalized(baseConversation.copy(timeContextOverride = current.timeContextOverride))
             }
+            val messages = requestConversation.messages
             val requestContext = RequestContext(
                 characterId = model.characterId,
                 conversationId = conversationId,
@@ -258,26 +397,27 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 createdAt = createdAt,
                 updatedAt = now,
                 messages = messages,
+                conversation = requestConversation,
             )
 
             // LINE 已读：模拟「对方（角色）看过了」，在模型开始回复前随机时间把这条用户消息标记为已读
             if (appendUser) {
                 val userMessageId = messages.lastOrNull { it.role == "user" }?.id
-                viewModelScope.launch {
-                    delay(Random.nextLong(800L, 4_000L))
-                    markUserMessageRead(model.characterId, conversationId, userMessageId)
-                }
+                scheduleReadReceipt(model.characterId, conversationId, userMessageId)
             }
 
-            val conversations = runIoCatching {
-                history.saveConversation(requestContext.toConversation(messages))
+            val saved = runIoCatching {
+                val conversation = history.saveConversation(requestConversation)
                 history.setActiveConversation(model.characterId, conversationId)
-                history.listConversations(model.characterId)
+                conversation to history.listConversations(model.characterId)
             }.getOrElse {
                 mutableState.value = current.copy(
                     conversationId = conversationId,
                     conversationTitle = title,
                     messages = messages,
+                    activeConversation = requestConversation,
+                    versionPositions = ChatBranchGraph.versions(requestConversation),
+                    restoreReplyId = ChatStateTransitions.restoreReplyId(requestConversation),
                     error = ERROR_HISTORY_SAVE,
                 )
                 return@launch
@@ -286,14 +426,16 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             mutableState.value = current.copy(
                 conversationId = conversationId,
                 conversationTitle = title,
-                conversations = conversations,
+                conversations = saved.second,
                 messages = messages,
+                activeConversation = saved.first,
+                versionPositions = ChatBranchGraph.versions(saved.first),
+                restoreReplyId = ChatStateTransitions.restoreReplyId(saved.first),
                 streamingText = "",
                 isThinking = false,
                 error = null,
             )
 
-            val settings = LlmSettings.load(getApplication())
             if (!settings.isConfigured) {
                 mutableState.value = mutableState.value.copy(error = ERROR_LLM_NOT_CONFIGURED)
                 return@launch
@@ -414,24 +556,27 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
 
     private suspend fun finalizeAssistant(request: RequestContext, parser: ActionTagParser, reasoning: String) {
         val result = parser.finish()
-        val finalMessages = if (result.text.isNotBlank()) {
-            (request.messages + newMessage("assistant", result.text).copy(
-                reasoning = reasoning.takeIf(String::isNotBlank),
-                read = true,
-            ))
-        } else {
-            request.messages
-        }
-        val updatedRequest = request.copy(
-            updatedAt = if (result.text.isNotBlank()) System.currentTimeMillis() else request.updatedAt,
-        )
-        val conversations = runIoCatching {
-            history.saveConversation(updatedRequest.toConversation(finalMessages))
-            history.listConversations(request.characterId)
+        val saved = runIoCatching {
+            val persisted = history.updateConversation(request.characterId, request.conversationId) { latest ->
+                val base = if (latest.nodes.any { it.id == request.conversation.activeLeafId }) {
+                    ChatBranchGraph.truncateAt(latest, request.conversation.activeLeafId)
+                } else {
+                    request.conversation
+                }
+                val finalConversation = if (result.text.isNotBlank()) {
+                    ChatBranchGraph.append(base, newMessage("assistant", result.text).copy(
+                        reasoning = reasoning.takeIf(String::isNotBlank),
+                        read = true,
+                    ))
+                } else {
+                    base
+                }
+                finalConversation.copy(updatedAt = if (result.text.isNotBlank()) System.currentTimeMillis() else request.updatedAt)
+            } ?: error("Conversation not found")
+            persisted to history.listConversations(request.characterId)
         }.getOrElse {
             if (isActive(request)) {
                 mutableState.value = mutableState.value.copy(
-                    messages = finalMessages,
                     streamingText = "",
                     streamingReasoning = "",
                     isGenerating = false,
@@ -447,8 +592,11 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         mutableState.value = mutableState.value.copy(
             conversationId = request.conversationId,
             conversationTitle = request.title,
-            conversations = conversations,
-            messages = finalMessages,
+            conversations = saved.second,
+            messages = saved.first.messages,
+            activeConversation = saved.first,
+            versionPositions = ChatBranchGraph.versions(saved.first),
+            restoreReplyId = ChatStateTransitions.restoreReplyId(saved.first),
             streamingText = "",
             streamingReasoning = "",
             isGenerating = false,
@@ -547,16 +695,14 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         if (messageId == null) return
         val current = mutableState.value
         if (current.conversationId != conversationId) return
-        val updated = current.messages.map { if (it.id == messageId) it.copy(read = true) else it }
-        if (updated == current.messages) return
-        mutableState.value = current.copy(messages = updated)
+        val active = current.activeConversation ?: return
+        if (active.nodes.none { it.id == messageId && !it.read }) return
+        val updated = ChatBranchGraph.updateMessage(active, messageId) { it.copy(read = true) }
+        mutableState.value = current.copy(messages = updated.messages, activeConversation = updated)
         withContext(Dispatchers.IO) {
-            val conversation = history.loadConversation(characterId, conversationId) ?: return@withContext
-            history.saveConversation(
-                conversation.copy(
-                    messages = conversation.messages.map { if (it.id == messageId) it.copy(read = true) else it },
-                ),
-            )
+            history.updateConversation(characterId, conversationId) {
+                ChatBranchGraph.updateMessage(it, messageId) { message -> message.copy(read = true) }
+            }
         }
     }
 
@@ -580,16 +726,8 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         val createdAt: Long,
         val updatedAt: Long,
         val messages: List<ChatMessage>,
-    ) {
-        fun toConversation(messages: List<ChatMessage>): ChatConversation = ChatConversation(
-            id = conversationId,
-            characterId = characterId,
-            title = title,
-            createdAt = createdAt,
-            updatedAt = updatedAt,
-            messages = messages,
-        )
-    }
+        val conversation: ChatConversation,
+    )
 
     companion object {
         const val ERROR_LLM_NOT_CONFIGURED = "LLM_NOT_CONFIGURED"
@@ -601,6 +739,14 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
 }
 
 internal object ChatStateTransitions {
+    fun restoreReplyId(conversation: ChatConversation): String? {
+        val leaf = conversation.messages.lastOrNull()?.takeIf { it.role == "user" } ?: return null
+        val replies = conversation.nodes.filter { it.parentId == leaf.id && it.role == "assistant" }
+        if (replies.isEmpty()) return null
+        return conversation.preferredChildIds[leaf.id]?.takeIf { id -> replies.any { it.id == id } }
+            ?: replies.maxByOrNull { it.timestamp }?.id
+    }
+
     fun fromSnapshot(characterId: String, snapshot: ChatHistorySnapshot): ChatUiState =
         snapshot.activeConversation?.let { fromConversation(it, snapshot.conversations) }
             ?: newDraft(characterId, snapshot.conversations)
@@ -614,6 +760,10 @@ internal object ChatStateTransitions {
         conversationTitle = conversation.title,
         conversations = conversations,
         messages = conversation.messages,
+        activeConversation = conversation,
+        versionPositions = ChatBranchGraph.versions(conversation),
+        restoreReplyId = restoreReplyId(conversation),
+        timeContextOverride = conversation.timeContextOverride,
     )
 
     fun newDraft(

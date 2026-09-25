@@ -1,11 +1,20 @@
 package com.bangdream.pet.ui.settings
 
 import android.app.WallpaperManager
+import android.app.Activity
 import android.content.ComponentName
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +39,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -68,6 +79,8 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.activity.compose.BackHandler
@@ -87,6 +100,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.bangdream.pet.DarkModeSetting
+import com.bangdream.pet.ChatDisplayPreferences
 import com.bangdream.pet.I18n
 import com.bangdream.pet.RenderResolution
 import com.bangdream.pet.RenderSettings
@@ -96,6 +110,8 @@ import com.bangdream.pet.ui.design.appHazeSource
 import com.bangdream.pet.ui.design.appLiquidGlass
 import com.bangdream.pet.ui.design.appPressScale
 import com.bangdream.pet.ui.design.rememberLiquidGlassState
+import com.bangdream.pet.ui.design.emphasizedTween
+import com.bangdream.pet.ui.design.expressiveTween
 import com.bangdream.pet.ThemeSettings
 import android.widget.Toast
 import com.bangdream.pet.ANIMATION_CHOICES
@@ -133,7 +149,6 @@ import com.bangdream.pet.llm.ThinkingMode
 import com.bangdream.pet.loadWallpaperMode
 import com.bangdream.pet.saveWallpaperMode
 import com.bangdream.pet.loadIdleAnimationEnabled
-import com.bangdream.pet.loadMimoApiKey
 import com.bangdream.pet.loadIdleAnimations
 import com.bangdream.pet.loadIdleIntervalMs
 import com.bangdream.pet.loadSwipeAnimationEnabled
@@ -142,7 +157,6 @@ import com.bangdream.pet.loadTouchAnimations
 import com.bangdream.pet.loadWallpaperBackgroundUri
 import com.bangdream.pet.persistBackgroundUri
 import com.bangdream.pet.saveIdleAnimationEnabled
-import com.bangdream.pet.saveMimoApiKey
 import com.bangdream.pet.saveIdleAnimations
 import com.bangdream.pet.saveIdleIntervalMs
 import com.bangdream.pet.saveSwipeAnimationEnabled
@@ -170,25 +184,47 @@ fun SettingsScreen(
     topInset: Dp = 0.dp,
     onDetailActiveChange: (Boolean) -> Unit = {},
 ) {
-    var route by remember { mutableStateOf<SettingsDetail?>(null) }
+    var route by rememberSaveable { mutableStateOf<SettingsDetail?>(null) }
+    val homeListState = rememberLazyListState()
+    val stateHolder = rememberSaveableStateHolder()
     LaunchedEffect(route) { onDetailActiveChange(route != null) }
     BackHandler(enabled = route != null) { route = null }
-    when (route) {
-        SettingsDetail.WALLPAPER -> DesktopWallpaperPage(topInset = topInset, onBack = { route = null })
-        SettingsDetail.INTERACTION -> DesktopInteractionPage(topInset = topInset, onBack = { route = null })
-        SettingsDetail.RENDER -> RenderPerformancePage(
-            settings = renderSettings,
-            onSettingsChanged = onRenderSettingsChanged,
-            topInset = topInset,
-            onBack = { route = null },
-        )
-        SettingsDetail.VOICE -> VoicePage(selectedModel = selectedModel, topInset = topInset, onBack = { route = null })
-        null -> SettingsHomeList(
-            themeSettings = themeSettings,
-            onThemeSettingsChanged = onThemeSettingsChanged,
-            onOpenDetail = { route = it },
-            topInset = topInset,
-        )
+    AnimatedContent(
+        targetState = route,
+        transitionSpec = {
+            if (targetState != null) {
+                (slideInHorizontally(emphasizedTween(), initialOffsetX = { it }) + fadeIn(emphasizedTween()))
+                    .togetherWith(slideOutHorizontally(expressiveTween(), targetOffsetX = { -it / 4 }) + fadeOut(expressiveTween()))
+            } else {
+                (slideInHorizontally(emphasizedTween(), initialOffsetX = { -it / 4 }) + fadeIn(emphasizedTween()))
+                    .togetherWith(slideOutHorizontally(expressiveTween(), targetOffsetX = { it }) + fadeOut(expressiveTween()))
+            }
+        },
+        contentKey = { it?.name ?: "home" },
+        label = "settingsDetail",
+    ) { target ->
+        stateHolder.SaveableStateProvider(target?.name ?: "home") {
+            when (target) {
+                SettingsDetail.WALLPAPER -> DesktopWallpaperPage(topInset = topInset, onBack = { route = null })
+                SettingsDetail.INTERACTION -> DesktopInteractionPage(topInset = topInset, onBack = { route = null })
+                SettingsDetail.RENDER -> RenderPerformancePage(
+                    settings = renderSettings,
+                    onSettingsChanged = onRenderSettingsChanged,
+                    topInset = topInset,
+                    onBack = { route = null },
+                )
+                SettingsDetail.VOICE -> VoicePage(selectedModel = selectedModel, topInset = topInset, onBack = { route = null })
+                SettingsDetail.LLM -> LlmSettingsScreen(onBack = { route = null }, topInsetOverride = topInset)
+                SettingsDetail.PERSONALIZATION -> PersonalizationPage(topInset = topInset, onBack = { route = null })
+                null -> SettingsHomeList(
+                    themeSettings = themeSettings,
+                    onThemeSettingsChanged = onThemeSettingsChanged,
+                    onOpenDetail = { route = it },
+                    topInset = topInset,
+                    listState = homeListState,
+                )
+            }
+        }
     }
 }
 
@@ -317,17 +353,15 @@ private fun UserAvatarPreview(tick: Int, size: Dp = 44.dp) {
 }
 
 @Composable
-private fun LlmSettingsEntryCard() {
+private fun LlmSettingsEntryCard(onOpen: () -> Unit) {
     val context = LocalContext.current
     val appContext = context.applicationContext
     var settings by remember { mutableStateOf(LlmSettings.load(appContext)) }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+    LaunchedEffect(Unit) {
         settings = LlmSettings.load(appContext)
     }
     Card(
-        onClick = {
-            launcher.launch(Intent(context, LlmSettingsActivity::class.java))
-        },
+        onClick = onOpen,
         modifier = Modifier.fillMaxWidth().appPressScale(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -422,7 +456,7 @@ private fun LlmHeadersEditor(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-internal fun LlmSettingsScreen(onBack: () -> Unit) {
+internal fun LlmSettingsScreen(onBack: () -> Unit, topInsetOverride: Dp? = null) {
     val context = LocalContext.current
     val appContext = context.applicationContext
     var draft by remember { mutableStateOf(LlmSettings.load(appContext)) }
@@ -433,14 +467,13 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
     var saved by remember { mutableStateOf(false) }
     var confirmClearAll by remember { mutableStateOf(false) }
     var clearAllFailed by remember { mutableStateOf(false) }
-    var mimoKey by remember { mutableStateOf(loadMimoApiKey(appContext)) }
     val scope = rememberCoroutineScope()
     val hazeState = rememberLiquidGlassState()
     // 之前每次重组都同步读一次 SharedPreferences
     val glassEnabled = remember(appContext) {
         ThemeSettings.load(appContext).liquidGlassEnabled && VisualGuard.supportsLiquidGlass(appContext)
     }
-    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val topInset = topInsetOverride ?: WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier
@@ -620,21 +653,30 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
                         onCheckedChange = { draft = draft.copy(imageInputEnabled = it); saved = false },
                     )
                 }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(I18n.t("settings_llm_send_time"), fontWeight = FontWeight.SemiBold)
+                        Text(
+                            I18n.t("settings_llm_send_time_desc"),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Switch(
+                        checked = draft.sendMessageTime,
+                        onCheckedChange = { draft = draft.copy(sendMessageTime = it); saved = false },
+                    )
+                }
                 LlmHeadersEditor(
                     headers = draft.headers,
                     onHeadersChange = { updated ->
                         draft = draft.copy(headers = updated)
                         saved = false
                     },
-                )
-                OutlinedTextField(
-                    value = mimoKey,
-                    onValueChange = { mimoKey = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(I18n.t("settings_voice_mimo_key")) },
-                    supportingText = { Text(I18n.t("settings_voice_mimo_key_desc")) },
-                    visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    singleLine = true,
                 )
                 Button(
                     modifier = Modifier.fillMaxWidth(),
@@ -646,7 +688,6 @@ internal fun LlmSettingsScreen(onBack: () -> Unit) {
                             draft = draft.copy(maxTokens = maxTokens).normalized()
                             maxTokensText = draft.maxTokens.toString()
                             draft.save(appContext)
-                            saveMimoApiKey(appContext, mimoKey)
                             saved = true
                         }
                     },
@@ -1753,7 +1794,7 @@ private fun BuiltinVoiceCard(selectedModel: ModelChoice?) {
 
 // ==================== 设置页重排：路由 / 行组件 / 详情子页 ====================
 
-private enum class SettingsDetail { WALLPAPER, INTERACTION, RENDER, VOICE }
+private enum class SettingsDetail { WALLPAPER, INTERACTION, RENDER, VOICE, LLM, PERSONALIZATION }
 
 @Composable
 private fun SettingsHomeList(
@@ -1761,17 +1802,30 @@ private fun SettingsHomeList(
     onThemeSettingsChanged: (ThemeSettings) -> Unit,
     onOpenDetail: (SettingsDetail) -> Unit,
     topInset: Dp,
+    listState: LazyListState,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = topInset + 4.dp, bottom = 20.dp),
+        state = listState,
+        contentPadding = PaddingValues(start = 16.dp, top = topInset + 4.dp, end = 16.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item(key = "section_appearance") { SettingsSectionHeader(I18n.t("settings_section_appearance")) }
         item(key = "theme") { ThemeSettingsCard(settings = themeSettings, onSettingsChanged = onThemeSettingsChanged) }
+        item(key = "language") { AppLanguageCard() }
         item(key = "section_chat_ai") { SettingsSectionHeader(I18n.t("settings_section_chat_ai")) }
-        item(key = "llm") { LlmSettingsEntryCard() }
-        item(key = "line_ui") { LineUiSettingsCard() }
+        item(key = "llm") { LlmSettingsEntryCard(onOpen = { onOpenDetail(SettingsDetail.LLM) }) }
+        item(key = "personalization") {
+            SettingsSectionCard {
+                SettingsRowBase(
+                    title = I18n.t("settings_personalization_title"),
+                    subtitle = I18n.t("settings_personalization_desc"),
+                    onClick = { onOpenDetail(SettingsDetail.PERSONALIZATION) },
+                    divider = false,
+                    trailing = { Icon(Icons.Outlined.ChevronRight, contentDescription = null) },
+                )
+            }
+        }
         item(key = "section_desktop") { SettingsSectionHeader(I18n.t("settings_section_desktop")) }
         item(key = "desktop") {
             DesktopHomeCard(
@@ -1783,6 +1837,45 @@ private fun SettingsHomeList(
         item(key = "section_voice") { SettingsSectionHeader(I18n.t("settings_section_voice")) }
         item(key = "voice") { VoiceHomeCard(onOpenVoice = { onOpenDetail(SettingsDetail.VOICE) }) }
         item(key = "info") { InfoCard(I18n.t("settings_about"), I18n.t("settings_about_text")) }
+    }
+}
+
+@Composable
+private fun AppLanguageCard() {
+    val context = LocalContext.current
+    var selected by remember { mutableStateOf(I18n.currentLanguage(context)) }
+    val options = listOf("zh" to "简体中文", "ja" to "日本語", "en" to "English")
+    SettingsSectionCard {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(I18n.t("settings_app_language"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                options.forEachIndexed { index, (language, label) ->
+                    SegmentedButton(
+                        selected = selected == language,
+                        onClick = {
+                            if (selected != language) {
+                                selected = language
+                                I18n.setLanguage(context.applicationContext, language)
+                                recreateHostActivity(context)
+                            }
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                        label = { Text(label, maxLines = 1) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun recreateHostActivity(context: Context) {
+    var current: Context? = context
+    while (current is ContextWrapper) {
+        if (current is Activity) {
+            current.recreate()
+            return
+        }
+        current = current.baseContext
     }
 }
 
@@ -1833,13 +1926,14 @@ private fun SettingsSwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     divider: Boolean = true,
+    enabled: Boolean = true,
 ) {
     SettingsRowBase(
         title = title,
         subtitle = subtitle,
         onClick = null,
         divider = divider,
-        trailing = { Switch(checked = checked, onCheckedChange = onCheckedChange) },
+        trailing = { Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled) },
     )
 }
 
@@ -2085,6 +2179,67 @@ private fun SettingsDetailPage(
             },
             colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent),
         )
+    }
+}
+
+@Composable
+private fun PersonalizationPage(topInset: Dp, onBack: () -> Unit) {
+    val context = LocalContext.current.applicationContext
+    var display by remember { mutableStateOf(ChatDisplayPreferences.load(context)) }
+    fun update(value: ChatDisplayPreferences) {
+        display = value
+        value.save(context)
+    }
+    SettingsDetailPage(title = I18n.t("settings_personalization_title"), subtitle = I18n.t("settings_personalization_desc"), topInset = topInset, onBack = onBack) {
+        item(key = "line_ui") { LineUiSettingsCard() }
+        item(key = "chat_display") {
+            SettingsSectionCard {
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    Text(
+                        I18n.t("settings_chat_display"),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    SettingsSwitchRow(
+                        title = I18n.t("settings_show_message_time"),
+                        checked = display.showMessageTime,
+                        onCheckedChange = { update(display.copy(showMessageTime = it)) },
+                    )
+                    SettingsSwitchRow(
+                        title = I18n.t("settings_show_month_day"),
+                        subtitle = I18n.t(if (display.showMessageTime) "settings_show_month_day_desc" else "settings_show_month_day_disabled"),
+                        checked = display.showMonthDay,
+                        onCheckedChange = { update(display.copy(showMonthDay = it)) },
+                        enabled = display.showMessageTime,
+                    )
+                    SettingsSwitchRow(
+                        title = I18n.t("settings_show_read_aloud"),
+                        checked = display.showReadAloud,
+                        onCheckedChange = { update(display.copy(showReadAloud = it)) },
+                    )
+                    SettingsSwitchRow(
+                        title = I18n.t("settings_show_retry_icon"),
+                        subtitle = I18n.t("settings_show_retry_desc"),
+                        checked = display.showRetryIcon,
+                        onCheckedChange = { update(display.copy(showRetryIcon = it)) },
+                    )
+                    SettingsSwitchRow(
+                        title = I18n.t("settings_show_context_usage"),
+                        subtitle = I18n.t("settings_show_context_usage_desc"),
+                        checked = display.showContextUsage,
+                        onCheckedChange = { update(display.copy(showContextUsage = it)) },
+                    )
+                    SettingsSwitchRow(
+                        title = I18n.t("settings_show_model_time_control"),
+                        subtitle = I18n.t("settings_show_model_time_control_desc"),
+                        checked = display.showModelTimeControl,
+                        onCheckedChange = { update(display.copy(showModelTimeControl = it)) },
+                        divider = false,
+                    )
+                }
+            }
+        }
     }
 }
 
