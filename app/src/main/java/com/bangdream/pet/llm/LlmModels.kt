@@ -123,6 +123,8 @@ data class ChatMessage(
     val timeContextEnabled: Boolean = false,
     val timeZoneId: String? = null,
     val parentId: String? = null,
+    /** One reply/branch node, rendered as ordered bubbles. Empty for legacy messages. */
+    val segments: List<String> = emptyList(),
 )
 
 @Immutable

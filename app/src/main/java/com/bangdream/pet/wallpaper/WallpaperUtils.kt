@@ -62,14 +62,17 @@ object WallpaperUtils {
         return (drawable as? BitmapDrawable)?.bitmap
     }
 
-    /**
-     * Android 13+ 只有授予「所有文件访问」权限后才能读到真实壁纸；
-     * 在此之前 getDrawable() 返回的是默认壁纸，捕获结果无意义。
-     */
+    /** Android 12 及以下需要读取存储权限；Android 13+ 需要「所有文件访问」。 */
     fun canReadRealWallpaper(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT < 33) return true
+        if (Build.VERSION.SDK_INT < 33) return !needsLegacyReadPermission(context)
         return hasAllFilesAccess(context)
     }
+
+    fun needsLegacyReadPermission(context: Context): Boolean =
+        Build.VERSION.SDK_INT < 33 && ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.READ_EXTERNAL_STORAGE,
+        ) != PackageManager.PERMISSION_GRANTED
 
     /** 是否已授予「所有文件访问」（Android 11+），低版本回退到存储权限。 */
     fun hasAllFilesAccess(context: Context): Boolean {

@@ -1042,13 +1042,36 @@ private fun WallpaperSettingsCard(
     }
     val scope = rememberCoroutineScope()
     var wallpaperStatus by remember { mutableStateOf("") }
-    LaunchedEffect(appContext) {
+    LaunchedEffect(appContext, backgroundUri) {
         // 读系统壁纸状态要走 WallpaperManager + 磁盘，不能在组合期同步做
         wallpaperStatus = withContext(Dispatchers.IO) { WallpaperBackup.wallpaperStatus(appContext) }
     }
     var showAllFilesAccessDialog by remember { mutableStateOf(false) }
     val allFilesAccessLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         showAllFilesAccessDialog = false
+    }
+    val beginWallpaperSetup: () -> Unit = {
+        scope.launch {
+            if (loadWallpaperBackgroundUri(appContext).isNullOrBlank()) {
+                when (val result = withContext(Dispatchers.IO) {
+                    WallpaperBackup.captureAndUseAsBackgroundResult(appContext)
+                }) {
+                    is WallpaperBackup.WallpaperCaptureResult.Success -> onBackgroundChanged(result.uri)
+                    WallpaperBackup.WallpaperCaptureResult.NeedReadStoragePermission ->
+                        Toast.makeText(appContext, I18n.t("settings_wallpaper_read_permission_denied"), Toast.LENGTH_LONG).show()
+                    WallpaperBackup.WallpaperCaptureResult.NeedAllFilesAccess -> showAllFilesAccessDialog = true
+                    WallpaperBackup.WallpaperCaptureResult.Failed -> Unit
+                }
+            }
+            openLiveWallpaperPicker(context)
+        }
+    }
+    val readPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) beginWallpaperSetup()
+        else {
+            Toast.makeText(appContext, I18n.t("settings_wallpaper_read_permission_denied"), Toast.LENGTH_LONG).show()
+            openLiveWallpaperPicker(context)
+        }
     }
 
     SettingsSectionCard {
@@ -1080,22 +1103,11 @@ private fun WallpaperSettingsCard(
                     onCheckedChange = { newEnabled ->
                         onEnabledChanged(newEnabled)
                         if (newEnabled) {
-                            scope.launch {
-                                if (loadWallpaperBackgroundUri(appContext).isNullOrBlank()) {
-                                    val result = withContext(Dispatchers.IO) {
-                                        WallpaperBackup.captureAndUseAsBackgroundResult(appContext)
-                                    }
-                                    when (result) {
-                                        is WallpaperBackup.WallpaperCaptureResult.Success ->
-                                            onBackgroundChanged(result.uri)
-                                        WallpaperBackup.WallpaperCaptureResult.NeedAllFilesAccess ->
-                                            showAllFilesAccessDialog = true
-                                        WallpaperBackup.WallpaperCaptureResult.Failed -> Unit
-                                    }
-                                }
-                                // 每次开启都跳转到系统壁纸选择器（选择/启用 BangDream Pet 动态壁纸）
-                                openLiveWallpaperPicker(context)
-                            }
+                            if (loadWallpaperBackgroundUri(appContext).isNullOrBlank() &&
+                                WallpaperUtils.needsLegacyReadPermission(appContext)
+                            ) {
+                                readPermissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                            } else beginWallpaperSetup()
                         }
                         else {
                             // 关闭：恢复系统原壁纸，清除桌面模型显示（解码+写壁纸很重，必须离开主线程）
@@ -1334,6 +1346,47 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
     val allFilesAccessLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         showAllFilesAccessDialog = false
     }
+    val captureOriginalWallpaper: () -> Unit = {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                WallpaperBackup.captureAndUseAsBackgroundResult(appContext)
+            }
+            when (result) {
+                is WallpaperBackup.WallpaperCaptureResult.Success -> {
+                    onCaptured(result.uri)
+                    Toast.makeText(
+                        appContext,
+                        if (result.fromBackup) {
+                            I18n.t("settings_original_wallpaper_reused_backup")
+                        } else {
+                            I18n.t("settings_original_wallpaper_captured")
+                        },
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+                WallpaperBackup.WallpaperCaptureResult.NeedReadStoragePermission ->
+                    Toast.makeText(appContext, I18n.t("settings_wallpaper_read_permission_denied"), Toast.LENGTH_LONG).show()
+                WallpaperBackup.WallpaperCaptureResult.NeedAllFilesAccess ->
+                    showAllFilesAccessDialog = true
+                WallpaperBackup.WallpaperCaptureResult.Failed -> {
+                    val info = WallpaperManager.getInstance(appContext).wallpaperInfo
+                    Toast.makeText(
+                        appContext,
+                        if (info != null) {
+                            I18n.t("settings_wallpaper_live_detected", info.component.flattenToShortString())
+                        } else {
+                            I18n.t("settings_original_wallpaper_unreadable")
+                        },
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+        }
+    }
+    val readPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) captureOriginalWallpaper()
+        else Toast.makeText(appContext, I18n.t("settings_wallpaper_read_permission_denied"), Toast.LENGTH_LONG).show()
+    }
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(I18n.t("settings_original_wallpaper_title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -1342,42 +1395,19 @@ private fun OriginalWallpaperCard(onCaptured: (String?) -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            if (WallpaperUtils.needsLegacyReadPermission(appContext)) {
+                Text(
+                    I18n.t("settings_wallpaper_read_permission_explain"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 FilledTonalButton(
                     onClick = {
-                        scope.launch {
-                            val result = withContext(Dispatchers.IO) {
-                                WallpaperBackup.captureAndUseAsBackgroundResult(appContext)
-                            }
-                            when (result) {
-                                is WallpaperBackup.WallpaperCaptureResult.Success -> {
-                                    onCaptured(result.uri)
-                                    Toast.makeText(
-                                        appContext,
-                                        if (result.fromBackup) {
-                                            I18n.t("settings_original_wallpaper_reused_backup")
-                                        } else {
-                                            I18n.t("settings_original_wallpaper_captured")
-                                        },
-                                        Toast.LENGTH_LONG,
-                                    ).show()
-                                }
-                                WallpaperBackup.WallpaperCaptureResult.NeedAllFilesAccess ->
-                                    showAllFilesAccessDialog = true
-                                WallpaperBackup.WallpaperCaptureResult.Failed -> {
-                                    val info = WallpaperManager.getInstance(appContext).wallpaperInfo
-                                    Toast.makeText(
-                                        appContext,
-                                        if (info != null) {
-                                            I18n.t("settings_wallpaper_live_detected", info.component.flattenToShortString())
-                                        } else {
-                                            I18n.t("settings_original_wallpaper_unreadable")
-                                        },
-                                        Toast.LENGTH_LONG,
-                                    ).show()
-                                }
-                            }
-                        }
+                        if (WallpaperUtils.needsLegacyReadPermission(appContext)) {
+                            readPermissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                        } else captureOriginalWallpaper()
                     },
                 ) {
                     Text(I18n.t("settings_original_wallpaper_capture_btn"))
@@ -2038,6 +2068,30 @@ private fun DesktopHomeCard(
     val allFilesAccessLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         showAllFilesAccessDialog = false
     }
+    val beginWallpaperSetup: () -> Unit = {
+        scope.launch {
+            if (loadWallpaperBackgroundUri(appContext).isNullOrBlank()) {
+                when (val result = withContext(Dispatchers.IO) {
+                    WallpaperBackup.captureAndUseAsBackgroundResult(appContext)
+                }) {
+                    is WallpaperBackup.WallpaperCaptureResult.Success ->
+                        saveWallpaperBackgroundUri(appContext, result.uri)
+                    WallpaperBackup.WallpaperCaptureResult.NeedReadStoragePermission ->
+                        Toast.makeText(appContext, I18n.t("settings_wallpaper_read_permission_denied"), Toast.LENGTH_LONG).show()
+                    WallpaperBackup.WallpaperCaptureResult.NeedAllFilesAccess -> showAllFilesAccessDialog = true
+                    WallpaperBackup.WallpaperCaptureResult.Failed -> Unit
+                }
+            }
+            openLiveWallpaperPicker(context)
+        }
+    }
+    val readPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) beginWallpaperSetup()
+        else {
+            Toast.makeText(appContext, I18n.t("settings_wallpaper_read_permission_denied"), Toast.LENGTH_LONG).show()
+            openLiveWallpaperPicker(context)
+        }
+    }
     val overlayPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         overlayAllowed = Settings.canDrawOverlays(appContext)
     }
@@ -2051,20 +2105,11 @@ private fun DesktopHomeCard(
                     wallpaperEnabled = newEnabled
                     setWallpaperEnabled(appContext, newEnabled)
                     if (newEnabled) {
-                        scope.launch {
-                            if (loadWallpaperBackgroundUri(appContext).isNullOrBlank()) {
-                                when (val result = withContext(Dispatchers.IO) {
-                                    WallpaperBackup.captureAndUseAsBackgroundResult(appContext)
-                                }) {
-                                    is WallpaperBackup.WallpaperCaptureResult.Success ->
-                                        saveWallpaperBackgroundUri(appContext, result.uri)
-                                    WallpaperBackup.WallpaperCaptureResult.NeedAllFilesAccess ->
-                                        showAllFilesAccessDialog = true
-                                    WallpaperBackup.WallpaperCaptureResult.Failed -> Unit
-                                }
-                            }
-                            openLiveWallpaperPicker(context)
-                        }
+                        if (loadWallpaperBackgroundUri(appContext).isNullOrBlank() &&
+                            WallpaperUtils.needsLegacyReadPermission(appContext)
+                        ) {
+                            readPermissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                        } else beginWallpaperSetup()
                     } else {
                         scope.launch {
                             val restored = withContext(Dispatchers.IO) {
@@ -2219,6 +2264,46 @@ private fun PersonalizationPage(topInset: Dp, onBack: () -> Unit) {
     SettingsDetailPage(title = I18n.t("settings_personalization_title"), subtitle = I18n.t("settings_personalization_desc"), topInset = topInset, onBack = onBack) {
         item(key = "line_ui") { LineUiSettingsCard() }
         item(key = "line_appearance") { LineAppearanceSettingsCard(display, ::update) }
+        item(key = "multi_part_replies") {
+            SettingsSectionCard {
+                Column {
+                    SettingsSwitchRow(
+                        title = I18n.t("settings_multi_part_replies"),
+                        subtitle = I18n.t("settings_multi_part_replies_desc"),
+                        checked = display.multiPartReplies,
+                        onCheckedChange = { update(display.copy(multiPartReplies = it)) },
+                        divider = display.multiPartReplies,
+                    )
+                    if (display.multiPartReplies) {
+                        var intervalDraft by remember(display.multiPartIntervalMs) { mutableStateOf(display.multiPartIntervalMs.toString()) }
+                        val parsedInterval = intervalDraft.toIntOrNull()
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(I18n.t("settings_multi_part_interval_desc"), style = MaterialTheme.typography.bodySmall)
+                            Slider(
+                                value = display.multiPartIntervalMs.toFloat(),
+                                onValueChange = { update(display.copy(multiPartIntervalMs = it.roundToInt())) },
+                                valueRange = 0f..10000f,
+                            )
+                            OutlinedTextField(
+                                value = intervalDraft,
+                                onValueChange = { value ->
+                                    if (value.length <= 5 && value.all(Char::isDigit)) {
+                                        intervalDraft = value
+                                        value.toIntOrNull()?.takeIf { it in 0..10000 }?.let { update(display.copy(multiPartIntervalMs = it)) }
+                                    }
+                                },
+                                label = { Text(I18n.t("settings_multi_part_interval")) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                isError = parsedInterval == null || parsedInterval !in 0..10000,
+                                supportingText = { Text(I18n.t("settings_multi_part_interval_range")) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
         item(key = "chat_display") {
             SettingsSectionCard {
                 Column(Modifier.padding(vertical = 4.dp)) {

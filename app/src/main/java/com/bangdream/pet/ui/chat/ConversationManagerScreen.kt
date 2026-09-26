@@ -756,7 +756,9 @@ private fun ConversationDetailScreen(
             ChatMessageList(
                 messages = state.messages,
                 streamingText = state.streamingText,
-                thinking = state.isThinking,
+                thinking = state.isThinking || (state.isGenerating && state.streamingText.isBlank()),
+                revealingReplyId = state.revealingReplyId,
+                revealedSegmentCount = state.revealedSegmentCount,
                 streamingReasoning = state.streamingReasoning,
                 highlightQuery = searchQuery.takeIf { it.isNotBlank() },
                 scrollToMessageId = scrollTarget,

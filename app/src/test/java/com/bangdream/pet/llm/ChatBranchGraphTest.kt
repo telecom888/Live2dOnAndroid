@@ -60,4 +60,22 @@ class ChatBranchGraphTest {
         assertEquals("角色扮演", payload.getJSONObject(2).getString("content"))
         assertEquals("早上好", timed.content)
     }
+
+    @Test fun multiPartVersionsRemainWholeThroughPersistenceAndContextSerialization() {
+        val repository = ChatHistoryRepository(temporaryFolder.newFolder("multi-history"))
+        val user = message("u", "user", "你好", 1)
+        val first = message("a", "assistant", "早。\n睡得好吗？", 2).copy(segments = listOf("早。", "睡得好吗？"))
+        val base = ChatBranchGraph.normalized(ChatConversation("multi", "kasumi", "chat", 1, 2, listOf(user, first)))
+        val alternate = message("b", "assistant", "另一版", 3).copy(segments = listOf("另一版"))
+        repository.saveConversation(ChatBranchGraph.append(ChatBranchGraph.truncateAt(base, "u"), alternate))
+        val loaded = repository.loadConversation("kasumi", "multi")!!
+        assertEquals(listOf("u", "b"), loaded.messages.map { it.id })
+        assertEquals(2, ChatBranchGraph.versions(loaded).getValue("b").total)
+        val selected = ChatBranchGraph.select(loaded, "a")
+        assertEquals(listOf("早。", "睡得好吗？"), selected.messages.last().segments)
+        assertTrue(selected.messages.first().segments.isEmpty())
+        val payload = LlmChatClient().messagesToJsonArray("system", selected.messages)
+        assertEquals(3, payload.length())
+        assertEquals("早。\n睡得好吗？", payload.getJSONObject(2).getString("content"))
+    }
 }

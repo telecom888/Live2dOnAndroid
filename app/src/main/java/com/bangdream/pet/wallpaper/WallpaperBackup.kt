@@ -4,6 +4,7 @@ import android.app.WallpaperManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Build
 import com.bangdream.pet.loadWallpaperOriginalBackupPath
 import com.bangdream.pet.saveWallpaperOriginalBackupPath
 import com.bangdream.pet.saveWallpaperBackgroundUri
@@ -15,10 +16,11 @@ import kotlin.math.max
 object WallpaperBackup {
     private const val MAX_EDGE = 2048
 
-    /** 捕获结果：成功 / 需要「所有文件访问」权限（Android 13+ 静态壁纸）/ 失败。 */
+    /** 捕获结果：成功 / 需要读取存储权限 / 需要「所有文件访问」权限 / 失败。 */
     sealed interface WallpaperCaptureResult {
         /** uri 为 file:// 背景地址；fromBackup=true 表示复用了旧备份（非本次新捕获）。 */
         data class Success(val uri: String, val fromBackup: Boolean = false) : WallpaperCaptureResult
+        data object NeedReadStoragePermission : WallpaperCaptureResult
         data object NeedAllFilesAccess : WallpaperCaptureResult
         data object Failed : WallpaperCaptureResult
     }
@@ -27,7 +29,7 @@ object WallpaperBackup {
      * 捕获当前系统壁纸并设为壁纸背景 URI。
      * 逻辑（移植逸风工具箱）：
      * 1. 当前是动态壁纸 -> 无法捕获（Failed）
-     * 2. Android 13+ 未授予「所有文件访问」-> 若有旧备份复用（Success+fromBackup），否则 NeedAllFilesAccess
+     * 2. Android 12 及以下未授权读取存储 -> 请求运行时权限；Android 13+ 未授予「所有文件访问」-> 复用旧备份或提示授权
      * 3. WallpaperUtils.readBitmap(HOME) -> 保存 PNG 到应用私有目录
      * 4. 失败则复用旧备份
      */
@@ -36,6 +38,7 @@ object WallpaperBackup {
         if (wm.wallpaperInfo != null) return WallpaperCaptureResult.Failed
 
         if (!WallpaperUtils.canReadRealWallpaper(context)) {
+            if (Build.VERSION.SDK_INT < 33) return WallpaperCaptureResult.NeedReadStoragePermission
             return reuseOldBackup(context)
                 ?.let { WallpaperCaptureResult.Success(it, fromBackup = true) }
                 ?: WallpaperCaptureResult.NeedAllFilesAccess
@@ -69,7 +72,11 @@ object WallpaperBackup {
                 "动态壁纸：$label（${info.component.flattenToShortString()}）"
             }
             !WallpaperUtils.canReadRealWallpaper(context) ->
-                "静态壁纸，但 Android 13+ 需要授予「所有文件访问」权限才能读取（可在下方授权后捕获）"
+                if (Build.VERSION.SDK_INT < 33) {
+                    "静态壁纸，读取原壁纸需要照片和文件访问权限（点击下方按钮授权）"
+                } else {
+                    "静态壁纸，但 Android 13+ 需要授予「所有文件访问」权限才能读取（可在下方授权后捕获）"
+                }
             runCatching { wm.drawable != null || wm.peekDrawable() != null }.getOrDefault(false) ->
                 "静态壁纸（可捕获为背景）"
             else -> "静态壁纸，但系统限制应用读取（可用「选择照片」作为背景）"

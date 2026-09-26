@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
@@ -86,6 +87,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -137,6 +139,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -403,8 +406,11 @@ private fun ChatPanelContent(
                 ChatMessageList(
                     messages = state.messages,
                     streamingText = state.streamingText,
-                    thinking = state.isThinking,
-                    onReplay = null,
+                    thinking = state.isThinking || (state.isGenerating && state.streamingText.isBlank()),
+                    streamingReasoning = state.streamingReasoning,
+                    revealingReplyId = state.revealingReplyId,
+                    revealedSegmentCount = state.revealedSegmentCount,
+                    onReplay = { message -> viewModel.replayMessage(model.characterId, message.content) },
                     characterId = model.characterId,
                     characterName = model.characterName,
                     lineMode = loadLineUiEnabled(context),
@@ -656,6 +662,7 @@ private fun formatConversationTimestamp(timestamp: Long): String {
 }
 
 private fun chatErrorText(error: String): String = when (error) {
+    "CHAT_REPLY_FORMAT_INVALID" -> I18n.t("chat_reply_format_invalid")
     Live2DChatViewModel.ERROR_LLM_NOT_CONFIGURED -> I18n.t("chat_not_configured")
     Live2DChatViewModel.ERROR_HISTORY_LOAD -> I18n.t("chat_history_load_failed")
     Live2DChatViewModel.ERROR_HISTORY_SAVE -> I18n.t("chat_history_save_failed")
@@ -685,6 +692,8 @@ internal fun ChatMessageList(
     streamingText: String,
     thinking: Boolean,
     streamingReasoning: String = "",
+    revealingReplyId: String? = null,
+    revealedSegmentCount: Int = Int.MAX_VALUE,
     onReplay: ((ChatMessage) -> Unit)? = null,
     highlightQuery: String? = null,
     scrollToMessageId: String? = null,
@@ -720,12 +729,18 @@ internal fun ChatMessageList(
             consumedJump = true
         }
     }
-    LaunchedEffect(itemCount, streamScrollBucket) {
+    LaunchedEffect(itemCount, streamScrollBucket, revealingReplyId, revealedSegmentCount) {
         val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
         val wasNearBottom = shouldFollowNewChatContent(previousItemCount, lastVisibleIndex)
         previousItemCount = itemCount
         if (itemCount > 0 && wasNearBottom && !consumedJump) {
             listState.scrollToItem(itemCount - 1)
+            if (messages.lastOrNull()?.segments?.size?.let { it > 1 } == true) delay(180)
+            withFrameNanos { }
+            val layout = listState.layoutInfo
+            val last = layout.visibleItemsInfo.firstOrNull { it.index == itemCount - 1 }
+            val offset = ((last?.size ?: 0) - (layout.viewportEndOffset - layout.viewportStartOffset)).coerceAtLeast(0)
+            if (offset > 0) listState.scrollToItem(itemCount - 1, offset)
         }
         consumedJump = false
     }
@@ -748,40 +763,58 @@ internal fun ChatMessageList(
                 } else {
                     null
                 }
-                ChatBubble(
-                    message.role,
-                    message.content,
-                    reasoning = message.reasoning,
-                    highlightQuery = highlightQuery,
-                    onReplay = replay,
-                    timestamp = message.timestamp,
-                    images = message.images,
-                    avatar = avatar,
-                    userAvatar = userAvatar,
-                    lineMode = lineMode,
-                    senderName = characterName,
-                    displayPreferences = displayPreferences,
-                    versionPosition = versionPositions[message.id],
-                    onSwitchVersion = onSwitchVersion,
-                    onRestoreReply = if (message.id == messages.lastOrNull()?.id && restoreReplyId != null && onSwitchVersion != null) {
-                        { onSwitchVersion(restoreReplyId) }
-                    } else null,
-                    onRegenerate = if (message.role == "assistant" && onRegenerateMessage != null) {
-                        { onRegenerateMessage(message) }
-                    } else null,
-                    onLongPress = if ((message.role == "user" && onEditMessage != null) ||
-                        (message.role == "assistant" && onRegenerateMessage != null)) {
-                        { actionMessage = message }
-                    } else null,
-                    read = message.read,
-                    maxBubbleWidth = bubbleMaxWidth,
-                )
+                val parts = message.segments.takeIf { message.role == "assistant" && it.isNotEmpty() } ?: listOf(message.content)
+                val count = if (message.id == revealingReplyId) revealedSegmentCount.coerceIn(1, parts.size) else parts.size
+                Column {
+                    parts.forEachIndexed { partIndex, part ->
+                        AnimatedVisibility(
+                            visible = partIndex < count,
+                            enter = fadeIn(tween(160)) + expandVertically(tween(160)),
+                        ) {
+                            Column {
+                                if (partIndex > 0) Spacer(Modifier.height(5.dp))
+                                val firstPart = partIndex == 0
+                                val lastPart = partIndex == parts.lastIndex
+                                ChatBubble(
+                                    message.role,
+                                    part,
+                                    reasoning = message.reasoning.takeIf { firstPart },
+                                    highlightQuery = highlightQuery,
+                                    onReplay = replay.takeIf { lastPart },
+                                    groupContinuation = !firstPart,
+                                    showMessageMetadata = lastPart,
+                                    timestamp = message.timestamp,
+                                    images = message.images,
+                                    avatar = avatar,
+                                    userAvatar = userAvatar,
+                                    lineMode = lineMode,
+                                    senderName = characterName,
+                                    displayPreferences = displayPreferences,
+                                    versionPosition = versionPositions[message.id].takeIf { lastPart },
+                                    onSwitchVersion = onSwitchVersion,
+                                    onRestoreReply = if (lastPart && message.id == messages.lastOrNull()?.id && restoreReplyId != null && onSwitchVersion != null) {
+                                        { onSwitchVersion(restoreReplyId) }
+                                    } else null,
+                                    onRegenerate = if (lastPart && message.role == "assistant" && onRegenerateMessage != null) {
+                                        { onRegenerateMessage(message) }
+                                    } else null,
+                                    onLongPress = if ((message.role == "user" && onEditMessage != null) ||
+                                        (message.role == "assistant" && onRegenerateMessage != null)) {
+                                        { actionMessage = message }
+                                    } else null,
+                                    read = message.read,
+                                    maxBubbleWidth = bubbleMaxWidth,
+                                )
+                            }
+                        }
+                    }
+                }
             }
             if (streamingText.isNotBlank() || thinking) {
                 item(key = "streaming", contentType = "message") {
                     ChatBubble(
                         "assistant",
-                        streamingText.ifBlank { I18n.t("chat_thinking") },
+                        streamingText,
                         thinking,
                         reasoning = streamingReasoning,
                         avatar = avatar,
@@ -920,6 +953,8 @@ internal fun ChatBubble(
     onLongPress: (() -> Unit)? = null,
     read: Boolean = false,
     maxBubbleWidth: Dp = 420.dp,
+    groupContinuation: Boolean = false,
+    showMessageMetadata: Boolean = true,
 ) {
     val fromUser = role == "user"
     val lineBubbleColor = Color(if (fromUser) displayPreferences.lineOwnBubbleColor else displayPreferences.lineOtherBubbleColor)
@@ -940,23 +975,26 @@ internal fun ChatBubble(
             verticalAlignment = Alignment.Top,
         ) {
             if (!fromUser && lineMode) {
-                LineAvatar(avatar, isUser = false)
+                if (groupContinuation) Spacer(Modifier.size(40.dp)) else LineAvatar(avatar, isUser = false)
                 Spacer(Modifier.width(8.dp))
             }
             Column(
-                modifier = Modifier.widthIn(max = maxBubbleWidth + if (lineMode) 80.dp else 0.dp),
+                modifier = Modifier.widthIn(max = maxBubbleWidth + if (lineMode) 80.dp else 0.dp).padding(
+                    start = if (lineMode && !fromUser && groupContinuation) 7.dp else 0.dp,
+                    end = if (lineMode && fromUser && groupContinuation) 7.dp else 0.dp,
+                ),
                 horizontalAlignment = if (fromUser) Alignment.End else Alignment.Start,
             ) {
-                if (!fromUser && lineMode && !senderName.isNullOrBlank() && !thinking) {
+                if (!fromUser && lineMode && !groupContinuation && !senderName.isNullOrBlank() && !thinking) {
                     Text(
                         senderName,
                         style = MaterialTheme.typography.labelSmall,
                         color = Color(0xFF354B59),
-                        modifier = Modifier.padding(start = 2.dp, bottom = 3.dp),
+                        modifier = Modifier.padding(start = 7.dp, bottom = 3.dp),
                     )
                 }
                 Row(verticalAlignment = Alignment.Bottom) {
-                    if (fromUser && lineMode && (displayPreferences.showMessageTime || read)) {
+                    if (showMessageMetadata && fromUser && lineMode && (displayPreferences.showMessageTime || read)) {
                         LineMessageMetadata(
                             time = if (displayPreferences.showMessageTime) formatMessageTime(context, timestamp, displayPreferences.showMonthDay) else "",
                             read = read,
@@ -968,7 +1006,9 @@ internal fun ChatBubble(
                     modifier = Modifier.widthIn(max = maxBubbleWidth).then(
                         if (onLongPress != null) Modifier.combinedClickable(onClick = {}, onLongClick = onLongPress) else Modifier
                     ),
-                    shape = if (lineMode) remember(fromUser) { LineBubbleShape(fromUser) } else RoundedCornerShape(
+                    shape = if (lineMode) {
+                        if (groupContinuation) RoundedCornerShape(18.dp) else remember(fromUser) { LineBubbleShape(fromUser) }
+                    } else RoundedCornerShape(
                         topStart = 20.dp,
                         topEnd = 20.dp,
                         bottomStart = if (fromUser) 20.dp else 6.dp,
@@ -983,8 +1023,8 @@ internal fun ChatBubble(
                     },
                 ) {
                     Column(Modifier.padding(
-                        start = if (lineMode && !fromUser) 21.dp else 14.dp,
-                        end = if (lineMode && fromUser) 21.dp else 14.dp,
+                        start = if (lineMode && !fromUser && !groupContinuation) 21.dp else 14.dp,
+                        end = if (lineMode && fromUser && !groupContinuation) 21.dp else 14.dp,
                         top = 10.dp,
                         bottom = 10.dp,
                     )) {
@@ -1048,7 +1088,7 @@ internal fun ChatBubble(
                         }
                     }
                 }
-                    if (!fromUser && lineMode) {
+                    if (showMessageMetadata && !fromUser && lineMode) {
                         LineMessageMetadata(
                             time = if (displayPreferences.showMessageTime) formatMessageTime(context, timestamp, displayPreferences.showMonthDay) else "",
                             read = false,
@@ -1057,7 +1097,7 @@ internal fun ChatBubble(
                         )
                     }
                 }
-                if (!lineMode) {
+                if (!lineMode && showMessageMetadata) {
                     Row(
                         modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,

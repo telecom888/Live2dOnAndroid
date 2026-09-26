@@ -36,6 +36,7 @@
 
 ## 文档
 
+- docs/模型多段发送.md（开关、间隔、输出协议与整组操作）
 - docs/BiliPai-技术栈与UI参考.md
 - docs/DeepSeek-API调用规范.md
 - docs/mimo-tts-voiceclone.txt

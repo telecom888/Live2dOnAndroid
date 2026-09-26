@@ -191,7 +191,7 @@ private fun WallpaperChatPanel(onDismiss: () -> Unit) {
                                             if (result.actionTag != null) {
                                                 NativeLive2D.playAction(Live2DWallpaperService.activeHandle, result.actionTag)
                                             }
-                                            if (loadBubbleEnabled(appContext)) {
+                                            if (result.error == null && result.segments.isEmpty() && loadBubbleEnabled(appContext)) {
                                                 WallpaperBubbleService.show(appContext, result.text)
                                             }
                                             busy = false
@@ -210,4 +210,3 @@ private fun WallpaperChatPanel(onDismiss: () -> Unit) {
         }
     }
 }
-

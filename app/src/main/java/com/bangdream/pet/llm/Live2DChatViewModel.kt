@@ -5,6 +5,7 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.bangdream.pet.VoiceSettings
+import com.bangdream.pet.ChatDisplayPreferences
 import com.bangdream.pet.data.ModelChoice
 import com.bangdream.pet.loadCharacterCustomPrompt
 import com.bangdream.pet.loadCharacterMemory
@@ -51,6 +52,8 @@ data class ChatUiState(
     val isThinking: Boolean = false,
     val isHistoryLoading: Boolean = false,
     val error: String? = null,
+    val revealingReplyId: String? = null,
+    val revealedSegmentCount: Int = Int.MAX_VALUE,
 )
 
 class Live2DChatViewModel(application: Application) : AndroidViewModel(application) {
@@ -61,6 +64,8 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
     private val mutableState = MutableStateFlow(ChatUiState())
     private val mutableActions = Channel<String>(Channel.BUFFERED)
     private var requestJob: Job? = null
+    private var revealJob: Job? = null
+    private var voiceJob: Job? = null
     private var transitionJob: Job? = null
     private var lastFailedRequest: FailedRequest? = null
     private var selectedLocalModel: ModelChoice? = null
@@ -248,6 +253,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun switchMessageVersion(messageId: String) {
+        cancelReplyPresentation()
         val current = mutableState.value
         val conversation = current.activeConversation ?: return
         if (current.isGenerating || current.isHistoryLoading || conversation.nodes.none { it.id == messageId }) return
@@ -268,6 +274,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun editAndResend(model: ModelChoice, messageId: String, text: String, keepImages: Boolean = true): Boolean {
+        cancelReplyPresentation()
         val current = mutableState.value
         val conversation = current.activeConversation ?: return false
         val original = conversation.nodes.firstOrNull { it.id == messageId && it.role == "user" } ?: return false
@@ -306,6 +313,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun regenerate(model: ModelChoice, assistantMessageId: String): Boolean {
+        cancelReplyPresentation()
         val current = mutableState.value
         val conversation = current.activeConversation ?: return false
         val response = conversation.nodes.firstOrNull { it.id == assistantMessageId && it.role == "assistant" } ?: return false
@@ -336,6 +344,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun stop() {
+        cancelReplyPresentation()
         requestJob?.cancel()
     }
 
@@ -354,12 +363,14 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun startRequest(model: ModelChoice, input: String, appendUser: Boolean, images: List<String> = emptyList()) {
+        cancelReplyPresentation()
         requestJob = viewModelScope.launch {
             val current = mutableState.value
             if (current.characterId != model.characterId) return@launch
 
             val now = System.currentTimeMillis()
             val settings = LlmSettings.load(getApplication())
+            val display = ChatDisplayPreferences.load(getApplication())
             val includeTime = when (current.timeContextOverride) {
                 TimeContextOverride.ENABLED -> true
                 TimeContextOverride.DISABLED -> false
@@ -448,12 +459,12 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 loadCharacterMemory(getApplication(), model.characterId)
             }
             val basePrompt = customPrompt?.takeIf(String::isNotBlank) ?: characterPrompt.text
-            val systemPrompt = if (memory.isBlank()) {
+            val systemPrompt = AssistantReplyDecoder.systemPrompt(if (memory.isBlank()) {
                 basePrompt
             } else {
                 "$basePrompt\n\n【长期记忆】以下是你已经记住的内容，请在交流中自然地运用，不要向用户解释或提及记忆本身：\n$memory"
-            }
-            val parser = ActionTagParser(characterPrompt.allowedActionTags)
+            }, display.multiPartReplies)
+            val parser = AssistantReplyDecoder(characterPrompt.allowedActionTags, display.multiPartReplies)
             mutableState.value = mutableState.value.copy(isGenerating = true)
             lastFailedRequest = null
             var latestStreamingText = ""
@@ -519,12 +530,12 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 }
                 pendingStreamingUpdate?.cancel()
                 flushParserText()
-                finalizeAssistant(requestContext, parser, latestStreamingReasoning)
+                finalizeAssistant(requestContext, parser, latestStreamingReasoning, display.multiPartIntervalMs)
             } catch (cancelled: CancellationException) {
                 pendingStreamingUpdate?.cancel()
                 withContext(NonCancellable) {
                     flushParserText()
-                    finalizeAssistant(requestContext, parser, latestStreamingReasoning)
+                    finalizeAssistant(requestContext, parser, latestStreamingReasoning, completed = false)
                 }
                 throw cancelled
             } catch (error: Throwable) {
@@ -532,7 +543,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 if (!currentCoroutineContext().isActive) {
                     withContext(NonCancellable) {
                         flushParserText()
-                        finalizeAssistant(requestContext, parser, latestStreamingReasoning)
+                        finalizeAssistant(requestContext, parser, latestStreamingReasoning, completed = false)
                     }
                     return@launch
                 }
@@ -554,8 +565,17 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private suspend fun finalizeAssistant(request: RequestContext, parser: ActionTagParser, reasoning: String) {
-        val result = parser.finish()
+    private suspend fun finalizeAssistant(
+        request: RequestContext,
+        parser: AssistantReplyDecoder,
+        reasoning: String,
+        intervalMs: Int = 0,
+        completed: Boolean = true,
+    ) {
+        val result = parser.finish(completed)
+        val response = result.text.takeIf(String::isNotBlank)?.let {
+            newMessage("assistant", it).copy(reasoning = reasoning.takeIf(String::isNotBlank), read = true, segments = result.segments)
+        }
         val saved = runIoCatching {
             val persisted = history.updateConversation(request.characterId, request.conversationId) { latest ->
                 val base = if (latest.nodes.any { it.id == request.conversation.activeLeafId }) {
@@ -563,11 +583,8 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 } else {
                     request.conversation
                 }
-                val finalConversation = if (result.text.isNotBlank()) {
-                    ChatBranchGraph.append(base, newMessage("assistant", result.text).copy(
-                        reasoning = reasoning.takeIf(String::isNotBlank),
-                        read = true,
-                    ))
+                val finalConversation = if (response != null) {
+                    ChatBranchGraph.append(base, response)
                 } else {
                     base
                 }
@@ -602,9 +619,23 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             isGenerating = false,
             isThinking = false,
             error = null,
+            revealingReplyId = response?.id?.takeIf { result.segments.size > 1 && intervalMs > 0 },
+            revealedSegmentCount = if (result.segments.size > 1 && intervalMs > 0) 1 else Int.MAX_VALUE,
         )
-        if (result.text.isNotBlank()) {
-            playReplyVoiceIfEnabled(request.characterId, result.text)
+        if (response != null) {
+            revealJob = viewModelScope.launch {
+                if (result.segments.size > 1 && intervalMs > 0) {
+                    for (count in 2..result.segments.size) {
+                        delay(intervalMs.toLong())
+                        if (!isActive(request) || mutableState.value.revealingReplyId != response.id) return@launch
+                        mutableState.value = mutableState.value.copy(revealedSegmentCount = count)
+                    }
+                    mutableState.value = mutableState.value.copy(revealingReplyId = null, revealedSegmentCount = Int.MAX_VALUE)
+                }
+                if (isActive(request) && mutableState.value.messages.any { it.id == response.id }) {
+                    playReplyVoiceIfEnabled(request.characterId, result.text)
+                }
+            }
         }
     }
 
@@ -628,13 +659,14 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
 
     /** 对话页「朗读」：用该角色当前音色合成并播放指定文本。 */
     fun replayMessage(characterId: String, text: String) {
+        cancelReplyPresentation()
         val textValue = text.trim()
         if (textValue.isEmpty()) return
         val app = getApplication<Application>()
         val voice = VoiceSettings.load(app)
         if (!voice.isConfigured) return
         val sample = VoiceSamples.activeSampleFile(app, characterId) ?: return
-        viewModelScope.launch {
+        voiceJob = viewModelScope.launch {
             val wav = withContext(Dispatchers.IO) {
                 runCatching {
                     VoiceCloneClient(voice.baseUrl, voice.model, voice.apiKey).synthesize(textValue, sample)
@@ -652,7 +684,8 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         val voice = VoiceSettings.load(app)
         if (!voice.isConfigured) return
         val sample = VoiceSamples.activeSampleFile(app, characterId) ?: return
-        viewModelScope.launch {
+        voiceJob?.cancel()
+        voiceJob = viewModelScope.launch {
             val wav = withContext(Dispatchers.IO) {
                 runCatching {
                     VoiceCloneClient(voice.baseUrl, voice.model, voice.apiKey).synthesize(text, sample)
@@ -682,7 +715,20 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private suspend fun stopRequestAndJoin() {
+        cancelReplyPresentation()
         requestJob?.takeIf { it.isActive }?.cancelAndJoin()
+    }
+
+    private fun cancelReplyPresentation() {
+        revealJob?.cancel()
+        voiceJob?.cancel()
+        VoicePlayer.stop()
+        mutableState.value = mutableState.value.copy(revealingReplyId = null, revealedSegmentCount = Int.MAX_VALUE)
+    }
+
+    override fun onCleared() {
+        cancelReplyPresentation()
+        super.onCleared()
     }
 
     private fun isActive(request: RequestContext): Boolean = ChatStateTransitions.matchesConversation(

@@ -9,6 +9,8 @@ data class ChatDisplayPreferences(
     val showRetryIcon: Boolean = true,
     val showContextUsage: Boolean = true,
     val showModelTimeControl: Boolean = true,
+    val multiPartReplies: Boolean = false,
+    val multiPartIntervalMs: Int = 200,
     val lineOwnBubbleColor: Int = DEFAULT_LINE_OWN_BUBBLE_COLOR,
     val lineOtherBubbleColor: Int = DEFAULT_LINE_OTHER_BUBBLE_COLOR,
     val lineBackgroundColor: Int = DEFAULT_LINE_BACKGROUND_COLOR,
@@ -22,6 +24,8 @@ data class ChatDisplayPreferences(
             .putBoolean("chat_show_retry_icon", showRetryIcon)
             .putBoolean("chat_show_context_usage", showContextUsage)
             .putBoolean("chat_show_model_time_control", showModelTimeControl)
+            .putBoolean("chat_multi_part_replies", multiPartReplies)
+            .putInt("chat_multi_part_interval_ms", multiPartIntervalMs.coerceIn(0, 10000))
             .putInt("chat_line_own_bubble_color", lineOwnBubbleColor)
             .putInt("chat_line_other_bubble_color", lineOtherBubbleColor)
             .putInt("chat_line_background_color", lineBackgroundColor)
@@ -46,6 +50,8 @@ data class ChatDisplayPreferences(
                 showRetryIcon = prefs.getBoolean("chat_show_retry_icon", true),
                 showContextUsage = prefs.getBoolean("chat_show_context_usage", true),
                 showModelTimeControl = prefs.getBoolean("chat_show_model_time_control", true),
+                multiPartReplies = prefs.getBoolean("chat_multi_part_replies", false),
+                multiPartIntervalMs = prefs.getInt("chat_multi_part_interval_ms", 200).coerceIn(0, 10000),
                 lineOwnBubbleColor = prefs.getInt("chat_line_own_bubble_color", DEFAULT_LINE_OWN_BUBBLE_COLOR),
                 lineOtherBubbleColor = prefs.getInt("chat_line_other_bubble_color", DEFAULT_LINE_OTHER_BUBBLE_COLOR),
                 lineBackgroundColor = prefs.getInt("chat_line_background_color", DEFAULT_LINE_BACKGROUND_COLOR),

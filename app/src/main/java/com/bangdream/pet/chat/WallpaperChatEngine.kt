@@ -2,7 +2,11 @@ package com.bangdream.pet.chat
 
 import android.content.Context
 import com.bangdream.pet.data.ModelChoice
-import com.bangdream.pet.llm.ActionTagParser
+import com.bangdream.pet.llm.AssistantReplyDecoder
+import com.bangdream.pet.llm.ChatBranchGraph
+import com.bangdream.pet.ChatDisplayPreferences
+import com.bangdream.pet.I18n
+import com.bangdream.pet.loadBubbleEnabled
 import com.bangdream.pet.llm.ChatConversation
 import com.bangdream.pet.llm.ChatHistoryRepository
 import com.bangdream.pet.llm.ChatMessage
@@ -19,6 +23,7 @@ import com.bangdream.pet.voice.VoiceSamples
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
@@ -28,6 +33,7 @@ data class WallpaperChatResult(
     val actionTag: String?,
     val error: String? = null,
     val ttsSpoken: Boolean = false,
+    val segments: List<String> = emptyList(),
 )
 
 /**
@@ -45,6 +51,7 @@ class WallpaperChatEngine(private val context: Context) {
         onStreaming: (String) -> Unit,
     ): WallpaperChatResult {
         val settings = LlmSettings.load(context)
+        val display = ChatDisplayPreferences.load(context)
         if (!settings.isConfigured) {
             return WallpaperChatResult("", null, "请先在设置中配置模型提供商（默认 DeepSeek）。")
         }
@@ -53,11 +60,11 @@ class WallpaperChatEngine(private val context: Context) {
         val customPrompt = loadCharacterCustomPrompt(context, model.characterId)
         val memory = loadCharacterMemory(context, model.characterId)
         val baseText = customPrompt?.takeIf(String::isNotBlank) ?: prompt.text
-        val systemText = if (memory.isBlank()) {
+        val systemText = AssistantReplyDecoder.systemPrompt(if (memory.isBlank()) {
             baseText
         } else {
             "$baseText\n\n【长期记忆】以下是你已经记住的内容，请在交流中自然地运用，不要向用户解释或提及记忆本身：\n$memory"
-        }
+        }, display.multiPartReplies)
         val snapshot = history.loadSnapshot(characterId)
         val active = snapshot.activeConversation
         val now = System.currentTimeMillis()
@@ -66,7 +73,7 @@ class WallpaperChatEngine(private val context: Context) {
         // OpenCode Go：x-opencode-session 每条对话一个稳定值；复用会话 id（无会话时先预生成）
         val sessionId = active?.id ?: UUID.randomUUID().toString()
 
-        val parser = ActionTagParser(prompt.allowedActionTags)
+        val parser = AssistantReplyDecoder(prompt.allowedActionTags, display.multiPartReplies)
         var error: String? = null
         try {
             client.streamCompletion(settings, systemText, baseMessages + userMessage, sessionId).collect { event ->
@@ -76,7 +83,8 @@ class WallpaperChatEngine(private val context: Context) {
                     is LlmStreamEvent.Content -> {
                         // 只把增量 delta 交给 parser（parser 内部会累积），
                         // 传全量文本会导致 A/AB/ABC/ABCD 式重复累积。
-                        onStreaming(parser.consume(event.text))
+                        val visible = parser.consume(event.text)
+                        if (!display.multiPartReplies) onStreaming(visible)
                     }
                     LlmStreamEvent.ReasoningStarted -> Unit
                 }
@@ -87,7 +95,10 @@ class WallpaperChatEngine(private val context: Context) {
             error = throwable.message ?: "请求失败"
         }
 
-        val parsed = parser.finish()
+        val parsed = if (error == null) runCatching { parser.finish() }.getOrElse {
+            error = I18n.t("chat_reply_format_invalid")
+            AssistantReplyDecoder.Result("", emptyList(), null)
+        } else AssistantReplyDecoder.Result("", emptyList(), null)
         if (parsed.text.isBlank() && error == null) error = "模型返回为空"
 
         if (error == null) {
@@ -96,27 +107,41 @@ class WallpaperChatEngine(private val context: Context) {
                 "assistant",
                 parsed.text,
                 System.currentTimeMillis(),
+                segments = parsed.segments,
             )
-            val conversation = active?.copy(
-                updatedAt = System.currentTimeMillis(),
-                messages = baseMessages + userMessage + assistantMessage,
-            ) ?: ChatConversation(
+            val base = active ?: ChatConversation(
                 id = sessionId,
                 characterId = characterId,
                 title = userText.take(24),
                 createdAt = now,
                 updatedAt = System.currentTimeMillis(),
-                messages = listOf(userMessage, assistantMessage),
+                messages = emptyList(),
             )
-            history.saveConversation(conversation)
-            history.setActiveConversation(characterId, conversation.id)
+            val conversation = ChatBranchGraph.append(ChatBranchGraph.append(base, userMessage), assistantMessage)
+                .copy(updatedAt = System.currentTimeMillis())
+            withContext(Dispatchers.IO) {
+                history.saveConversation(conversation)
+                history.setActiveConversation(characterId, conversation.id)
+            }
+            if (parsed.segments.isNotEmpty()) {
+                if (loadBubbleEnabled(context)) WallpaperBubbleService.show(context, parsed.segments, display.multiPartIntervalMs)
+                try {
+                    parsed.segments.forEachIndexed { index, _ ->
+                        if (index > 0) delay(display.multiPartIntervalMs.toLong())
+                        onStreaming(parsed.segments.take(index + 1).joinToString("\n"))
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    WallpaperBubbleService.hide(context)
+                    throw cancelled
+                }
+            }
         }
 
         var ttsSpoken = false
         if (error == null && parsed.text.isNotBlank()) {
             ttsSpoken = speak(characterId, parsed.text)
         }
-        return WallpaperChatResult(parsed.text, parsed.action, error, ttsSpoken)
+        return WallpaperChatResult(parsed.text, parsed.action, error, ttsSpoken, parsed.segments)
     }
 
     private suspend fun speak(characterId: String, text: String): Boolean {
