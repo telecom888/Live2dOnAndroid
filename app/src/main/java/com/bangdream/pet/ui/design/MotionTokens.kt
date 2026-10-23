@@ -2,7 +2,6 @@ package com.bangdream.pet.ui.design
 
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
-import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.TweenSpec
@@ -51,10 +50,4 @@ fun pressFeedbackSpring(): SpringSpec<Float> = spring(
     dampingRatio = 1f,
     stiffness = 1000f,
     visibilityThreshold = 0.001f,
-)
-
-/** 交互吸附。 */
-fun interactiveSnapSpring(): SpringSpec<Float> = spring(
-    dampingRatio = 0.78f,
-    stiffness = 420f,
 )

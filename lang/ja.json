@@ -1,4 +1,11 @@
 {
+  "chat_request_failed": "リクエストに失敗しました",
+  "chat_error_timeout": "接続または受信がタイムアウトしました。ネットワークを確認して再試行してください。",
+  "chat_error_host": "モデルサービスに接続できません。ネットワークと API の URL を確認してください。",
+  "chat_error_empty": "モデルから返信がありません。再試行するか設定を確認してください。",
+  "chat_error_invalid": "サービスからの応答を認識できません。API の URL を確認してください。",
+  "chat_error_tool_limit": "モデルが返信せずツール要求を続けたため停止しました。再試行するかモデルを変更してください。",
+  "chat_error_filtered": "サービスが返信を制限しました。メッセージを変更して再試行してください。",
   "nav_live2d": "Live2D",
   "nav_model": "モデル",
   "nav_settings": "設定",

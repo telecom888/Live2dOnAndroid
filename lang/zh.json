@@ -1,4 +1,11 @@
 {
+  "chat_request_failed": "请求失败",
+  "chat_error_timeout": "连接或读取超时，请检查网络后重试。",
+  "chat_error_host": "无法连接到模型服务，请检查网络及接口地址。",
+  "chat_error_empty": "模型未返回有效回复，请重试或检查模型配置。",
+  "chat_error_invalid": "模型服务返回了无法识别的响应，请检查接口地址。",
+  "chat_error_tool_limit": "模型连续请求工具但未生成回复，已停止。请重试或更换模型。",
+  "chat_error_filtered": "模型服务拒绝输出此回复，请调整消息后重试。",
   "nav_live2d": "Live2D",
   "nav_model": "模型",
   "nav_settings": "设置",

@@ -53,6 +53,8 @@ object WallpaperUtils {
         if (pfd != null) {
             return pfd.use { BitmapFactory.decodeFileDescriptor(it.fileDescriptor) }
         }
+        // This overload was added in Android 14; the file-descriptor path above supports older devices.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return null
         val drawable = try {
             wm.getDrawable(WallpaperManager.FLAG_LOCK)
         } catch (e: Exception) {

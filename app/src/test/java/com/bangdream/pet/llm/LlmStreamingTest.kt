@@ -13,6 +13,100 @@ import org.junit.Test
 
 class LlmStreamingTest {
     @Test
+    fun reportsProviderErrorInsideSuccessfulSseResponse() = runBlocking {
+        assertStreamingFailure("data: {\"error\":{\"message\":\"quota exhausted\"}}\n\n", "quota exhausted")
+    }
+
+    @Test
+    fun reportsNamedSseErrorAtEndOfFileAndRedactsCredentials() = runBlocking {
+        assertStreamingFailure("event: error\ndata: {\"message\":\"bad test-key\"}", "bad ***")
+    }
+
+    @Test
+    fun reportsJsonErrorFromNonStreamingGateway() = runBlocking {
+        assertStreamingFailure("{\"error\":{\"message\":\"model unavailable\"}}", "model unavailable")
+    }
+
+    @Test
+    fun reportsEmptyAndMalformedResponses() = runBlocking {
+        assertStreamingFailure("data: [DONE]\n\n", "LLM_EMPTY_RESPONSE")
+        assertStreamingFailure("data: broken-json\n\n", "LLM_INVALID_RESPONSE")
+    }
+
+    @Test
+    fun reportsFailureAfterPartialContent() = runBlocking {
+        assertStreamingFailure(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n" +
+                "data: {\"error\":{\"message\":\"upstream disconnected\"}}\n\n",
+            "upstream disconnected",
+        )
+    }
+
+    @Test
+    fun reportsContentFilterInsteadOfSilentlySavingPartialReply() = runBlocking {
+        assertStreamingFailure("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"content_filter\"}]}\n\n", "LLM_CONTENT_FILTERED")
+    }
+
+    @Test
+    fun ignoresUsageAndHandlesLastContentWithoutBlankLine() = runBlocking {
+        withServer(200, "text/event-stream", (
+            "data: {\"choices\":[],\"usage\":{\"total_tokens\":1}}\n\n" +
+                "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}"
+        ).toByteArray()) { baseUrl ->
+            assertEquals(listOf(LlmStreamEvent.Content("hello")), LlmChatClient().streamCompletion(
+                LlmSettings(baseUrl = baseUrl, apiKey = "test-key"), "system", emptyList(),
+            ).toList())
+        }
+    }
+
+    @Test
+    fun nonStreamingHttpErrorsAreNotSwallowed() = runBlocking {
+        withServer(429, "application/json", "{\"error\":{\"message\":\"limit test-key\"}}".toByteArray()) { baseUrl ->
+            val error = runCatching { LlmChatClient().complete(
+                LlmSettings(baseUrl = baseUrl, apiKey = "test-key"), listOf("user" to "hello"),
+            ) }.exceptionOrNull()
+            assertEquals("HTTP 429: limit ***", error?.message)
+        }
+    }
+
+    @Test
+    fun nonStreamingSuccessAndEmptyResponse() = runBlocking {
+        withServer(200, "application/json", "{\"choices\":[{\"message\":{\"content\":\"hello\"}}]}".toByteArray()) { baseUrl ->
+            assertEquals("hello", LlmChatClient().complete(LlmSettings(baseUrl = baseUrl), emptyList()))
+        }
+        withServer(200, "application/json", "{\"choices\":[]}".toByteArray()) { baseUrl ->
+            val error = runCatching { LlmChatClient().complete(LlmSettings(baseUrl = baseUrl), emptyList()) }.exceptionOrNull()
+            assertEquals("LLM_EMPTY_RESPONSE", error?.message)
+        }
+    }
+
+    @Test
+    fun nonStreamingReasoningIsNotPublishedAsReply() = runBlocking {
+        val body = "{\"choices\":[{\"message\":{\"content\":null,\"reasoning_content\":\"private reasoning\"}}]}"
+        withServer(200, "application/json", body.toByteArray()) { baseUrl ->
+            val error = runCatching { LlmChatClient().complete(LlmSettings(baseUrl = baseUrl), emptyList()) }.exceptionOrNull()
+            assertEquals("LLM_EMPTY_RESPONSE", error?.message)
+        }
+    }
+
+    @Test
+    fun repeatedToolCallsFailWithExplicitLimit() = runBlocking {
+        assertStreamingFailure(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call1\",\"function\":{\"name\":\"missing\",\"arguments\":\"{}\"}}]}}]}\n\ndata: [DONE]\n\n",
+            "LLM_TOOL_LIMIT",
+        )
+    }
+
+    private suspend fun assertStreamingFailure(body: String, expected: String) {
+        withServer(200, "text/event-stream", body.toByteArray()) { baseUrl ->
+            val error = runCatching { LlmChatClient().streamCompletion(
+                LlmSettings(baseUrl = baseUrl, apiKey = "test-key"), "system", emptyList(),
+            ).toList() }.exceptionOrNull()
+            assertTrue("Expected $expected, got $error", error?.message?.contains(expected) == true)
+        }
+    }
+
+    @Test
     fun parsesReasoningAndContentSseEvents() = runBlocking {
         val body = buildString {
             append("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"hidden\"}}]}\n\n")
@@ -143,67 +237,10 @@ class LlmStreamingTest {
         }
     }
 
-    /** 极简 HTTP 服务器：读完请求头（含按 Content-Length 读 body）后返回固定响应。 */
     private suspend fun withServer(
         code: Int,
         contentType: String,
         response: ByteArray,
         block: suspend (String) -> Unit,
-    ) {
-        val server = ServerSocket()
-        server.reuseAddress = true
-        server.bind(InetSocketAddress("127.0.0.1", 0))
-        val executor = Executors.newSingleThreadExecutor()
-        executor.submit {
-            try {
-                while (!server.isClosed) {
-                    val socket = server.accept()
-                    try {
-                        socket.use {
-                            val reader = BufferedReader(InputStreamReader(it.getInputStream(), Charsets.UTF_8))
-                            var contentLength = 0
-                            while (true) {
-                                val line = reader.readLine() ?: break
-                                if (line.isEmpty()) break
-                                if (line.lowercase().startsWith("content-length:")) {
-                                    contentLength = line.substringAfter(':').trim().toIntOrNull() ?: 0
-                                }
-                            }
-                            if (contentLength > 0) {
-                                val buffer = CharArray(contentLength)
-                                var total = 0
-                                while (total < contentLength) {
-                                    val n = reader.read(buffer, total, contentLength - total)
-                                    if (n < 0) break
-                                    total += n
-                                }
-                            }
-                            val reason = if (code == 200) "OK" else "Unauthorized"
-                            val header = buildString {
-                                append("HTTP/1.1 ").append(code).append(' ').append(reason).append("\r\n")
-                                append("Content-Type: ").append(contentType).append("\r\n")
-                                append("Content-Length: ").append(response.size).append("\r\n")
-                                append("\r\n")
-                            }
-                            it.getOutputStream().use { out ->
-                                out.write(header.toByteArray(Charsets.UTF_8))
-                                out.write(response)
-                                out.flush()
-                            }
-                        }
-                    } catch (_: Exception) {
-                        // 客户端可能提前断开，忽略
-                    }
-                }
-            } catch (_: Exception) {
-                // 服务器关闭
-            }
-        }
-        try {
-            block("http://127.0.0.1:${server.localPort}")
-        } finally {
-            server.close()
-            executor.shutdownNow()
-        }
-    }
+    ) = withServer(code, contentType, listOf(response), block)
 }

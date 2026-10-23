@@ -373,14 +373,10 @@ class FloatingLive2DOverlayService : Service() {
         )
 
         fun canDrawOverlays(context: Context): Boolean =
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
+            Settings.canDrawOverlays(context)
 
-        @Suppress("DEPRECATION")
-        private fun overlayWindowType(): Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        private fun overlayWindowType(): Int =
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
 
         private fun overlayWindowFlags(touchThrough: Boolean): Int {
             var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or

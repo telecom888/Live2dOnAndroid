@@ -1,5 +1,12 @@
 package com.bangdream.pet.ui.line
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import com.bangdream.pet.I18n
+import com.bangdream.pet.llm.LlmSettings
+import com.bangdream.pet.llm.llmErrorText
+import com.bangdream.pet.llm.llmFailureMessage
+
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -502,6 +509,8 @@ private fun LineConversationDetailScreen(
     }
     var conversation by remember { mutableStateOf(repository.get(conversationId)) }
     var running by remember { mutableStateOf(false) }
+    var requestError by remember { mutableStateOf<String?>(null) }
+    var discussionJob by remember { mutableStateOf<Job?>(null) }
     var showTopicDialog by remember { mutableStateOf(false) }
     var topicDraft by remember { mutableStateOf("") }
 
@@ -513,14 +522,22 @@ private fun LineConversationDetailScreen(
 
     fun startDiscussion() {
         running = true
-        scope.launch {
-            val updated = engine.runConversation(conversation!!) { latest ->
-                conversation = latest
-                repository.save(latest)
+        requestError = null
+        discussionJob = scope.launch {
+            try {
+                val updated = engine.runConversation(conversation!!) { latest ->
+                    conversation = latest
+                    repository.save(latest)
+                }
+                conversation = updated
+                repository.save(updated)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requestError = llmErrorText(llmFailureMessage(error, LlmSettings.load(appContext)))
+            } finally {
+                running = false
             }
-            conversation = updated
-            repository.save(updated)
-            running = false
         }
     }
 
@@ -566,6 +583,7 @@ private fun LineConversationDetailScreen(
                 }
             } else if (conv.status == LineConversationStatus.ACTIVE) {
                 IconButton(onClick = {
+                    discussionJob?.cancel()
                     conversation = conv.copy(status = LineConversationStatus.ENDED)
                     repository.save(conversation!!)
                     running = false
@@ -575,6 +593,13 @@ private fun LineConversationDetailScreen(
             } else {
                 Text("已截止", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
+        }
+        requestError?.let { error ->
+            Text(
+                I18n.t("chat_request_failed") + "\n" + error,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+            )
         }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
