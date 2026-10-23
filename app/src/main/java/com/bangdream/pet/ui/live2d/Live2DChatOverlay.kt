@@ -410,7 +410,6 @@ private fun ChatPanelContent(
                 ChatMessageList(
                     messages = state.messages,
                     streamingText = state.streamingText,
-                    thinking = state.isThinking || (state.isGenerating && state.streamingText.isBlank()),
                     streamingReasoning = state.streamingReasoning,
                     revealingReplyId = state.revealingReplyId,
                     revealedSegmentCount = state.revealedSegmentCount,
@@ -433,34 +432,7 @@ private fun ChatPanelContent(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
             }
-            state.error?.let { error ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    shape = RoundedCornerShape(14.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            I18n.t("chat_request_failed") + "\n" + chatErrorText(error),
-                            modifier = Modifier.weight(1f).heightIn(max = 120.dp).verticalScroll(rememberScrollState()),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        if (isRetryableChatError(error)) {
-                            if (displayPreferences.showRetryIcon) {
-                                IconButton(onClick = { viewModel.retry(model) }) {
-                                    Icon(Icons.Outlined.Refresh, contentDescription = I18n.t("chat_retry"))
-                                }
-                            } else {
-                                TextButton(onClick = { viewModel.retry(model) }) { Text(I18n.t("chat_retry")) }
-                            }
-                        }
-                    }
-                }
-            }
+            ChatRequestError(state.error, displayPreferences.showRetryIcon, onRetry = { viewModel.retry(model) })
             if (!compactForIme && selectedImages.isNotEmpty()) {
                 Row(
                     modifier = Modifier
@@ -665,6 +637,43 @@ private fun formatConversationTimestamp(timestamp: Long): String {
     return conversationTimestampFormat.format(Date(timestamp))
 }
 
+@Composable
+internal fun ChatRequestError(
+    error: String?,
+    showRetryIcon: Boolean,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    error?.let { error ->
+        Surface(
+            modifier = modifier.fillMaxWidth().padding(vertical = 6.dp),
+            color = MaterialTheme.colorScheme.errorContainer,
+            shape = RoundedCornerShape(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    I18n.t("chat_request_failed") + "\n" + chatErrorText(error),
+                    modifier = Modifier.weight(1f).heightIn(max = 120.dp).verticalScroll(rememberScrollState()),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (isRetryableChatError(error)) {
+                    if (showRetryIcon) {
+                        IconButton(onClick = onRetry) {
+                            Icon(Icons.Outlined.Refresh, contentDescription = I18n.t("chat_retry"))
+                        }
+                    } else {
+                        TextButton(onClick = onRetry) { Text(I18n.t("chat_retry")) }
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun chatErrorText(error: String): String = when (error) {
     "CHAT_REPLY_FORMAT_INVALID" -> I18n.t("chat_reply_format_invalid")
     Live2DChatViewModel.ERROR_LLM_NOT_CONFIGURED -> I18n.t("chat_not_configured")
@@ -694,7 +703,6 @@ private fun calculateImeOverlapPx(
 internal fun ChatMessageList(
     messages: List<ChatMessage>,
     streamingText: String,
-    thinking: Boolean,
     streamingReasoning: String = "",
     revealingReplyId: String? = null,
     revealedSegmentCount: Int = Int.MAX_VALUE,
@@ -720,7 +728,7 @@ internal fun ChatMessageList(
     var editDraft by remember { mutableStateOf("") }
     var keepImages by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
-    val itemCount = messages.size + if (streamingText.isNotBlank() || thinking) 1 else 0
+    val itemCount = messages.size + if (streamingText.isNotBlank() || streamingReasoning.isNotBlank()) 1 else 0
     val streamScrollBucket = streamingText.length / 24
     var previousItemCount by remember { mutableIntStateOf(0) }
     var consumedJump by remember { mutableStateOf(false) }
@@ -814,12 +822,11 @@ internal fun ChatMessageList(
                     }
                 }
             }
-            if (streamingText.isNotBlank() || thinking) {
+            if (streamingText.isNotBlank() || streamingReasoning.isNotBlank()) {
                 item(key = "streaming", contentType = "message") {
                     ChatBubble(
                         "assistant",
                         streamingText,
-                        thinking,
                         reasoning = streamingReasoning,
                         avatar = avatar,
                         userAvatar = userAvatar,
@@ -939,7 +946,6 @@ private class LineBubbleShape(private val fromUser: Boolean) : Shape {
 internal fun ChatBubble(
     role: String,
     content: String,
-    thinking: Boolean = false,
     reasoning: String? = null,
     highlightQuery: String? = null,
     onReplay: (() -> Unit)? = null,
@@ -989,7 +995,7 @@ internal fun ChatBubble(
                 ),
                 horizontalAlignment = if (fromUser) Alignment.End else Alignment.Start,
             ) {
-                if (!fromUser && lineMode && !groupContinuation && !senderName.isNullOrBlank() && !thinking) {
+                if (!fromUser && lineMode && !groupContinuation && !senderName.isNullOrBlank()) {
                     Text(
                         senderName,
                         style = MaterialTheme.typography.labelSmall,
@@ -1032,17 +1038,6 @@ internal fun ChatBubble(
                         top = 10.dp,
                         bottom = 10.dp,
                     )) {
-                        if (thinking) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = if (lineMode) lineBubbleTextColor else MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    I18n.t("chat_thinking"),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = if (lineMode) lineBubbleTextColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
                         val ranges = remember(content, highlightQuery) {
                             if (highlightQuery.isNullOrBlank()) {
                                 emptyList()

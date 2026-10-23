@@ -101,6 +101,7 @@ import com.bangdream.pet.llm.Live2DChatViewModel
 import com.bangdream.pet.llm.TimeContextOverride
 import com.bangdream.pet.ui.design.emphasizedTween
 import com.bangdream.pet.ui.design.expressiveTween
+import com.bangdream.pet.ui.live2d.ChatRequestError
 import com.bangdream.pet.ui.live2d.ChatMessageList
 import java.text.DateFormat
 import java.util.Date
@@ -756,7 +757,6 @@ private fun ConversationDetailScreen(
             ChatMessageList(
                 messages = state.messages,
                 streamingText = state.streamingText,
-                thinking = state.isThinking || (state.isGenerating && state.streamingText.isBlank()),
                 revealingReplyId = state.revealingReplyId,
                 revealedSegmentCount = state.revealedSegmentCount,
                 streamingReasoning = state.streamingReasoning,
@@ -781,6 +781,12 @@ private fun ConversationDetailScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }
+        ChatRequestError(
+            state.error,
+            displayPreferences.showRetryIcon,
+            onRetry = { viewModel.retry(character) },
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
         if (selectedImages.isNotEmpty()) {
             Row(
                 modifier = Modifier

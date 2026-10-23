@@ -13,6 +13,36 @@ import org.junit.Test
 
 class LlmStreamingTest {
     @Test
+    fun forbiddenStatusReachesUiForStreamingAndNonStreamingRequests() = runBlocking {
+        val settings = LlmSettings(apiKey = "test-key")
+        val responses = listOf(
+            "application/json" to "{\"error\":{\"message\":\"Access denied for test-key\"}}",
+            "text/plain" to "Forbidden",
+            "text/plain" to "",
+        )
+        for ((contentType, body) in responses) {
+            withServer(403, contentType, body.toByteArray()) { baseUrl ->
+                val configured = settings.copy(baseUrl = baseUrl)
+                val streamingError = runCatching {
+                    LlmChatClient().streamCompletion(configured, "system", emptyList()).toList()
+                }.exceptionOrNull()
+                val completeError = runCatching {
+                    LlmChatClient().complete(configured, listOf("user" to "hello"))
+                }.exceptionOrNull()
+                val expected = when (body) {
+                    "" -> "HTTP 403"
+                    "Forbidden" -> "HTTP 403: Forbidden"
+                    else -> "HTTP 403: Access denied for ***"
+                }
+                for (error in listOf(streamingError, completeError)) {
+                    assertTrue("Expected HTTP failure, got $error", error is java.io.IOException)
+                    assertEquals(expected, llmFailureMessage(requireNotNull(error), configured))
+                }
+            }
+        }
+    }
+
+    @Test
     fun reportsProviderErrorInsideSuccessfulSseResponse() = runBlocking {
         assertStreamingFailure("data: {\"error\":{\"message\":\"quota exhausted\"}}\n\n", "quota exhausted")
     }

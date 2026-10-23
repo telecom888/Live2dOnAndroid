@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -24,7 +23,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Send
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -177,62 +175,59 @@ private fun WallpaperChatPanel(onDismiss: () -> Unit) {
                             enabled = !busy,
                         )
                         Spacer(Modifier.width(8.dp))
-                        if (busy) {
-                            CircularProgressIndicator(modifier = Modifier.width(28.dp).height(28.dp), strokeWidth = 3.dp)
-                        } else {
-                            IconButton(
-                                onClick = {
-                                    val text = input.trim()
-                                    if (text.isNotEmpty()) {
-                                        input = ""
-                                        busy = true
-                                        output = ""
-                                        status = "思考中…"
-                                        requestFailed = false
-                                        PetRuntime.onStopped = {
-                                            status = "已停止"
+                        IconButton(
+                            onClick = {
+                                val text = input.trim()
+                                if (text.isNotEmpty()) {
+                                    input = ""
+                                    busy = true
+                                    output = ""
+                                    status = ""
+                                    requestFailed = false
+                                    PetRuntime.onStopped = {
+                                        status = "已停止"
+                                        busy = false
+                                    }
+                                    PetRuntime.activeJob = scope.launch {
+                                        try {
+                                            val engine = WallpaperChatEngine(appContext)
+                                            val result = engine.send(model, text) { streaming ->
+                                                output = streaming
+                                            }
+                                            if (result.error != null) {
+                                                requestFailed = true
+                                                status = I18n.t("chat_request_failed") + "\n" + llmErrorText(result.error)
+                                                input = text
+                                            } else {
+                                                output = result.text
+                                                status = if (result.ttsSpoken) "已回复（语音）" else "已回复"
+                                            }
+                                            if (result.actionTag != null) {
+                                                NativeLive2D.playAction(Live2DWallpaperService.activeHandle, result.actionTag)
+                                            }
+                                            if (result.error == null && result.segments.isEmpty() && loadBubbleEnabled(appContext)) {
+                                                WallpaperBubbleService.show(appContext, result.text)
+                                            }
+                                            if (result.error == null) {
+                                                delay(1600)
+                                                onDismiss()
+                                            }
+                                        } catch (cancelled: CancellationException) {
+                                            throw cancelled
+                                        } catch (error: Exception) {
+                                            requestFailed = true
+                                            status = I18n.t("chat_request_failed") + "\n" +
+                                                llmErrorText(llmFailureMessage(error, LlmSettings.load(appContext)))
+                                            input = text
+                                        } finally {
                                             busy = false
                                         }
-                                        PetRuntime.activeJob = scope.launch {
-                                            try {
-                                                val engine = WallpaperChatEngine(appContext)
-                                                val result = engine.send(model, text) { streaming ->
-                                                    output = streaming
-                                                }
-                                                if (result.error != null) {
-                                                    requestFailed = true
-                                                    status = I18n.t("chat_request_failed") + "\n" + llmErrorText(result.error)
-                                                    input = text
-                                                } else {
-                                                    output = result.text
-                                                    status = if (result.ttsSpoken) "已回复（语音）" else "已回复"
-                                                }
-                                                if (result.actionTag != null) {
-                                                    NativeLive2D.playAction(Live2DWallpaperService.activeHandle, result.actionTag)
-                                                }
-                                                if (result.error == null && result.segments.isEmpty() && loadBubbleEnabled(appContext)) {
-                                                    WallpaperBubbleService.show(appContext, result.text)
-                                                }
-                                                if (result.error == null) {
-                                                    delay(1600)
-                                                    onDismiss()
-                                                }
-                                            } catch (cancelled: CancellationException) {
-                                                throw cancelled
-                                            } catch (error: Exception) {
-                                                requestFailed = true
-                                                status = I18n.t("chat_request_failed") + "\n" +
-                                                    llmErrorText(llmFailureMessage(error, LlmSettings.load(appContext)))
-                                                input = text
-                                            } finally {
-                                                busy = false
-                                            }
-                                        }
                                     }
-                                },
-                            ) {
-                                Icon(Icons.Outlined.Send, contentDescription = "发送")
-                            }
+                                }
+                            },
+                            enabled = !busy,
+                        ) {
+                            Icon(Icons.Outlined.Send, contentDescription = "发送")
                         }
                     }
                 }
