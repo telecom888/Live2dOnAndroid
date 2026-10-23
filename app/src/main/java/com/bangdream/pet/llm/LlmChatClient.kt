@@ -116,11 +116,11 @@ class LlmChatClient {
                 val choice = json.optJSONArray("choices")?.optJSONObject(0) ?: return null
                 if (choice.optString("finish_reason") == "content_filter") throw IOException("LLM_CONTENT_FILTERED")
                 val delta = choice.optJSONObject("delta")
-                val reasoning = delta?.opt("reasoning_content")
+                val reasoning = delta?.let(::extractReasoningText)
                 val content = delta?.opt("content")
                 return ParsedSseEvent(
                     done = false,
-                    reasoningContent = (reasoning as? String)?.takeIf(String::isNotEmpty),
+                    reasoningContent = reasoning,
                     content = content as? String,
                     toolCalls = delta?.let { parseToolCallDeltas(it) },
                 )

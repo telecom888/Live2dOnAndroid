@@ -10,8 +10,58 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONArray
+import org.json.JSONObject
 
 class LlmStreamingTest {
+    @Test
+    fun scrollBridgeReasoningAliasesReachTheExistingReasoningEvents() = runBlocking {
+        val deltas = listOf(
+            JSONObject().put("reasoning_content", "first ").put("reasoning", "duplicate"),
+            JSONObject().put("reasoning_content", JSONObject.NULL).put("reasoning", "second "),
+            JSONObject().put("reasoning_details", JSONArray()
+                .put(JSONObject().put("type", "reasoning.encrypted").put("data", "opaque"))
+                .put(JSONObject().put("type", "reasoning.text").put("text", "third"))
+                .put(JSONObject().put("type", "reasoning.summary").put("summary", " summary")))
+                .put("content", "hello"),
+        )
+        // Like ScrollBridge's SSE forwarding: preserve fields and split reasoning across events.
+        val body = deltas.joinToString("\n\n") { delta ->
+            "data: " + JSONObject().put("choices", JSONArray().put(JSONObject().put("delta", delta)))
+        }
+        // No trailing blank line: the final event must also be consumed at EOF.
+        withServer(200, "text/event-stream", body.toByteArray()) { baseUrl ->
+            val events = LlmChatClient().streamCompletion(
+                LlmSettings(baseUrl = baseUrl), "system", emptyList(),
+            ).toList()
+            assertEquals(listOf(
+                LlmStreamEvent.ReasoningStarted,
+                LlmStreamEvent.Reasoning("first "),
+                LlmStreamEvent.Reasoning("second "),
+                LlmStreamEvent.Reasoning("third summary"),
+                LlmStreamEvent.Content("hello"),
+            ), events)
+        }
+    }
+
+    @Test
+    fun aliasReasoningOnlyDoesNotBecomeTheFinalReply() = runBlocking {
+        assertStreamingFailure(
+            "data: {\"choices\":[{\"delta\":{\"reasoning\":\"reasoning only\"}}]}\n\ndata: [DONE]\n\n",
+            "LLM_EMPTY_RESPONSE",
+        )
+        for (field in listOf("reasoning", "reasoning_details")) {
+            val message = JSONObject().put("content", JSONObject.NULL).put(field, "reasoning only")
+            val body = JSONObject().put("choices", JSONArray().put(JSONObject().put("message", message)))
+            withServer(200, "application/json", body.toString().toByteArray()) { baseUrl ->
+                val error = runCatching {
+                    LlmChatClient().complete(LlmSettings(baseUrl = baseUrl), emptyList())
+                }.exceptionOrNull()
+                assertEquals("LLM_EMPTY_RESPONSE", error?.message)
+            }
+        }
+    }
+
     @Test
     fun forbiddenStatusReachesUiForStreamingAndNonStreamingRequests() = runBlocking {
         val settings = LlmSettings(apiKey = "test-key")
