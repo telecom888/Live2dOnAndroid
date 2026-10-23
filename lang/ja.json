@@ -397,5 +397,11 @@
   "chat_search": "検索",
   "chat_search_result_meta": "{0} 件目 · 一致度 {1}",
   "chat_no_message_match": "一致するメッセージがありません",
-  "chat_rename_conversation": "会話名を変更"
+  "chat_rename_conversation": "会話名を変更",
+  "settings_llm_protocol": "API プロトコル",
+  "settings_llm_adaptive": "Anthropic 適応型思考",
+  "settings_llm_adaptive_hint": "サーバーの対応機能に合わせて選択。オフの場合は思考予算1024トークン、総出力上限は最低2048になります。",
+  "settings_llm_google_thinking_hint": "Googleで思考をオンにすると要約を要求します。オフでは要約を隠しますが内部思考は続く場合があります。ゲートウェイのルートURLまたは /v1beta を入力。",
+  "chat_error_tool_unavailable": "モデルがツール呼び出しを要求しましたが、このプロトコルの実行機能は設定されていません。",
+  "chat_error_inline_image": "Googleには画像データが必要です。画像を選択し直して送信してください。"
 }

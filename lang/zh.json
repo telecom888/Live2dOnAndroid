@@ -397,5 +397,11 @@
   "chat_search": "搜索",
   "chat_search_result_meta": "第 {0} 条 · 匹配度 {1}",
   "chat_no_message_match": "未找到匹配消息",
-  "chat_rename_conversation": "重命名对话"
+  "chat_rename_conversation": "重命名对话",
+  "settings_llm_protocol": "接口协议",
+  "settings_llm_adaptive": "Anthropic 自适应思考",
+  "settings_llm_adaptive_hint": "按服务支持的能力选择；关闭后使用 1024 token 思考预算，总输出上限至少为 2048。",
+  "settings_llm_google_thinking_hint": "Google 开启思考时请求思考摘要；关闭时隐藏摘要，模型仍可能在内部思考。地址可填写网关根地址或 /v1beta。",
+  "chat_error_tool_unavailable": "模型请求调用工具，但当前协议未配置工具执行器。",
+  "chat_error_inline_image": "Google 协议需要图片原始数据，请重新选择图片后发送。"
 }

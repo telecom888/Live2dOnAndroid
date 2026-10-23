@@ -1,5 +1,7 @@
 # 卷桥 CoT 适配（1.1.3）
 
+后续 1.1.4 已补齐请求端摘要设置并加入三种协议选择，见 [LLM 三协议与思考摘要](LLM三协议与思考摘要.md)。以下记录 1.1.3 的响应解析范围。
+
 卷桥的 Go SSE 转发实现（`beta/go-gateway/stream.go`）保留上游响应字段；模型别名仅改写协议模型字段。Android 使用 OpenAI Chat Completions 接口，CoT 字段取决于卷桥连接的上游。
 
 ## 接收格式

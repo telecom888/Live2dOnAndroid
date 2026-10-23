@@ -9,6 +9,18 @@ import org.junit.Test
 
 class LlmRequestTest {
     @Test
+    fun openAiThinkingDoesNotDependOnModelNames() {
+        for (model in listOf("public-alias", "another-alias")) {
+            val body = LlmChatClient().buildRequestBody(
+                LlmSettings(model = model, thinkingMode = ThinkingMode.Enabled), JSONArray(),
+            )
+            assertEquals(model, body.getString("model"))
+            assertEquals("medium", body.getString("reasoning_effort"))
+            assertEquals("auto", body.getJSONObject("reasoning").getString("summary"))
+        }
+    }
+
+    @Test
     fun endpointIsNormalized() {
         assertEquals("https://api.example.com/v1/chat/completions", LlmSettings(baseUrl = "https://api.example.com/v1/").endpoint())
         assertEquals("http://192.168.1.2:11434/chat/completions", LlmSettings(baseUrl = "http://192.168.1.2:11434").endpoint())

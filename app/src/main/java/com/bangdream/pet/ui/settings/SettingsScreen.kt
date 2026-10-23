@@ -149,6 +149,7 @@ import com.bangdream.pet.llm.isOpencodeSessionHeader
 import com.bangdream.pet.llm.LlmHeader
 import com.bangdream.pet.llm.LlmSettings
 import com.bangdream.pet.llm.ThinkingMode
+import com.bangdream.pet.llm.LlmProtocol
 import com.bangdream.pet.loadWallpaperMode
 import com.bangdream.pet.saveWallpaperMode
 import com.bangdream.pet.loadIdleAnimationEnabled
@@ -466,6 +467,7 @@ internal fun LlmSettingsScreen(onBack: () -> Unit, topInsetOverride: Dp? = null)
     var maxTokensText by remember { mutableStateOf(draft.maxTokens.toString()) }
     var apiKeyVisible by remember { mutableStateOf(false) }
     var thinkingMenuExpanded by remember { mutableStateOf(false) }
+    var protocolMenuExpanded by remember { mutableStateOf(false) }
     var contextMenuExpanded by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
     var confirmClearAll by remember { mutableStateOf(false) }
@@ -502,7 +504,7 @@ internal fun LlmSettingsScreen(onBack: () -> Unit, topInsetOverride: Dp? = null)
                     LLM_PROVIDER_PRESETS.forEach { (label, presetBaseUrl, presetModel) ->
                         FilledTonalButton(
                             onClick = {
-                                var next = draft.copy(baseUrl = presetBaseUrl, model = presetModel)
+                                var next = draft.copy(baseUrl = presetBaseUrl, model = presetModel, protocol = LlmProtocol.OPENAI)
                                 if (label == "OpenCode Go") {
                                     // OpenCode Go：自动补一行 x-opencode-session（值留空 = 按对话自动生成稳定 ID），已存在则不重复添加
                                     val hasSessionHeader = next.headers.any { isOpencodeSessionHeader(it.name) }
@@ -518,6 +520,36 @@ internal fun LlmSettingsScreen(onBack: () -> Unit, topInsetOverride: Dp? = null)
                             Text(label, maxLines = 1)
                         }
                     }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(I18n.t("settings_llm_protocol"), fontWeight = FontWeight.SemiBold)
+                    Box {
+                        TextButton(onClick = { protocolMenuExpanded = true }) { Text(draft.protocol.label) }
+                        DropdownMenu(expanded = protocolMenuExpanded, onDismissRequest = { protocolMenuExpanded = false }) {
+                            LlmProtocol.entries.forEach { protocol ->
+                                DropdownMenuItem(text = { Text(protocol.label) }, onClick = {
+                                    draft = draft.copy(protocol = protocol)
+                                    saved = false
+                                    protocolMenuExpanded = false
+                                })
+                            }
+                        }
+                    }
+                }
+                if (draft.protocol == LlmProtocol.ANTHROPIC) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(I18n.t("settings_llm_adaptive"))
+                            Text(I18n.t("settings_llm_adaptive_hint"), style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(checked = draft.anthropicAdaptiveThinking, onCheckedChange = {
+                            draft = draft.copy(anthropicAdaptiveThinking = it)
+                            saved = false
+                        })
+                    }
+                }
+                if (draft.protocol == LlmProtocol.GOOGLE) {
+                    Text(I18n.t("settings_llm_google_thinking_hint"), style = MaterialTheme.typography.bodySmall)
                 }
                 OutlinedTextField(
                     value = draft.baseUrl,

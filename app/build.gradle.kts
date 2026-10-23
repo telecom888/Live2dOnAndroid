@@ -35,8 +35,8 @@ android {
         applicationId = "com.bangdream.pet"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.1.3"
+        versionCode = 5
+        versionName = "1.1.4"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

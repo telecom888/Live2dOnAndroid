@@ -15,6 +15,133 @@ import org.json.JSONObject
 
 class LlmStreamingTest {
     @Test
+    fun nativeProtocolsPreserveForbiddenStatusAndRedactProviderErrors() = runBlocking {
+        for (protocol in listOf(LlmProtocol.GOOGLE, LlmProtocol.ANTHROPIC)) {
+            withServer(403, "application/json", """{"error":{"message":"denied test-key"}}""".toByteArray()) { baseUrl ->
+                val settings = LlmSettings(baseUrl = baseUrl, apiKey = "test-key", protocol = protocol)
+                val streaming = runCatching { LlmChatClient().streamCompletion(settings, "persona", emptyList()).toList() }.exceptionOrNull()
+                val complete = runCatching { LlmChatClient().complete(settings, listOf("user" to "hello")) }.exceptionOrNull()
+                assertEquals("HTTP 403: denied ***", llmFailureMessage(requireNotNull(streaming), settings))
+                assertEquals("HTTP 403: denied ***", llmFailureMessage(requireNotNull(complete), settings))
+            }
+        }
+    }
+
+    @Test
+    fun nativeProtocolsReportStreamErrorsAndEmptyReplies() = runBlocking {
+        for (protocol in listOf(LlmProtocol.GOOGLE, LlmProtocol.ANTHROPIC)) {
+            withServer(200, "text/event-stream", "data: {\"error\":{\"message\":\"quota exhausted\"}}\n\n".toByteArray()) { baseUrl ->
+                val error = runCatching { LlmChatClient().streamCompletion(LlmSettings(baseUrl = baseUrl, protocol = protocol), "persona", emptyList()).toList() }.exceptionOrNull()
+                assertEquals("quota exhausted", error?.message)
+            }
+            withServer(200, "text/event-stream", "data: {}\n\n".toByteArray()) { baseUrl ->
+                val error = runCatching { LlmChatClient().streamCompletion(LlmSettings(baseUrl = baseUrl, protocol = protocol), "persona", emptyList()).toList() }.exceptionOrNull()
+                assertEquals("LLM_EMPTY_RESPONSE", error?.message)
+            }
+        }
+    }
+
+    @Test
+    fun nativeProtocolsUseTheirOwnPathsHeadersAndReasoningStreams() = runBlocking {
+        for (protocol in listOf(LlmProtocol.GOOGLE, LlmProtocol.ANTHROPIC)) {
+            val requests = java.util.concurrent.CopyOnWriteArrayList<Pair<JSONObject, List<String>>>()
+            withServer(200, "text/event-stream", listOf(byteArrayOf()), responseForRequest = { raw, headers ->
+                val request = JSONObject(raw)
+                requests += request to headers
+                val streaming = headers.first().contains(":streamGenerateContent") || request.optBoolean("stream")
+                if (protocol == LlmProtocol.GOOGLE) {
+                    val payload = """{"candidates":[{"content":{"parts":[{"thought":true,"text":"summary"},{"thoughtSignature":"opaque"},{"text":"hello"}]},"finishReason":"STOP"}]}"""
+                    (if (streaming) "data: $payload" else payload).toByteArray()
+                } else if (streaming) {
+                    ("event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"summary\"}}\n\n" +
+                        "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"signature_delta\",\"signature\":\"opaque\"}}\n\n" +
+                        "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n\n" +
+                        "data: {\"type\":\"message_stop\"}\n\n").toByteArray()
+                } else """{"content":[{"type":"thinking","thinking":"summary"},{"type":"text","text":"hello"}]}""".toByteArray()
+            }) { baseUrl ->
+                val settings = LlmSettings(baseUrl = baseUrl, apiKey = "test-key", model = "public-alias",
+                    protocol = protocol, thinkingMode = ThinkingMode.Enabled)
+                val client = LlmChatClient()
+                val events = client.streamCompletion(settings, "persona", listOf(ChatMessage("u", "user", "question", 0))).toList()
+                assertEquals(listOf(LlmStreamEvent.ReasoningStarted, LlmStreamEvent.Reasoning("summary"), LlmStreamEvent.Content("hello")), events)
+                assertEquals("hello", client.complete(settings, listOf("user" to "question")))
+                assertEquals(2, requests.size)
+                val (body, headers) = requests.first()
+                if (protocol == LlmProtocol.GOOGLE) {
+                    assertTrue(headers.first().contains("/v1beta/models/public-alias:streamGenerateContent?alt=sse"))
+                    assertTrue(headers.any { it.equals("x-goog-api-key: test-key", true) })
+                    assertTrue(body.getJSONObject("generationConfig").getJSONObject("thinkingConfig").getBoolean("includeThoughts"))
+                    assertTrue(requests.last().second.first().contains(":generateContent"))
+                } else {
+                    assertTrue(headers.first().contains("/v1/messages"))
+                    assertTrue(headers.any { it.equals("x-api-key: test-key", true) })
+                    assertTrue(headers.any { it.equals("anthropic-version: 2023-06-01", true) })
+                    assertEquals("public-alias", body.getString("model"))
+                    assertEquals("summarized", body.getJSONObject("thinking").getString("display"))
+                }
+                assertTrue(headers.none { it.startsWith("Authorization:", true) })
+            }
+        }
+    }
+
+    @Test
+    fun gatewaySummaryIsRequestedOverHttpBeforeReasoningCanBeDisplayed() = runBlocking {
+        val received = java.util.concurrent.CopyOnWriteArrayList<JSONObject>()
+        withServer(200, "text/event-stream", listOf(byteArrayOf()), responseForRequest = { raw, _ ->
+            val request = JSONObject(raw)
+            received += request
+            // Model the gateway contract: reasoning text is sent only when visibility is requested.
+            val showThoughts = request.optJSONObject("reasoning")?.optString("summary") == "auto"
+            if (!request.optBoolean("stream")) {
+                val message = JSONObject().put("content", "hello")
+                if (showThoughts) message.put("reasoning_content", "A short thought summary")
+                JSONObject().put("choices", JSONArray().put(JSONObject().put("message", message)))
+                    .toString().toByteArray()
+            } else buildString {
+                if (showThoughts) append("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"A short thought summary\"}}]}\n\n")
+                append("data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\ndata: [DONE]\n\n")
+            }.toByteArray()
+        }) { baseUrl ->
+            val client = LlmChatClient()
+            val settings = LlmSettings(baseUrl = baseUrl, model = "public-alias")
+            // Reproduce the previous request: DeepSeek's extension does not request a Gemini summary.
+            val oldBody = client.buildRequestBody(settings, JSONArray()).put(
+                "thinking", JSONObject().put("type", "enabled"),
+            )
+            val connection = java.net.URL("$baseUrl/chat/completions").openConnection() as java.net.HttpURLConnection
+            try {
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 5_000
+                connection.readTimeout = 5_000
+                connection.doOutput = true
+                connection.outputStream.use { it.write(oldBody.toString().toByteArray()) }
+                val oldResponse = connection.inputStream.bufferedReader().use { it.readText() }
+                assertTrue(oldResponse.contains("hello"))
+                assertTrue(!oldResponse.contains("reasoning_content"))
+            } finally {
+                connection.disconnect()
+            }
+            val events = client.streamCompletion(
+                settings.copy(thinkingMode = ThinkingMode.Enabled), "system", emptyList(),
+            ).toList()
+            assertEquals(listOf(
+                LlmStreamEvent.ReasoningStarted,
+                LlmStreamEvent.Reasoning("A short thought summary"),
+                LlmStreamEvent.Content("hello"),
+            ), events)
+            assertEquals(2, received.size)
+            assertEquals("medium", received.last().getString("reasoning_effort"))
+            assertEquals("auto", received.last().getJSONObject("reasoning").getString("summary"))
+
+            // Non-streaming paths share the same request builder and must request visibility too.
+            assertEquals("hello", client.complete(settings.copy(thinkingMode = ThinkingMode.Enabled), emptyList()))
+            assertEquals(3, received.size)
+            assertTrue(!received.last().getBoolean("stream"))
+            assertEquals("auto", received.last().getJSONObject("reasoning").getString("summary"))
+        }
+    }
+
+    @Test
     fun scrollBridgeReasoningAliasesReachTheExistingReasoningEvents() = runBlocking {
         val deltas = listOf(
             JSONObject().put("reasoning_content", "first ").put("reasoning", "duplicate"),
@@ -255,6 +382,7 @@ class LlmStreamingTest {
         code: Int,
         contentType: String,
         response: List<ByteArray>,
+        responseForRequest: ((String, List<String>) -> ByteArray)? = null,
         block: suspend (String) -> Unit,
     ) {
         val responses = java.util.concurrent.atomic.AtomicInteger(0)
@@ -270,24 +398,28 @@ class LlmStreamingTest {
                         socket.use {
                             val reader = BufferedReader(InputStreamReader(it.getInputStream(), Charsets.UTF_8))
                             var contentLength = 0
+                            val headers = mutableListOf<String>()
                             while (true) {
                                 val line = reader.readLine() ?: break
                                 if (line.isEmpty()) break
+                                headers += line
                                 if (line.lowercase().startsWith("content-length:")) {
                                     contentLength = line.substringAfter(':').trim().toIntOrNull() ?: 0
                                 }
                             }
+                            val requestBody = StringBuilder()
                             if (contentLength > 0) {
                                 val buffer = CharArray(contentLength)
                                 var total = 0
                                 while (total < contentLength) {
                                     val n = reader.read(buffer, total, contentLength - total)
                                     if (n < 0) break
+                                    requestBody.append(buffer, total, n)
                                     total += n
                                 }
                             }
                             val idx = responses.getAndIncrement().coerceAtMost(response.lastIndex)
-                            val payload = response[idx]
+                            val payload = responseForRequest?.invoke(requestBody.toString(), headers) ?: response[idx]
                             val reason = if (code == 200) "OK" else "Unauthorized"
                             val header = buildString {
                                 append("HTTP/1.1 ").append(code).append(' ').append(reason).append("\r\n")
@@ -322,5 +454,5 @@ class LlmStreamingTest {
         contentType: String,
         response: ByteArray,
         block: suspend (String) -> Unit,
-    ) = withServer(code, contentType, listOf(response), block)
+    ): Unit = withServer(code, contentType, listOf(response), block = block)
 }

@@ -397,5 +397,11 @@
   "chat_search": "Search",
   "chat_search_result_meta": "Message {0} · Match {1}",
   "chat_no_message_match": "No matching messages",
-  "chat_rename_conversation": "Rename chat"
+  "chat_rename_conversation": "Rename chat",
+  "settings_llm_protocol": "API protocol",
+  "settings_llm_adaptive": "Anthropic adaptive thinking",
+  "settings_llm_adaptive_hint": "Choose based on server capabilities. When off, uses a 1024-token thinking budget and at least 2048 total output tokens.",
+  "settings_llm_google_thinking_hint": "Google thinking requests thought summaries. Turning it off hides summaries; internal reasoning may remain active. Use the gateway root URL or /v1beta.",
+  "chat_error_tool_unavailable": "The model requested a tool, but no tool executor is configured for this protocol.",
+  "chat_error_inline_image": "Google requires inline image data. Select the image again before sending."
 }

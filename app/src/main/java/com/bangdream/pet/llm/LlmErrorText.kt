@@ -8,6 +8,8 @@ fun llmErrorText(error: String): String = when (error) {
     "LLM_EMPTY_RESPONSE" -> I18n.t("chat_error_empty")
     "LLM_INVALID_RESPONSE" -> I18n.t("chat_error_invalid")
     "LLM_TOOL_LIMIT" -> I18n.t("chat_error_tool_limit")
+    "LLM_TOOL_UNAVAILABLE" -> I18n.t("chat_error_tool_unavailable")
+    "LLM_IMAGE_INLINE_REQUIRED" -> I18n.t("chat_error_inline_image")
     "LLM_CONTENT_FILTERED" -> I18n.t("chat_error_filtered")
     else -> error
 }

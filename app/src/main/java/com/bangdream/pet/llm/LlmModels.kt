@@ -25,6 +25,17 @@ enum class ThinkingMode(val value: String) {
 
 enum class TimeContextOverride { INHERIT, ENABLED, DISABLED }
 
+enum class LlmProtocol(val value: String, val label: String) {
+    OPENAI("openai", "OpenAI"),
+    ANTHROPIC("anthropic", "Anthropic"),
+    GOOGLE("google", "Google"),
+    ;
+
+    companion object {
+        fun fromValue(value: String?): LlmProtocol = entries.firstOrNull { it.value == value } ?: OPENAI
+    }
+}
+
 @Immutable
 data class LlmHeader(
     val name: String = "",
@@ -45,6 +56,8 @@ data class LlmSettings(
     val sendMessageTime: Boolean = false,
     /** 自定义请求头（如 OpenCode Go 的 x-opencode-session）。 */
     val headers: List<LlmHeader> = emptyList(),
+    val protocol: LlmProtocol = LlmProtocol.OPENAI,
+    val anthropicAdaptiveThinking: Boolean = true,
 ) {
     val isConfigured: Boolean
         get() = baseUrl.isNotBlank() && apiKey.isNotBlank() && model.isNotBlank()
@@ -62,9 +75,22 @@ data class LlmSettings(
             .filter { it.name.isNotEmpty() },
     )
 
-    fun endpoint(): String {
+    fun endpoint(stream: Boolean = true): String {
         val base = baseUrl.trim().trimEnd('/')
-        return if (base.endsWith("/chat/completions", ignoreCase = true)) base else "$base/chat/completions"
+        return when (protocol) {
+            LlmProtocol.OPENAI -> if (base.endsWith("/chat/completions", ignoreCase = true)) base else "$base/chat/completions"
+            LlmProtocol.ANTHROPIC -> when {
+                base.endsWith("/messages") -> base
+                base.endsWith("/v1") -> "$base/messages"
+                else -> "$base/v1/messages"
+            }
+            LlmProtocol.GOOGLE -> {
+                val root = base.removeSuffix("/chat/completions").removeSuffix("/v1")
+                val versioned = if (root.endsWith("/v1beta")) root else "$root/v1beta"
+                val id = java.net.URLEncoder.encode(model.trim().removePrefix("models/"), "UTF-8").replace("+", "%20")
+                "$versioned/models/$id:" + if (stream) "streamGenerateContent?alt=sse" else "generateContent"
+            }
+        }
     }
 
     fun save(context: Context) {
@@ -74,6 +100,8 @@ data class LlmSettings(
             .putString(KEY_LLM_API_KEY, value.apiKey)
             .putString(KEY_LLM_MODEL, value.model)
             .putString(KEY_LLM_THINKING_MODE, value.thinkingMode.value)
+            .putString("llm_protocol", value.protocol.value)
+            .putBoolean("llm_anthropic_adaptive", value.anthropicAdaptiveThinking)
             .putFloat(KEY_LLM_TEMPERATURE, value.temperature)
             .putInt(KEY_LLM_MAX_TOKENS, value.maxTokens)
             .putInt(KEY_LLM_CONTEXT_TOKENS, value.contextTokens)
@@ -95,6 +123,8 @@ data class LlmSettings(
                 apiKey = prefs.getString(KEY_LLM_API_KEY, null).orEmpty(),
                 model = prefs.getString(KEY_LLM_MODEL, null).orEmpty(),
                 thinkingMode = ThinkingMode.fromValue(prefs.getString(KEY_LLM_THINKING_MODE, null)),
+                protocol = LlmProtocol.fromValue(prefs.getString("llm_protocol", null)),
+                anthropicAdaptiveThinking = prefs.getBoolean("llm_anthropic_adaptive", true),
                 temperature = prefs.getFloat(KEY_LLM_TEMPERATURE, 0.8f).coerceIn(0f, 2f),
                 maxTokens = prefs.getInt(KEY_LLM_MAX_TOKENS, 1024).coerceIn(1, 32_768),
                 contextTokens = prefs.getInt(KEY_LLM_CONTEXT_TOKENS, DEFAULT_CONTEXT_TOKENS)

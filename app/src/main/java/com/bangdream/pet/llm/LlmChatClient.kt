@@ -35,6 +35,10 @@ class LlmChatClient {
     ): Flow<LlmStreamEvent> = flow {
         val normalized = settings.normalized()
         var requestMessages = messagesToJsonArray(systemPrompt, messages)
+        if (normalized.protocol != LlmProtocol.OPENAI) {
+            NativeLlmClient().stream(normalized, requestMessages, sessionKey) { emit(it) }
+            return@flow
+        }
         var remainingRounds = MAX_TOOL_ROUNDS
         while (true) {
             val result = runSingleRequest(normalized, requestMessages, sessionKey) { event -> emit(event) }
@@ -245,6 +249,11 @@ class LlmChatClient {
         sessionKey: String = "",
     ): String = withContext(Dispatchers.IO) {
         val normalized = settings.normalized()
+        if (normalized.protocol != LlmProtocol.OPENAI) {
+            return@withContext NativeLlmClient().complete(normalized, JSONArray().apply {
+                messages.forEach { (role, content) -> put(JSONObject().put("role", role).put("content", content)) }
+            }, sessionKey)
+        }
         val body = buildRequestBody(normalized, JSONArray().apply {
             messages.forEach { (role, content) ->
                 put(JSONObject().put("role", role).put("content", content))
@@ -301,8 +310,16 @@ class LlmChatClient {
         .apply {
             when (settings.thinkingMode) {
                 ThinkingMode.Auto -> Unit
-                ThinkingMode.Enabled -> put("thinking", JSONObject().put("type", "enabled"))
-                ThinkingMode.Disabled -> put("thinking", JSONObject().put("type", "disabled"))
+                ThinkingMode.Enabled -> {
+                    put("thinking", JSONObject().put("type", "enabled"))
+                    put("reasoning_effort", "medium")
+                    put("reasoning", JSONObject().put("summary", "auto"))
+                }
+                ThinkingMode.Disabled -> {
+                    put("thinking", JSONObject().put("type", "disabled"))
+                    put("reasoning_effort", "none")
+                    put("reasoning", JSONObject().put("summary", "none"))
+                }
             }
         }
 
@@ -369,13 +386,16 @@ class LlmChatClient {
  * - 删除该行 → 不发送该请求头。
  * Authorization / Content-Type / Accept 由应用自动设置，同名的用户行会被忽略。
  */
-private fun HttpURLConnection.applyExtraHeaders(settings: LlmSettings, sessionKey: String) {
+internal fun HttpURLConnection.applyExtraHeaders(settings: LlmSettings, sessionKey: String) {
     settings.headers.forEach { header ->
         val name = header.name.trim()
         if (name.isEmpty()) return@forEach
         if (name.equals("Content-Type", ignoreCase = true) ||
             name.equals("Accept", ignoreCase = true) ||
-            name.equals("Authorization", ignoreCase = true)
+            name.equals("Authorization", ignoreCase = true) ||
+            (settings.protocol == LlmProtocol.ANTHROPIC &&
+                (name.equals("x-api-key", ignoreCase = true) || name.equals("anthropic-version", ignoreCase = true))) ||
+            (settings.protocol == LlmProtocol.GOOGLE && name.equals("x-goog-api-key", ignoreCase = true))
         ) return@forEach
         val explicitValue = header.value.trim()
         val effectiveValue =
@@ -390,7 +410,7 @@ private fun HttpURLConnection.applyExtraHeaders(settings: LlmSettings, sessionKe
     }
 }
 
-private fun java.io.Reader.readTextBounded(): String {
+internal fun java.io.Reader.readTextBounded(): String {
     val buffer = CharArray(8192)
     var count = 0
     while (count < buffer.size) {
@@ -484,7 +504,7 @@ private class TextToolCallScanner {
 }
 
 /** 非流式响应也可能包含文本格式工具调用标记，剥离开避免显示协议文本。 */
-private fun stripTextToolCalls(text: String): String =
+internal fun stripTextToolCalls(text: String): String =
     TEXT_TOOL_CALL_BLOCK_REGEX.replace(text, "")
 
 private val TEXT_TOOL_CALL_BLOCK_REGEX = Regex("<tool_call>[\\s\\S]*?</tool_call>")
