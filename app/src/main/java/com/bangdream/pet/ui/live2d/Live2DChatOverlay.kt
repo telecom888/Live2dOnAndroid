@@ -2,6 +2,9 @@
 
 package com.bangdream.pet.ui.live2d
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+
 import android.graphics.Rect
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -333,7 +336,8 @@ private fun ChatPanelContent(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lineMode = loadLineUiEnabled(context)
-    val lineBackgroundColor = Color(ChatDisplayPreferences.load(context).lineBackgroundColor)
+    val displayPreferences = ChatDisplayPreferences.load(context)
+    val lineBackgroundColor = Color(displayPreferences.lineBackgroundColor)
     val lineForegroundColor = if (lineBackgroundColor.luminance() < 0.45f) Color.White else Color(0xFF1B1B1B)
     val scope = rememberCoroutineScope()
     val imageInputEnabled = settings.imageInputEnabled
@@ -413,8 +417,8 @@ private fun ChatPanelContent(
                     onReplay = { message -> viewModel.replayMessage(model.characterId, message.content) },
                     characterId = model.characterId,
                     characterName = model.characterName,
-                    lineMode = loadLineUiEnabled(context),
-                    displayPreferences = ChatDisplayPreferences.load(context),
+                    lineMode = lineMode,
+                    displayPreferences = displayPreferences,
                     versionPositions = state.versionPositions,
                     restoreReplyId = state.restoreReplyId,
                     onSwitchVersion = if (!state.isGenerating) viewModel::switchMessageVersion else null,
@@ -428,30 +432,30 @@ private fun ChatPanelContent(
                     } else null,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
-                state.error?.let { error ->
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        shape = RoundedCornerShape(14.dp),
+            }
+            state.error?.let { error ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                chatErrorText(error),
-                                modifier = Modifier.weight(1f),
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                            if (isRetryableChatError(error)) {
-                                if (ChatDisplayPreferences.load(context).showRetryIcon) {
-                                    IconButton(onClick = { viewModel.retry(model) }) {
-                                        Icon(Icons.Outlined.Refresh, contentDescription = I18n.t("chat_retry"))
-                                    }
-                                } else {
-                                    TextButton(onClick = { viewModel.retry(model) }) { Text(I18n.t("chat_retry")) }
+                        Text(
+                            I18n.t("chat_request_failed") + "\n" + chatErrorText(error),
+                            modifier = Modifier.weight(1f).heightIn(max = 120.dp).verticalScroll(rememberScrollState()),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        if (isRetryableChatError(error)) {
+                            if (displayPreferences.showRetryIcon) {
+                                IconButton(onClick = { viewModel.retry(model) }) {
+                                    Icon(Icons.Outlined.Refresh, contentDescription = I18n.t("chat_retry"))
                                 }
+                            } else {
+                                TextButton(onClick = { viewModel.retry(model) }) { Text(I18n.t("chat_retry")) }
                             }
                         }
                     }
@@ -667,7 +671,7 @@ private fun chatErrorText(error: String): String = when (error) {
     Live2DChatViewModel.ERROR_HISTORY_LOAD -> I18n.t("chat_history_load_failed")
     Live2DChatViewModel.ERROR_HISTORY_SAVE -> I18n.t("chat_history_save_failed")
     Live2DChatViewModel.ERROR_HISTORY_DELETE -> I18n.t("chat_history_delete_failed")
-    else -> error
+    else -> com.bangdream.pet.llm.llmErrorText(error)
 }
 
 private fun isRetryableChatError(error: String): Boolean = error !in setOf(
@@ -1200,26 +1204,6 @@ private fun rememberChatAvatar(characterId: String?): ImageBitmap? {
                 defaultPath != null -> SampledImageDecoder.decodeAsset(appContext, defaultPath, 128)
                 else -> null
             }
-        }
-        if (decoded == null) ImageBitmapCache.markMissing(key) else ImageBitmapCache.put(key, decoded)
-        avatar = decoded
-    }
-    return avatar
-}
-
-@Composable
-private fun rememberUserAvatar(): ImageBitmap? {
-    val context = LocalContext.current
-    val appContext = context.applicationContext
-    val file = remember { AvatarManager.userAvatarFile(appContext) }
-    val key = remember(file?.lastModified()) {
-        if (file != null) "chat-avatar:user:${file.lastModified()}" else "chat-avatar:user:none"
-    }
-    var avatar by remember(key) { mutableStateOf(ImageBitmapCache.get(key)) }
-    LaunchedEffect(key) {
-        if (avatar != null || ImageBitmapCache.isKnownMissing(key)) return@LaunchedEffect
-        val decoded = file?.let {
-            withContext(Dispatchers.IO) { SampledImageDecoder.decodeBytes(it.readBytes(), 128) }
         }
         if (decoded == null) ImageBitmapCache.markMissing(key) else ImageBitmapCache.put(key, decoded)
         avatar = decoded

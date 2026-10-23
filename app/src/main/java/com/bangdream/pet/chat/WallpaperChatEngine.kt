@@ -14,6 +14,7 @@ import com.bangdream.pet.llm.CharacterPromptRepository
 import com.bangdream.pet.llm.LlmChatClient
 import com.bangdream.pet.llm.LlmSettings
 import com.bangdream.pet.llm.LlmStreamEvent
+import com.bangdream.pet.llm.llmFailureMessage
 import com.bangdream.pet.VoiceSettings
 import com.bangdream.pet.loadCharacterCustomPrompt
 import com.bangdream.pet.loadCharacterMemory
@@ -92,7 +93,7 @@ class WallpaperChatEngine(private val context: Context) {
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (throwable: Throwable) {
-            error = throwable.message ?: "请求失败"
+            error = llmFailureMessage(throwable, settings)
         }
 
         val parsed = if (error == null) runCatching { parser.finish() }.getOrElse {

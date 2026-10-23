@@ -38,7 +38,9 @@ class LlmChatClient {
         var remainingRounds = MAX_TOOL_ROUNDS
         while (true) {
             val result = runSingleRequest(normalized, requestMessages, sessionKey) { event -> emit(event) }
-            if (result.content.isNotBlank() || result.toolCalls.isEmpty() || remainingRounds <= 0) break
+            if (result.content.isNotBlank()) break
+            if (result.toolCalls.isEmpty()) throw IOException("LLM_EMPTY_RESPONSE")
+            if (remainingRounds <= 0) throw IOException("LLM_TOOL_LIMIT")
             requestMessages = appendToolMessages(requestMessages, result.toolCalls)
             remainingRounds--
         }
@@ -73,15 +75,34 @@ class LlmChatClient {
             }
             val code = connection.responseCode
             if (code !in 200..299) {
-                val rawDetail = connection.errorStream?.bufferedReader()?.use { it.readText().take(2048) }.orEmpty()
-                val detail = if (normalized.apiKey.isEmpty()) rawDetail else rawDetail.replace(normalized.apiKey, "***")
-                throw IOException("HTTP $code${if (detail.isBlank()) "" else ": $detail"}")
+                val detail = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readTextBounded() }.orEmpty()
+                throw providerFailure(detail, normalized, code)
             }
             var reasoningEmitted = false
             val dataLines = mutableListOf<String>()
             val contentBuilder = StringBuilder()
             val toolCalls = mutableMapOf<Int, AccumulatedToolCall>()
             val textToolCalls = TextToolCallScanner()
+            var errorEvent = false
+
+            suspend fun consumeEvent(event: ParsedSseEvent?) {
+                if (event == null || event.done) return
+                event.reasoningContent?.let {
+                    if (!reasoningEmitted) {
+                        reasoningEmitted = true
+                        onEvent(LlmStreamEvent.ReasoningStarted)
+                    }
+                    onEvent(LlmStreamEvent.Reasoning(it))
+                }
+                event.content?.takeIf(String::isNotEmpty)?.let { raw ->
+                    val visible = textToolCalls.append(raw)
+                    if (visible.isNotEmpty()) {
+                        contentBuilder.append(visible)
+                        onEvent(LlmStreamEvent.Content(visible))
+                    }
+                }
+                event.toolCalls?.forEach { mergeToolCall(toolCalls, it) }
+            }
 
             fun takeEvent(): ParsedSseEvent? {
                 if (dataLines.isEmpty()) return null
@@ -89,19 +110,19 @@ class LlmChatClient {
                 dataLines.clear()
                 if (data == "[DONE]") return ParsedSseEvent(done = true)
                 if (data.isBlank()) return null
-                val choice = runCatching {
-                    JSONObject(data).optJSONArray("choices")?.optJSONObject(0)
-                }.getOrNull() ?: return null
+                if (errorEvent) throw providerFailure(data, normalized)
+                val json = runCatching { JSONObject(data) }.getOrElse { throw IOException("LLM_INVALID_RESPONSE", it) }
+                if (json.has("error") && !json.isNull("error")) throw providerFailure(data, normalized)
+                val choice = json.optJSONArray("choices")?.optJSONObject(0) ?: return null
+                if (choice.optString("finish_reason") == "content_filter") throw IOException("LLM_CONTENT_FILTERED")
                 val delta = choice.optJSONObject("delta")
                 val reasoning = delta?.opt("reasoning_content")
                 val content = delta?.opt("content")
                 return ParsedSseEvent(
                     done = false,
-                    reasoning = reasoning is String && reasoning.isNotEmpty(),
                     reasoningContent = (reasoning as? String)?.takeIf(String::isNotEmpty),
                     content = content as? String,
                     toolCalls = delta?.let { parseToolCallDeltas(it) },
-                    finishReason = choice.optString("finish_reason").takeIf(String::isNotEmpty),
                 )
             }
 
@@ -113,34 +134,15 @@ class LlmChatClient {
                         line.isBlank() -> {
                             val event = takeEvent()
                             if (event?.done == true) break
-                            if (event?.reasoning == true && !reasoningEmitted) {
-                                reasoningEmitted = true
-                                onEvent(LlmStreamEvent.ReasoningStarted)
-                            }
-                            event?.reasoningContent?.let { onEvent(LlmStreamEvent.Reasoning(it)) }
-                            event?.content?.takeIf(String::isNotEmpty)?.let { raw ->
-                                val visible = textToolCalls.append(raw)
-                                if (visible.isNotEmpty()) {
-                                    contentBuilder.append(visible)
-                                    onEvent(LlmStreamEvent.Content(visible))
-                                }
-                            }
-                            event?.toolCalls?.forEach { mergeToolCall(toolCalls, it) }
+                            consumeEvent(event)
+                            errorEvent = false
                         }
+                        line.startsWith("event:") -> errorEvent = line.substringAfter(':').trim() == "error"
                         line.startsWith("data:") -> dataLines += line.removePrefix("data:").trimStart()
+                        line.trimStart().startsWith("{") -> throw providerFailure(line, normalized)
                     }
                 }
-                val event = takeEvent()
-                if (event?.reasoning == true && !reasoningEmitted) onEvent(LlmStreamEvent.ReasoningStarted)
-                event?.reasoningContent?.let { onEvent(LlmStreamEvent.Reasoning(it)) }
-                event?.content?.takeIf(String::isNotEmpty)?.let { raw ->
-                    val visible = textToolCalls.append(raw)
-                    if (visible.isNotEmpty()) {
-                        contentBuilder.append(visible)
-                        onEvent(LlmStreamEvent.Content(visible))
-                    }
-                }
-                event?.toolCalls?.forEach { mergeToolCall(toolCalls, it) }
+                consumeEvent(takeEvent())
             }
             textToolCalls.finish().forEach { toolCalls[it.index] = it }
             return SingleRequestResult(
@@ -223,9 +225,10 @@ class LlmChatClient {
         }
     }
 
-    /** 工具执行结果（项目内置工具为空，返回成功占位，让模型基于参数继续回复）。 */
+    /** No tool executor is registered: never tell the model a fabricated tool result succeeded. */
     private fun toolResultContent(call: AccumulatedToolCall): String = JSONObject()
-        .put("status", "ok")
+        .put("status", "error")
+        .put("message", "This tool is not available. Do not claim it was executed; answer without tools.")
         .put("tool", call.name)
         .put(
             "arguments",
@@ -234,34 +237,20 @@ class LlmChatClient {
         )
         .toString()
 
-    /** 非流式单次请求：返回最终 content（content 为空时回退 reasoning_content）。 */
+    /** Non-streaming completion: reasoning is never treated as the final reply. */
+    @OptIn(kotlinx.coroutines.InternalCoroutinesApi::class)
     suspend fun complete(
         settings: LlmSettings,
         messages: List<Pair<String, String>>,
         sessionKey: String = "",
     ): String = withContext(Dispatchers.IO) {
         val normalized = settings.normalized()
-        val body = JSONObject()
-            .put("model", normalized.model)
-            .put(
-                "messages",
-                JSONArray().apply {
-                    messages.forEach { (role, content) ->
-                        put(JSONObject().put("role", role).put("content", content))
-                    }
-                },
-            )
-            .put("stream", false)
-            .put("temperature", normalized.temperature.toDouble())
-            .put("max_tokens", normalized.maxTokens.coerceAtLeast(64))
-            .apply {
-                when (normalized.thinkingMode) {
-                    ThinkingMode.Auto -> Unit
-                    ThinkingMode.Enabled -> put("thinking", JSONObject().put("type", "enabled"))
-                    ThinkingMode.Disabled -> put("thinking", JSONObject().put("type", "disabled"))
-                }
+        val body = buildRequestBody(normalized, JSONArray().apply {
+            messages.forEach { (role, content) ->
+                put(JSONObject().put("role", role).put("content", content))
             }
-        runCatching {
+        }).put("stream", false)
+        run {
             val connection = (URL(normalized.endpoint()).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 15_000
@@ -271,29 +260,33 @@ class LlmChatClient {
                 setRequestProperty("Authorization", "Bearer ${normalized.apiKey}")
                 applyExtraHeaders(normalized, sessionKey)
             }
+            val cancellationHandle = currentCoroutineContext().job.invokeOnCompletion(
+                onCancelling = true,
+                invokeImmediately = true,
+            ) { cause -> if (cause != null) connection.disconnect() }
             try {
                 connection.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body.toString()) }
                 val code = connection.responseCode
                 if (code !in 200..299) {
-                    val detail = connection.errorStream?.bufferedReader()?.use { it.readText().take(1024) }.orEmpty()
-                    throw IOException("HTTP $code: $detail")
+                    val detail = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readTextBounded() }.orEmpty()
+                    throw providerFailure(detail, normalized, code)
                 }
                 val text = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                val message = JSONObject(text)
-                    .optJSONArray("choices")
-                    ?.optJSONObject(0)
-                    ?.optJSONObject("message")
-                val rawContent = message?.optString("content").orEmpty().trim()
+                val payload = runCatching { JSONObject(text) }.getOrElse { throw IOException("LLM_INVALID_RESPONSE", it) }
+                if (payload.has("error") && !payload.isNull("error")) throw providerFailure(text, normalized)
+                val choice = payload.optJSONArray("choices")?.optJSONObject(0)
+                if (choice?.optString("finish_reason") == "content_filter") throw IOException("LLM_CONTENT_FILTERED")
+                val message = choice?.optJSONObject("message")
+                val rawContent = (message?.opt("content") as? String).orEmpty().trim()
                 val content = stripTextToolCalls(rawContent)
-                if (content.isNotEmpty()) {
-                    content
-                } else {
-                    stripTextToolCalls(message?.optString("reasoning_content").orEmpty().trim())
-                }
+                if (content.isBlank()) throw IOException("LLM_EMPTY_RESPONSE")
+                currentCoroutineContext().ensureActive()
+                content
             } finally {
+                cancellationHandle.dispose()
                 connection.disconnect()
             }
-        }.getOrDefault("")
+        }
     }
 
     internal fun buildRequestBody(
@@ -340,11 +333,9 @@ class LlmChatClient {
 
     private data class ParsedSseEvent(
         val done: Boolean = false,
-        val reasoning: Boolean = false,
         val reasoningContent: String? = null,
         val content: String? = null,
         val toolCalls: List<ParsedToolCallDelta>? = null,
-        val finishReason: String? = null,
     )
 
     private data class ParsedToolCallDelta(
@@ -397,6 +388,17 @@ private fun HttpURLConnection.applyExtraHeaders(settings: LlmSettings, sessionKe
         if (effectiveValue.isBlank()) return@forEach
         setRequestProperty(name, effectiveValue)
     }
+}
+
+private fun java.io.Reader.readTextBounded(): String {
+    val buffer = CharArray(8192)
+    var count = 0
+    while (count < buffer.size) {
+        val read = read(buffer, count, buffer.size - count)
+        if (read < 0) break
+        count += read
+    }
+    return String(buffer, 0, count)
 }
 
 private fun isOpencodeEndpoint(baseUrl: String): Boolean =

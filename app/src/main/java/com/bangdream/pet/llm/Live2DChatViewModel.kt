@@ -68,13 +68,11 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
     private var voiceJob: Job? = null
     private var transitionJob: Job? = null
     private var lastFailedRequest: FailedRequest? = null
-    private var selectedLocalModel: ModelChoice? = null
 
     val state: StateFlow<ChatUiState> = mutableState.asStateFlow()
     val actions: Flow<String> = mutableActions.receiveAsFlow()
 
     fun selectCharacter(model: ModelChoice, force: Boolean = false) {
-        selectedLocalModel = model
         val current = mutableState.value
         if (
             current.characterId == model.characterId &&
@@ -405,9 +403,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 characterId = model.characterId,
                 conversationId = conversationId,
                 title = title,
-                createdAt = createdAt,
                 updatedAt = now,
-                messages = messages,
                 conversation = requestConversation,
             )
 
@@ -558,7 +554,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                         isThinking = false,
                         streamingText = "",
                         streamingReasoning = "",
-                        error = error.message ?: error.javaClass.simpleName,
+                        error = llmFailureMessage(error, settings),
                     )
                 }
             }
@@ -573,6 +569,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         completed: Boolean = true,
     ) {
         val result = parser.finish(completed)
+        if (completed && result.text.isBlank()) throw java.io.IOException("LLM_EMPTY_RESPONSE")
         val response = result.text.takeIf(String::isNotBlank)?.let {
             newMessage("assistant", it).copy(reasoning = reasoning.takeIf(String::isNotBlank), read = true, segments = result.segments)
         }
@@ -769,9 +766,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         val characterId: String,
         val conversationId: String,
         val title: String,
-        val createdAt: Long,
         val updatedAt: Long,
-        val messages: List<ChatMessage>,
         val conversation: ChatConversation,
     )
 

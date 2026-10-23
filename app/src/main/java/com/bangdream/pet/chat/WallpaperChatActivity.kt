@@ -32,6 +32,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +46,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bangdream.pet.loadBubbleEnabled
+import com.bangdream.pet.I18n
+import com.bangdream.pet.llm.LlmSettings
+import com.bangdream.pet.llm.llmErrorText
+import com.bangdream.pet.llm.llmFailureMessage
+import kotlinx.coroutines.CancellationException
 import com.bangdream.pet.loadDesktopLipSyncEnabled
 import com.bangdream.pet.loadPersistedModelChoice
 import com.bangdream.pet.live2d.NativeLive2D
@@ -88,7 +94,11 @@ private fun WallpaperChatPanel(onDismiss: () -> Unit) {
     var output by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
+    var requestFailed by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
+    DisposableEffect(Unit) {
+        onDispose { PetRuntime.clearCallbacks() }
+    }
 
     // 说话口型驱动（受「桌面口型同步」开关控制）
     LaunchedEffect(busy) {
@@ -150,7 +160,12 @@ private fun WallpaperChatPanel(onDismiss: () -> Unit) {
                         )
                     }
                     if (status.isNotBlank()) {
-                        Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            status,
+                            color = if (requestFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState()),
+                        )
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(
@@ -173,30 +188,45 @@ private fun WallpaperChatPanel(onDismiss: () -> Unit) {
                                         busy = true
                                         output = ""
                                         status = "思考中…"
+                                        requestFailed = false
                                         PetRuntime.onStopped = {
                                             status = "已停止"
                                             busy = false
                                         }
                                         PetRuntime.activeJob = scope.launch {
-                                            val engine = WallpaperChatEngine(appContext)
-                                            val result = engine.send(model, text) { streaming ->
-                                                output = streaming
+                                            try {
+                                                val engine = WallpaperChatEngine(appContext)
+                                                val result = engine.send(model, text) { streaming ->
+                                                    output = streaming
+                                                }
+                                                if (result.error != null) {
+                                                    requestFailed = true
+                                                    status = I18n.t("chat_request_failed") + "\n" + llmErrorText(result.error)
+                                                    input = text
+                                                } else {
+                                                    output = result.text
+                                                    status = if (result.ttsSpoken) "已回复（语音）" else "已回复"
+                                                }
+                                                if (result.actionTag != null) {
+                                                    NativeLive2D.playAction(Live2DWallpaperService.activeHandle, result.actionTag)
+                                                }
+                                                if (result.error == null && result.segments.isEmpty() && loadBubbleEnabled(appContext)) {
+                                                    WallpaperBubbleService.show(appContext, result.text)
+                                                }
+                                                if (result.error == null) {
+                                                    delay(1600)
+                                                    onDismiss()
+                                                }
+                                            } catch (cancelled: CancellationException) {
+                                                throw cancelled
+                                            } catch (error: Exception) {
+                                                requestFailed = true
+                                                status = I18n.t("chat_request_failed") + "\n" +
+                                                    llmErrorText(llmFailureMessage(error, LlmSettings.load(appContext)))
+                                                input = text
+                                            } finally {
+                                                busy = false
                                             }
-                                            if (result.error != null) {
-                                                status = result.error
-                                            } else {
-                                                output = result.text
-                                                status = if (result.ttsSpoken) "已回复（语音）" else "已回复"
-                                            }
-                                            if (result.actionTag != null) {
-                                                NativeLive2D.playAction(Live2DWallpaperService.activeHandle, result.actionTag)
-                                            }
-                                            if (result.error == null && result.segments.isEmpty() && loadBubbleEnabled(appContext)) {
-                                                WallpaperBubbleService.show(appContext, result.text)
-                                            }
-                                            busy = false
-                                            delay(1600)
-                                            onDismiss()
                                         }
                                     }
                                 },

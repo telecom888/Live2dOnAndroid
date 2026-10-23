@@ -1,4 +1,11 @@
 {
+  "chat_request_failed": "Request failed",
+  "chat_error_timeout": "The request timed out. Check your connection and retry.",
+  "chat_error_host": "Cannot reach the model service. Check your connection and API URL.",
+  "chat_error_empty": "The model returned no reply. Retry or check the model settings.",
+  "chat_error_invalid": "The service returned an invalid response. Check the API URL.",
+  "chat_error_tool_limit": "The model kept requesting tools without a reply. Retry or choose another model.",
+  "chat_error_filtered": "The service filtered this reply. Edit your message and retry.",
   "nav_live2d": "Live2D",
   "nav_model": "Models",
   "nav_settings": "Settings",

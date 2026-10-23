@@ -1279,16 +1279,6 @@ private fun darkModeLabel(mode: DarkModeSetting): String = when (mode) {
     DarkModeSetting.System -> I18n.t("settings_dark_mode_system")
 }
 
-private fun accentSwatchColor(accent: String): Color = when (accent) {
-    ThemeSettings.ACCENT_MINT -> Color(0xFF00796B)
-    ThemeSettings.ACCENT_SKY -> Color(0xFF1565C0)
-    ThemeSettings.ACCENT_SUNSET -> Color(0xFFE65100)
-    ThemeSettings.ACCENT_LAVENDER -> Color(0xFF6A4FB8)
-    ThemeSettings.ACCENT_ROSE -> Color(0xFFC2185B)
-    ThemeSettings.ACCENT_MONET -> Color(0xFF7E7E7E)
-    else -> Color(0xFFB32666)
-}
-
 private fun darkModeDescription(mode: DarkModeSetting): String = when (mode) {
     DarkModeSetting.On -> I18n.t("settings_dark_mode_on_desc")
     DarkModeSetting.Off -> I18n.t("settings_dark_mode_off_desc")
