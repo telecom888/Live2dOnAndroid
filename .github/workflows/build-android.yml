@@ -76,28 +76,37 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Test and build debug APK
+      - name: Test and build debug and release APKs
         shell: bash
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
 
       - name: Verify packaged native libraries
         shell: bash
         run: |
           python3 - <<'PY'
           import zipfile
-          with zipfile.ZipFile("app/build/outputs/apk/debug/app-debug.apk") as apk:
-              for library in ("libbangdreampet.so", "libluajit.so", "libzstd-jni-1.5.6-9.so"):
-                  entry = apk.getinfo("lib/arm64-v8a/" + library)
-                  assert entry.file_size > 0, library
+          for path in ("app/build/outputs/apk/debug/app-debug.apk", "app/build/outputs/apk/release/app-release-unsigned.apk"):
+              with zipfile.ZipFile(path) as apk:
+                  for library in ("libbangdreampet.so", "libluajit.so", "libzstd-jni-1.5.6-9.so"):
+                      entry = apk.getinfo("lib/arm64-v8a/" + library)
+                      assert entry.file_size > 0, (path, library)
           PY
 
-      - name: Upload APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: Live2dOnAndroid-debug-arm64
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload unsigned release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Live2dOnAndroid-release-unsigned-arm64
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
           retention-days: 14
 
