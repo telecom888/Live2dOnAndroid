@@ -2,12 +2,22 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Sign the APK and publish a GitHub Release
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: read
 
 jobs:
   build:
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -18,6 +28,18 @@ jobs:
         with:
           submodules: recursive
           persist-credentials: false
+
+      - name: Read APK version
+        id: version
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          version = re.search(r'versionName = "([0-9]+\.[0-9]+\.[0-9]+)"', Path('app/build.gradle.kts').read_text()).group(1)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'version={version}\n')
+          PY
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -80,7 +102,7 @@ jobs:
         shell: bash
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
+          ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease
 
       - name: Verify packaged native libraries
         shell: bash
@@ -118,3 +140,74 @@ jobs:
           path: app/build/reports/tests/
           if-no-files-found: ignore
           retention-days: 7
+
+  sign-and-publish:
+    needs: build
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.ref == 'refs/heads/main' && inputs.publish_release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: release-${{ needs.build.outputs.version }}
+      cancel-in-progress: false
+    env:
+      RELEASE_VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - name: Checkout release scripts
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            tools/ci
+            .github
+
+      - name: Download unsigned APK from this build
+        uses: actions/download-artifact@v4
+        with:
+          name: Live2dOnAndroid-release-unsigned-arm64
+          path: ${{ runner.temp }}/unsigned
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android signing tools
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'build-tools;35.0.0'
+
+      - name: Sign and verify APK
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_SIGNING_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.BANGDREAM_RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.BANGDREAM_RELEASE_KEY_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.BANGDREAM_RELEASE_KEY_ALIAS }}
+          EXPECTED_SIGNING_CERT_SHA256: a133a52626d649efaf1c49f830279ab1f07ab1caa2a972ed858cc7a0a1ec06a3
+        shell: bash
+        run: |
+          python3 tools/ci/sign_release.py \
+            --input "$RUNNER_TEMP/unsigned/app-release-unsigned.apk" \
+            --output-dir "$RUNNER_TEMP/signed" --version "$RELEASE_VERSION" \
+            --build-tools "$ANDROID_HOME/build-tools/35.0.0"
+
+      - name: Upload signed APK and checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: Live2dOnAndroid-release-signed-arm64
+          path: |
+            ${{ runner.temp }}/signed/*.apk
+            ${{ runner.temp }}/signed/SHA256SUMS.txt
+            ${{ runner.temp }}/signed/build-provenance.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish verified GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 tools/ci/publish_release.py --directory "$RUNNER_TEMP/signed" --version "$RELEASE_VERSION"

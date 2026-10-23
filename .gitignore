@@ -53,6 +53,7 @@ tools/gen_tmp/
 tools/archive/01_logs/
 tools/archive/03_gen_tmp/
 tools/__pycache__/
+tools/ci/__pycache__/
 tools/_*.py
 *.err
 *.wav
