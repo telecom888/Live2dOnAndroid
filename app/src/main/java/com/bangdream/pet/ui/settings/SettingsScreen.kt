@@ -2359,6 +2359,13 @@ private fun PersonalizationPage(topInset: Dp, onBack: () -> Unit) {
                         onCheckedChange = { update(display.copy(showRetryIcon = it)) },
                     )
                     SettingsSwitchRow(
+                        title = I18n.t("settings_continue_generation"),
+                        subtitle = I18n.t("settings_continue_generation_desc"),
+                        checked = display.showContinueGeneration,
+                        onCheckedChange = { update(display.copy(showContinueGeneration = it)) },
+                        enabled = !display.multiPartReplies,
+                    )
+                    SettingsSwitchRow(
                         title = I18n.t("settings_show_context_usage"),
                         subtitle = I18n.t("settings_show_context_usage_desc"),
                         checked = display.showContextUsage,

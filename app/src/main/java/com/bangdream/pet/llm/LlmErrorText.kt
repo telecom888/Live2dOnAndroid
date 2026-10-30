@@ -4,6 +4,7 @@ import com.bangdream.pet.I18n
 
 fun llmErrorText(error: String): String = when (error) {
     "LLM_TIMEOUT" -> I18n.t("chat_error_timeout")
+    "LLM_STREAM_INTERRUPTED" -> I18n.t("chat_error_interrupted")
     "LLM_HOST_UNREACHABLE" -> I18n.t("chat_error_host")
     "LLM_EMPTY_RESPONSE" -> I18n.t("chat_error_empty")
     "LLM_INVALID_RESPONSE" -> I18n.t("chat_error_invalid")

@@ -15,8 +15,8 @@ internal class AssistantReplyDecoder(private val tags: Set<String>, private val 
         } else plain.consume(delta)
     }
 
-    fun finish(completed: Boolean = true): Result {
-        if (!segmented) return plain.finish().let { Result(it.text, emptyList(), it.action) }
+    fun finish(completed: Boolean = true, preserveWhitespace: Boolean = false): Result {
+        if (!segmented) return plain.finish(preserveWhitespace).let { Result(it.text, emptyList(), it.action) }
         if (!completed) return Result("", emptyList(), null)
         var value = raw.toString().trim()
         if (value.startsWith("```")) {

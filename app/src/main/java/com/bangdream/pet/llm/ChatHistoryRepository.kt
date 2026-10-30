@@ -262,6 +262,15 @@ class ChatHistoryRepository internal constructor(
                     segments = item.optJSONArray("segments")?.let { parts ->
                         buildList { for (i in 0 until parts.length()) parts.optString(i).takeIf(String::isNotBlank)?.let { add(it) } }
                     }.orEmpty(),
+                    incomplete = item.optBoolean("incomplete", false),
+                    requestHistory = item.optJSONArray("requestHistory")?.let { turns ->
+                        buildList {
+                            for (i in 0 until turns.length()) {
+                                val turn = turns.getJSONObject(i)
+                                add(ChatRequestTurn(turn.getString("role"), turn.getString("content")))
+                            }
+                        }
+                    }.orEmpty(),
                 ),
             )
         }
@@ -281,7 +290,13 @@ class ChatHistoryRepository internal constructor(
                     .put("timeContextEnabled", message.timeContextEnabled)
                     .put("timeZoneId", message.timeZoneId)
                     .put("parentId", message.parentId)
-                    .put("segments", JSONArray(message.segments)),
+                    .put("segments", JSONArray(message.segments))
+                    .put("incomplete", message.incomplete)
+                    .put("requestHistory", JSONArray().apply {
+                        message.requestHistory.forEach { turn ->
+                            put(JSONObject().put("role", turn.role).put("content", turn.content))
+                        }
+                    }),
             )
         }
     }
@@ -349,7 +364,7 @@ class ChatHistoryRepository internal constructor(
         characterId.replace(Regex("[^A-Za-z0-9_.-]"), "_")
 
     companion object {
-        private const val SCHEMA_VERSION = 4
+        private const val SCHEMA_VERSION = 5
         private const val MAX_CACHED_SUMMARIES = 256
         private const val LEGACY_CONVERSATION_ID = "legacy"
         private const val TITLE_MAX_CODE_POINTS = 32

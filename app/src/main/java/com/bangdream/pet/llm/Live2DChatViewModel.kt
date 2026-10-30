@@ -48,6 +48,7 @@ data class ChatUiState(
     val timeContextOverride: TimeContextOverride = TimeContextOverride.INHERIT,
     val streamingText: String = "",
     val streamingReasoning: String = "",
+    val continuingReplyId: String? = null,
     val isGenerating: Boolean = false,
     val isThinking: Boolean = false,
     val isHistoryLoading: Boolean = false,
@@ -224,6 +225,16 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         startRequest(model, failed.input, appendUser = false)
     }
 
+    fun continueReply(model: ModelChoice): Boolean {
+        val current = mutableState.value
+        val reply = current.messages.lastOrNull()
+        if (requestJob?.isActive == true || current.isHistoryLoading || current.characterId != model.characterId ||
+            !ChatDisplayPreferences.load(getApplication()).let { it.showContinueGeneration && !it.multiPartReplies } ||
+            !ChatContinuation.canContinue(reply)) return false
+        startRequest(model, "", appendUser = false, continuationId = reply!!.id)
+        return true
+    }
+
     fun setTimeContextOverride(value: TimeContextOverride) {
         val current = mutableState.value
         if (current.isGenerating || current.isHistoryLoading) return
@@ -360,7 +371,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun startRequest(model: ModelChoice, input: String, appendUser: Boolean, images: List<String> = emptyList()) {
+    private fun startRequest(model: ModelChoice, input: String, appendUser: Boolean, images: List<String> = emptyList(), continuationId: String? = null) {
         cancelReplyPresentation()
         requestJob = viewModelScope.launch {
             val current = mutableState.value
@@ -398,13 +409,19 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             } else {
                 ChatBranchGraph.normalized(baseConversation.copy(timeContextOverride = current.timeContextOverride))
             }
-            val messages = requestConversation.messages
+            val continuation = requestConversation.messages.lastOrNull()?.takeIf { it.id == continuationId }
+            if (continuationId != null && (display.multiPartReplies || !ChatContinuation.canContinue(continuation))) return@launch
+            val messages = requestConversation.messages.map {
+                if (it.id == continuationId) ChatContinuation.requestMessage(it) else it
+            }
             val requestContext = RequestContext(
                 characterId = model.characterId,
                 conversationId = conversationId,
                 title = title,
                 updatedAt = now,
                 conversation = requestConversation,
+                continuation = continuation,
+                singlePart = !display.multiPartReplies,
             )
 
             // LINE 已读：模拟「对方（角色）看过了」，在模型开始回复前随机时间把这条用户消息标记为已读
@@ -439,6 +456,8 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 versionPositions = ChatBranchGraph.versions(saved.first),
                 restoreReplyId = ChatStateTransitions.restoreReplyId(saved.first),
                 streamingText = "",
+                streamingReasoning = "",
+                continuingReplyId = continuationId,
                 isThinking = false,
                 error = null,
             )
@@ -543,6 +562,20 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                     }
                     return@launch
                 }
+                if (requestContext.singlePart) {
+                    flushParserText()
+                    finalizeAssistant(requestContext, parser, latestStreamingReasoning, completed = false)
+                    if (isActive(requestContext)) {
+                        val partial = mutableState.value.messages.lastOrNull()
+                        if (!ChatContinuation.canContinue(partial)) {
+                            lastFailedRequest = FailedRequest(requestContext.characterId, requestContext.conversationId, input)
+                        }
+                        if (mutableState.value.error != ERROR_HISTORY_SAVE && !(error is IncompleteLlmStream && error.outputLimit)) {
+                            mutableState.value = mutableState.value.copy(error = llmFailureMessage(error, settings))
+                        }
+                    }
+                    return@launch
+                }
                 lastFailedRequest = FailedRequest(
                     characterId = requestContext.characterId,
                     conversationId = requestContext.conversationId,
@@ -568,10 +601,13 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         intervalMs: Int = 0,
         completed: Boolean = true,
     ) {
-        val result = parser.finish(completed)
+        val result = parser.finish(completed, preserveWhitespace = request.singlePart)
         if (completed && result.text.isBlank()) throw java.io.IOException("LLM_EMPTY_RESPONSE")
-        val response = result.text.takeIf(String::isNotBlank)?.let {
-            newMessage("assistant", it).copy(reasoning = reasoning.takeIf(String::isNotBlank), read = true, segments = result.segments)
+        val response = request.continuation?.let {
+            ChatContinuation.merge(it, result.text, reasoning, completed)
+        } ?: result.text.takeIf(String::isNotBlank)?.let {
+            newMessage("assistant", it).copy(reasoning = reasoning.takeIf(String::isNotBlank), read = true,
+                segments = result.segments, incomplete = request.singlePart && !completed)
         }
         val saved = runIoCatching {
             val persisted = history.updateConversation(request.characterId, request.conversationId) { latest ->
@@ -581,7 +617,8 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                     request.conversation
                 }
                 val finalConversation = if (response != null) {
-                    ChatBranchGraph.append(base, response)
+                    if (request.continuation != null) ChatBranchGraph.updateMessage(base, response.id) { response }
+                    else ChatBranchGraph.append(base, response)
                 } else {
                     base
                 }
@@ -593,6 +630,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 mutableState.value = mutableState.value.copy(
                     streamingText = "",
                     streamingReasoning = "",
+                    continuingReplyId = null,
                     isGenerating = false,
                     isThinking = false,
                     error = ERROR_HISTORY_SAVE,
@@ -613,13 +651,14 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             restoreReplyId = ChatStateTransitions.restoreReplyId(saved.first),
             streamingText = "",
             streamingReasoning = "",
+            continuingReplyId = null,
             isGenerating = false,
             isThinking = false,
             error = null,
             revealingReplyId = response?.id?.takeIf { result.segments.size > 1 && intervalMs > 0 },
             revealedSegmentCount = if (result.segments.size > 1 && intervalMs > 0) 1 else Int.MAX_VALUE,
         )
-        if (response != null) {
+        if (response != null && completed) {
             revealJob = viewModelScope.launch {
                 if (result.segments.size > 1 && intervalMs > 0) {
                     for (count in 2..result.segments.size) {
@@ -768,6 +807,8 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         val title: String,
         val updatedAt: Long,
         val conversation: ChatConversation,
+        val continuation: ChatMessage? = null,
+        val singlePart: Boolean = true,
     )
 
     companion object {

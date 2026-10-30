@@ -6,6 +6,7 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -157,7 +158,7 @@ class LlmStreamingTest {
             "data: " + JSONObject().put("choices", JSONArray().put(JSONObject().put("delta", delta)))
         }
         // No trailing blank line: the final event must also be consumed at EOF.
-        withServer(200, "text/event-stream", body.toByteArray()) { baseUrl ->
+        withServer(200, "text/event-stream", (body + "\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}").toByteArray()) { baseUrl ->
             val events = LlmChatClient().streamCompletion(
                 LlmSettings(baseUrl = baseUrl), "system", emptyList(),
             ).toList()
@@ -258,7 +259,7 @@ class LlmStreamingTest {
     fun ignoresUsageAndHandlesLastContentWithoutBlankLine() = runBlocking {
         withServer(200, "text/event-stream", (
             "data: {\"choices\":[],\"usage\":{\"total_tokens\":1}}\n\n" +
-                "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}"
+                "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}]}"
         ).toByteArray()) { baseUrl ->
             assertEquals(listOf(LlmStreamEvent.Content("hello")), LlmChatClient().streamCompletion(
                 LlmSettings(baseUrl = baseUrl, apiKey = "test-key"), "system", emptyList(),
@@ -310,6 +311,60 @@ class LlmStreamingTest {
                 LlmSettings(baseUrl = baseUrl, apiKey = "test-key"), "system", emptyList(),
             ).toList() }.exceptionOrNull()
             assertTrue("Expected $expected, got $error", error?.message?.contains(expected) == true)
+        }
+    }
+
+    @Test
+    fun prematureEofPreservesReceivedTextAndReportsInterruptionForAllProtocols() = runBlocking {
+        val bodies = mapOf(
+            LlmProtocol.OPENAI to """{"choices":[{"delta":{"content":"partial "}}]}""",
+            LlmProtocol.ANTHROPIC to """{"type":"content_block_delta","delta":{"type":"text_delta","text":"partial "}}""",
+            LlmProtocol.GOOGLE to """{"candidates":[{"content":{"parts":[{"text":"partial "}]}}]}""",
+        )
+        for ((protocol, body) in bodies) {
+            withServer(200, "text/event-stream", "data: $body\n\n".toByteArray()) { baseUrl ->
+                val received = mutableListOf<LlmStreamEvent>()
+                val error = runCatching {
+                    LlmChatClient().streamCompletion(LlmSettings(baseUrl = baseUrl, protocol = protocol), "persona", emptyList())
+                        .collect { received += it }
+                }.exceptionOrNull()
+                assertTrue("$protocol: $error", error is IncompleteLlmStream && !error.outputLimit)
+                assertEquals(listOf(LlmStreamEvent.Content("partial ")), received)
+            }
+        }
+    }
+
+    @Test
+    fun outputLimitsRemainContinuableForAllProtocols() = runBlocking {
+        val bodies = mapOf(
+            LlmProtocol.OPENAI to """data: {"choices":[{"delta":{"content":"partial"},"finish_reason":"length"}]}""",
+            LlmProtocol.GOOGLE to """data: {"candidates":[{"content":{"parts":[{"text":"partial"}]},"finishReason":"MAX_TOKENS"}]}""",
+            LlmProtocol.ANTHROPIC to """data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"partial"}}
+
+data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"}}
+
+data: {"type":"message_stop"}""",
+        )
+        for ((protocol, body) in bodies) {
+            withServer(200, "text/event-stream", "$body\n\n".toByteArray()) { baseUrl ->
+                val error = runCatching {
+                    LlmChatClient().streamCompletion(LlmSettings(baseUrl = baseUrl, protocol = protocol), "persona", emptyList()).toList()
+                }.exceptionOrNull()
+                assertTrue("$protocol: $error", error is IncompleteLlmStream && error.outputLimit)
+            }
+        }
+    }
+
+    @Test
+    fun cancellingWhileReceivingTextStaysCancellation() = runBlocking {
+        val body = "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\ndata: [DONE]\n\n"
+        withServer(200, "text/event-stream", body.toByteArray()) { baseUrl ->
+            val error = runCatching {
+                LlmChatClient().streamCompletion(LlmSettings(baseUrl = baseUrl), "persona", emptyList()).collect {
+                    if (it is LlmStreamEvent.Content) throw kotlinx.coroutines.CancellationException("manual stop")
+                }
+            }.exceptionOrNull()
+            assertTrue(error is kotlinx.coroutines.CancellationException)
         }
     }
 

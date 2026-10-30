@@ -1,4 +1,8 @@
 {
+  "chat_continue_generation": "继续生成",
+  "settings_continue_generation": "继续生成按钮",
+  "settings_continue_generation_desc": "单段回复中断后提供续写按钮；发送新消息后隐藏。",
+  "chat_error_interrupted": "连接中途结束，已保留收到的回复。",
   "chat_request_failed": "请求失败",
   "chat_error_timeout": "连接或读取超时，请检查网络后重试。",
   "chat_error_host": "无法连接到模型服务，请检查网络及接口地址。",

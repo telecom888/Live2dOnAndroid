@@ -21,12 +21,22 @@ internal class NativeLlmClient {
             val text = StringBuilder()
             var reasoningStarted = false
             val lines = mutableListOf<String>()
+            var finished = false
+            var outputLimit = false
             suspend fun consume(): Boolean {
                 if (lines.isEmpty()) return false
                 val raw = lines.joinToString("\n")
                 lines.clear()
                 if (raw.trim() == "[DONE]") return true
                 val payload = parseJson(raw)
+                if (settings.protocol == LlmProtocol.GOOGLE) {
+                    val finish = payload.optJSONArray("candidates")?.optJSONObject(0)?.optString("finishReason").orEmpty()
+                    if (finish.isNotEmpty()) finished = true
+                    if (finish == "MAX_TOKENS") outputLimit = true
+                } else {
+                    if (payload.optString("type") == "message_stop") finished = true
+                    if (payload.optJSONObject("delta")?.optString("stop_reason") == "max_tokens") outputLimit = true
+                }
                 val result = parseNativeResponse(settings, payload, stream = true)
                 for (event in result) {
                     if (event is LlmStreamEvent.Reasoning && !reasoningStarted) {
@@ -54,6 +64,7 @@ internal class NativeLlmClient {
                 consume()
             }
             if (text.isBlank()) throw IOException("LLM_EMPTY_RESPONSE")
+            if (outputLimit || !finished) throw IncompleteLlmStream(outputLimit)
         }
     }
 

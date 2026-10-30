@@ -1,4 +1,8 @@
 {
+  "chat_continue_generation": "Continue generating",
+  "settings_continue_generation": "Continue generation button",
+  "settings_continue_generation_desc": "Offer continuation for interrupted single-part replies. Hidden after a new message.",
+  "chat_error_interrupted": "The connection ended early. The received reply has been saved.",
   "chat_request_failed": "Request failed",
   "chat_error_timeout": "The request timed out. Check your connection and retry.",
   "chat_error_host": "Cannot reach the model service. Check your connection and API URL.",

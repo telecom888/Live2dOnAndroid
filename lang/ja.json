@@ -1,4 +1,8 @@
 {
+  "chat_continue_generation": "生成を続ける",
+  "settings_continue_generation": "生成を続けるボタン",
+  "settings_continue_generation_desc": "単一返信が中断したときに続きを生成できます。新しいメッセージの送信後は非表示になります。",
+  "chat_error_interrupted": "接続が途中で終了しました。受信済みの返信は保存されています。",
   "chat_request_failed": "リクエストに失敗しました",
   "chat_error_timeout": "接続または受信がタイムアウトしました。ネットワークを確認して再試行してください。",
   "chat_error_host": "モデルサービスに接続できません。ネットワークと API の URL を確認してください。",

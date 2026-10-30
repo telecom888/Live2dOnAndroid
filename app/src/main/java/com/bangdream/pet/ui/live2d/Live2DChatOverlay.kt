@@ -129,6 +129,7 @@ import com.bangdream.pet.llm.ChatUiState
 import com.bangdream.pet.llm.MessageVersionPosition
 import com.bangdream.pet.llm.Live2DChatViewModel
 import com.bangdream.pet.llm.LlmSettings
+import com.bangdream.pet.llm.ChatContinuation
 import com.bangdream.pet.loadLineUiEnabled
 import com.bangdream.pet.AvatarManager
 import com.bangdream.pet.ui.ImageBitmapCache
@@ -411,6 +412,7 @@ private fun ChatPanelContent(
                     messages = state.messages,
                     streamingText = state.streamingText,
                     streamingReasoning = state.streamingReasoning,
+                    continuingReplyId = state.continuingReplyId,
                     revealingReplyId = state.revealingReplyId,
                     revealedSegmentCount = state.revealedSegmentCount,
                     onReplay = { message -> viewModel.replayMessage(model.characterId, message.content) },
@@ -432,7 +434,15 @@ private fun ChatPanelContent(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
             }
-            ChatRequestError(state.error, displayPreferences.showRetryIcon, onRetry = { viewModel.retry(model) })
+            val hasPartialReply = ChatContinuation.canContinue(state.messages.lastOrNull())
+            if (hasPartialReply && displayPreferences.showContinueGeneration && !displayPreferences.multiPartReplies && !state.isGenerating) {
+                TextButton(
+                    onClick = { viewModel.continueReply(model) },
+                    modifier = Modifier.align(Alignment.End),
+                ) { Text(I18n.t("chat_continue_generation")) }
+            }
+            ChatRequestError(state.error, displayPreferences.showRetryIcon, onRetry = { viewModel.retry(model) },
+                retryEnabled = !hasPartialReply)
             if (!compactForIme && selectedImages.isNotEmpty()) {
                 Row(
                     modifier = Modifier
@@ -643,6 +653,7 @@ internal fun ChatRequestError(
     showRetryIcon: Boolean,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    retryEnabled: Boolean = true,
 ) {
     error?.let { error ->
         Surface(
@@ -660,7 +671,7 @@ internal fun ChatRequestError(
                     color = MaterialTheme.colorScheme.onErrorContainer,
                     style = MaterialTheme.typography.bodySmall,
                 )
-                if (isRetryableChatError(error)) {
+                if (retryEnabled && isRetryableChatError(error)) {
                     if (showRetryIcon) {
                         IconButton(onClick = onRetry) {
                             Icon(Icons.Outlined.Refresh, contentDescription = I18n.t("chat_retry"))
@@ -704,6 +715,7 @@ internal fun ChatMessageList(
     messages: List<ChatMessage>,
     streamingText: String,
     streamingReasoning: String = "",
+    continuingReplyId: String? = null,
     revealingReplyId: String? = null,
     revealedSegmentCount: Int = Int.MAX_VALUE,
     onReplay: ((ChatMessage) -> Unit)? = null,
@@ -728,7 +740,7 @@ internal fun ChatMessageList(
     var editDraft by remember { mutableStateOf("") }
     var keepImages by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
-    val itemCount = messages.size + if (streamingText.isNotBlank() || streamingReasoning.isNotBlank()) 1 else 0
+    val itemCount = messages.size + if (continuingReplyId == null && (streamingText.isNotBlank() || streamingReasoning.isNotBlank())) 1 else 0
     val streamScrollBucket = streamingText.length / 24
     var previousItemCount by remember { mutableIntStateOf(0) }
     var consumedJump by remember { mutableStateOf(false) }
@@ -775,7 +787,9 @@ internal fun ChatMessageList(
                 } else {
                     null
                 }
-                val parts = message.segments.takeIf { message.role == "assistant" && it.isNotEmpty() } ?: listOf(message.content)
+                val continuing = message.id == continuingReplyId
+                val parts = message.segments.takeIf { message.role == "assistant" && it.isNotEmpty() }
+                    ?: listOf(message.content + if (continuing) streamingText else "")
                 val count = if (message.id == revealingReplyId) revealedSegmentCount.coerceIn(1, parts.size) else parts.size
                 Column {
                     parts.forEachIndexed { partIndex, part ->
@@ -790,7 +804,8 @@ internal fun ChatMessageList(
                                 ChatBubble(
                                     message.role,
                                     part,
-                                    reasoning = message.reasoning.takeIf { firstPart },
+                                    reasoning = (if (continuing) listOfNotNull(message.reasoning, streamingReasoning.takeIf(String::isNotBlank))
+                                        .joinToString("\n\n").takeIf(String::isNotBlank) else message.reasoning).takeIf { firstPart },
                                     highlightQuery = highlightQuery,
                                     onReplay = replay.takeIf { lastPart },
                                     groupContinuation = !firstPart,
@@ -822,7 +837,7 @@ internal fun ChatMessageList(
                     }
                 }
             }
-            if (streamingText.isNotBlank() || streamingReasoning.isNotBlank()) {
+            if (continuingReplyId == null && (streamingText.isNotBlank() || streamingReasoning.isNotBlank())) {
                 item(key = "streaming", contentType = "message") {
                     ChatBubble(
                         "assistant",

@@ -11,11 +11,12 @@ class ActionTagParser(tags: Set<String>) {
         return visible.toString().trimStart()
     }
 
-    fun finish(): Result {
+    fun finish(preserveWhitespace: Boolean = false): Result {
         // A retained partial tag is a prefix of a supported action. Keep it hidden
         // instead of exposing protocol text at the end of a truncated response.
         pendingTag = null
-        return Result(text = visible.toString().trim(), action = firstAction)
+        val text = visible.toString()
+        return Result(text = if (preserveWhitespace) text else text.trim(), action = firstAction)
     }
 
     private fun consumeCharacter(character: Char) {

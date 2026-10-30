@@ -97,6 +97,7 @@ import com.bangdream.pet.llm.ChatConversationSummary
 import com.bangdream.pet.llm.ChatTextSearch
 import com.bangdream.pet.llm.ChatUiState
 import com.bangdream.pet.llm.LlmSettings
+import com.bangdream.pet.llm.ChatContinuation
 import com.bangdream.pet.llm.Live2DChatViewModel
 import com.bangdream.pet.llm.TimeContextOverride
 import com.bangdream.pet.ui.design.emphasizedTween
@@ -571,7 +572,10 @@ private fun ConversationDetailScreen(
     val scope = rememberCoroutineScope()
     val contextTokens = remember { LlmSettings.load(context.applicationContext).contextTokens }
     val usedTokens = remember(state.messages) {
-        state.messages.sumOf { ChatTextSearch.estimateTokens(it.content) }
+        state.messages.sumOf { message ->
+            if (message.requestHistory.isEmpty()) ChatTextSearch.estimateTokens(message.content)
+            else message.requestHistory.sumOf { ChatTextSearch.estimateTokens(it.content) }
+        }
     }
     val usageRatio = (usedTokens.toFloat() / contextTokens.toFloat()).coerceIn(0f, 1f)
     val imageInputEnabled = remember { LlmSettings.load(context.applicationContext).imageInputEnabled }
@@ -760,6 +764,7 @@ private fun ConversationDetailScreen(
                 revealingReplyId = state.revealingReplyId,
                 revealedSegmentCount = state.revealedSegmentCount,
                 streamingReasoning = state.streamingReasoning,
+                continuingReplyId = state.continuingReplyId,
                 highlightQuery = searchQuery.takeIf { it.isNotBlank() },
                 scrollToMessageId = scrollTarget,
                 onReplay = { message -> viewModel.replayMessage(character.characterId, message.content) },
@@ -781,11 +786,19 @@ private fun ConversationDetailScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }
+        val hasPartialReply = ChatContinuation.canContinue(state.messages.lastOrNull())
+        if (hasPartialReply && displayPreferences.showContinueGeneration && !displayPreferences.multiPartReplies &&
+            !state.isGenerating && !state.isHistoryLoading) {
+            TextButton(onClick = { viewModel.continueReply(character) }, modifier = Modifier.align(Alignment.End)) {
+                Text(I18n.t("chat_continue_generation"))
+            }
+        }
         ChatRequestError(
             state.error,
             displayPreferences.showRetryIcon,
             onRetry = { viewModel.retry(character) },
             modifier = Modifier.padding(horizontal = 12.dp),
+            retryEnabled = !hasPartialReply,
         )
         if (selectedImages.isNotEmpty()) {
             Row(

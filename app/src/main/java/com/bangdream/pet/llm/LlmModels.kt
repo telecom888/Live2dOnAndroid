@@ -155,7 +155,14 @@ data class ChatMessage(
     val parentId: String? = null,
     /** One reply/branch node, rendered as ordered bubbles. Empty for legacy messages. */
     val segments: List<String> = emptyList(),
+    /** Internal recovery state; no status label is shown in chat. */
+    val incomplete: Boolean = false,
+    /** Wire turns behind one visible reply, preserving continuation boundaries. */
+    val requestHistory: List<ChatRequestTurn> = emptyList(),
 )
+
+@Immutable
+data class ChatRequestTurn(val role: String, val content: String)
 
 @Immutable
 data class ChatConversation(

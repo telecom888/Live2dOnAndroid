@@ -5,6 +5,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.job
@@ -48,7 +50,12 @@ class LlmChatClient {
             requestMessages = appendToolMessages(requestMessages, result.toolCalls)
             remainingRounds--
         }
-    }.flowOn(Dispatchers.IO)
+    // Deliver buffered text before propagating a transport failure across flowOn.
+    // Throwing in the producer would cancel its channel and discard pending deltas.
+    }.map { Result.success(it) }
+        .catch { emit(Result.failure(it)) }
+        .flowOn(Dispatchers.IO)
+        .map { it.getOrThrow() }
 
     @OptIn(kotlinx.coroutines.InternalCoroutinesApi::class)
     private suspend fun runSingleRequest(
@@ -88,6 +95,8 @@ class LlmChatClient {
             val toolCalls = mutableMapOf<Int, AccumulatedToolCall>()
             val textToolCalls = TextToolCallScanner()
             var errorEvent = false
+            var finished = false
+            var outputLimit = false
 
             suspend fun consumeEvent(event: ParsedSseEvent?) {
                 if (event == null || event.done) return
@@ -112,13 +121,19 @@ class LlmChatClient {
                 if (dataLines.isEmpty()) return null
                 val data = dataLines.joinToString("\n").trim()
                 dataLines.clear()
-                if (data == "[DONE]") return ParsedSseEvent(done = true)
+                if (data == "[DONE]") {
+                    finished = true
+                    return ParsedSseEvent(done = true)
+                }
                 if (data.isBlank()) return null
                 if (errorEvent) throw providerFailure(data, normalized)
                 val json = runCatching { JSONObject(data) }.getOrElse { throw IOException("LLM_INVALID_RESPONSE", it) }
                 if (json.has("error") && !json.isNull("error")) throw providerFailure(data, normalized)
                 val choice = json.optJSONArray("choices")?.optJSONObject(0) ?: return null
                 if (choice.optString("finish_reason") == "content_filter") throw IOException("LLM_CONTENT_FILTERED")
+                val finish = choice.opt("finish_reason") as? String
+                if (!finish.isNullOrEmpty()) finished = true
+                if (finish == "length") outputLimit = true
                 val delta = choice.optJSONObject("delta")
                 val reasoning = delta?.let(::extractReasoningText)
                 val content = delta?.opt("content")
@@ -149,6 +164,9 @@ class LlmChatClient {
                 consumeEvent(takeEvent())
             }
             textToolCalls.finish().forEach { toolCalls[it.index] = it }
+            if (outputLimit || (!finished && (contentBuilder.isNotEmpty() || toolCalls.isNotEmpty()))) {
+                throw IncompleteLlmStream(outputLimit)
+            }
             return SingleRequestResult(
                 content = contentBuilder.toString(),
                 toolCalls = toolCalls.values.sortedBy { it.index },
@@ -164,6 +182,12 @@ class LlmChatClient {
         JSONArray().apply {
             put(JSONObject().put("role", "system").put("content", systemPrompt))
             messages.forEach { message ->
+                if (message.role == "assistant" && message.requestHistory.isNotEmpty()) {
+                    message.requestHistory.forEach { turn ->
+                        put(JSONObject().put("role", turn.role).put("content", turn.content))
+                    }
+                    return@forEach
+                }
                 val requestText = if (message.role == "user" && message.timeContextEnabled && message.timestamp > 0L) {
                     val zone = runCatching { ZoneId.of(message.timeZoneId ?: "UTC") }.getOrDefault(ZoneId.of("UTC"))
                     val sentAt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm XXX")
