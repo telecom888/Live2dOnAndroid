@@ -4,20 +4,35 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import subprocess
+from urllib.error import HTTPError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 
-def gh(*args, check=True):
-    return subprocess.run(['gh', *args], check=check, capture_output=True, text=True)
-
-
-def api(path):
-    return json.loads(gh('api', path).stdout)
+def api(path, method='GET', body=None, upload=None):
+    token = os.environ.get('GH_TOKEN') or os.environ['GITHUB_TOKEN']
+    host = 'https://uploads.github.com/' if upload is not None else 'https://api.github.com/'
+    headers = {
+        'Authorization': 'Bearer ' + token,
+        'User-Agent': 'Live2dOnAndroid-release',
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+    data = None
+    if upload is not None:
+        data = upload.read_bytes()
+        headers['Content-Type'] = 'application/octet-stream'
+    elif body is not None:
+        data = json.dumps(body).encode('utf-8')
+        headers['Content-Type'] = 'application/json'
+    request = Request(host + path, data=data, headers=headers, method=method)
+    with urlopen(request, timeout=180) as response:
+        raw = response.read()
+    return json.loads(raw) if raw else None
 
 
 def release_for_tag(repo, tag):
-    # An unpublished draft can have no Git tag yet. The tags endpoint may
-    # return 404 for it; enumerate accessible releases and use its numeric ID.
+    # Drafts can have no Git tag. Use the numeric release ID for all mutations.
     page = 1
     while True:
         releases = api(f'repos/{repo}/releases?per_page=100&page={page}')
@@ -42,10 +57,14 @@ def main():
     tag = 'v' + args.version
     if os.environ['GITHUB_REF'].startswith('refs/tags/') and os.environ['GITHUB_REF'] != 'refs/tags/' + tag:
         raise ValueError('Git tag does not match the APK version')
-    # Existing tags must point to this exact commit; never move a release tag.
-    ref = gh('api', f'repos/{repo}/git/ref/tags/{tag}', check=False)
-    if ref.returncode == 0:
-        obj = json.loads(ref.stdout)['object']
+    # Never move a release tag, including an annotated tag.
+    try:
+        ref = api(f'repos/{repo}/git/ref/tags/{tag}')
+    except HTTPError as error:
+        if error.code != 404:
+            raise
+    else:
+        obj = ref['object']
         while obj['type'] == 'tag':
             obj = api(f"repos/{repo}/git/tags/{obj['sha']}")['object']
         if obj['sha'] != commit:
@@ -55,19 +74,24 @@ def main():
         raise ValueError('Release is already published; refusing to overwrite it')
     if existing is not None and existing['target_commitish'] != commit:
         raise ValueError('Draft release targets another commit')
-    notes = args.directory / 'release-notes.md'
-    notes.write_text(Path('.github/release-notes.md').read_text(encoding='utf-8') +
-        f"\n\n构建来源：{provenance['workflow_run']}\n\n提交：`{commit}`\n", encoding='utf-8')
+    notes = Path('.github/release-notes.md').read_text(encoding='utf-8') + (
+        f"\n\n构建来源：{provenance['workflow_run']}\n\n提交：`{commit}`\n"
+    )
     if existing is None:
-        gh('release', 'create', tag, '--repo', repo, '--target', commit, '--draft',
-            '--title', f'Live2dOnAndroid {args.version}', '--notes-file', str(notes))
-        existing = release_for_tag(repo, tag)
-    if existing is None:
-        raise ValueError('Draft release was not found after creation')
+        # Keep the creation response: a list/tag lookup may not see a new draft yet.
+        existing = api(f'repos/{repo}/releases', 'POST', {
+            'tag_name': tag, 'target_commitish': commit, 'draft': True,
+            'name': f'Live2dOnAndroid {args.version}', 'body': notes,
+        })
     release_path = f"repos/{repo}/releases/{existing['id']}"
     files = [args.directory / f'Live2dOnAndroid-{args.version}-release-arm64.apk',
         args.directory / 'SHA256SUMS.txt', args.directory / 'build-provenance.json']
-    gh('release', 'upload', tag, '--repo', repo, '--clobber', *(str(path) for path in files))
+    assets = {asset['name']: asset for asset in api(release_path)['assets']}
+    for path in files:
+        old = assets.get(path.name)
+        if old is not None:
+            api(f"repos/{repo}/releases/assets/{old['id']}", 'DELETE')
+        api(release_path + '/assets?name=' + quote(path.name, safe=''), 'POST', upload=path)
     release = api(release_path)
     if not release['draft']:
         raise ValueError('Release unexpectedly became public before verification')
@@ -77,8 +101,10 @@ def main():
         digest = 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest()
         if asset.get('size') != path.stat().st_size or asset.get('digest') != digest:
             raise ValueError('Uploaded asset failed size/SHA256 verification: ' + path.name)
-    gh('release', 'edit', tag, '--repo', repo, '--draft=false', '--latest', '--notes-file', str(notes))
-    print(api(release_path)['html_url'])
+    published = api(release_path, 'PATCH', {'draft': False, 'make_latest': 'true', 'body': notes})
+    if published['draft']:
+        raise ValueError('Release is still a draft')
+    print(published['html_url'])
 
 
 if __name__ == '__main__':
