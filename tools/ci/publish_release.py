@@ -81,7 +81,7 @@ def main():
         # Keep the creation response: a list/tag lookup may not see a new draft yet.
         existing = api(f'repos/{repo}/releases', 'POST', {
             'tag_name': tag, 'target_commitish': commit, 'draft': True,
-            'name': f'Live2dOnAndroid {args.version}', 'body': notes,
+            'name': args.version, 'body': notes,
         })
     release_path = f"repos/{repo}/releases/{existing['id']}"
     files = [args.directory / f'Live2dOnAndroid-{args.version}-release-arm64.apk',
@@ -101,7 +101,7 @@ def main():
         digest = 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest()
         if asset.get('size') != path.stat().st_size or asset.get('digest') != digest:
             raise ValueError('Uploaded asset failed size/SHA256 verification: ' + path.name)
-    published = api(release_path, 'PATCH', {'draft': False, 'make_latest': 'true', 'body': notes})
+    published = api(release_path, 'PATCH', {'draft': False, 'make_latest': 'true', 'body': notes, 'name': args.version})
     if published['draft']:
         raise ValueError('Release is still a draft')
     print(published['html_url'])
