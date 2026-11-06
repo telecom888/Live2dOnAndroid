@@ -760,10 +760,10 @@ private fun ConversationDetailScreen(
         } else {
             ChatMessageList(
                 messages = state.messages,
-                streamingText = state.streamingText,
+                streaming = viewModel.streaming,
+                isGenerating = state.isGenerating,
                 revealingReplyId = state.revealingReplyId,
                 revealedSegmentCount = state.revealedSegmentCount,
-                streamingReasoning = state.streamingReasoning,
                 continuingReplyId = state.continuingReplyId,
                 highlightQuery = searchQuery.takeIf { it.isNotBlank() },
                 scrollToMessageId = scrollTarget,

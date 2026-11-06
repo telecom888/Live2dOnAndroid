@@ -85,7 +85,7 @@ def main():
         })
     release_path = f"repos/{repo}/releases/{existing['id']}"
     files = [args.directory / f'Live2dOnAndroid-{args.version}-release-arm64.apk',
-        args.directory / 'SHA256SUMS.txt', args.directory / 'build-provenance.json']
+        args.directory / 'build-provenance.json']
     assets = {asset['name']: asset for asset in api(release_path)['assets']}
     for path in files:
         old = assets.get(path.name)

@@ -46,16 +46,16 @@ data class ChatUiState(
     val versionPositions: Map<String, MessageVersionPosition> = emptyMap(),
     val restoreReplyId: String? = null,
     val timeContextOverride: TimeContextOverride = TimeContextOverride.INHERIT,
-    val streamingText: String = "",
-    val streamingReasoning: String = "",
     val continuingReplyId: String? = null,
     val isGenerating: Boolean = false,
-    val isThinking: Boolean = false,
     val isHistoryLoading: Boolean = false,
     val error: String? = null,
     val revealingReplyId: String? = null,
     val revealedSegmentCount: Int = Int.MAX_VALUE,
 )
+
+@Immutable
+data class ChatStreamUiState(val text: String = "", val reasoning: String = "")
 
 class Live2DChatViewModel(application: Application) : AndroidViewModel(application) {
     private val localBackend = LocalChatBackend(application)
@@ -63,6 +63,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
     private val prompts = localBackend.prompts
     private val client = localBackend.client
     private val mutableState = MutableStateFlow(ChatUiState())
+    private val mutableStream = MutableStateFlow(ChatStreamUiState())
     private val mutableActions = Channel<String>(Channel.BUFFERED)
     private var requestJob: Job? = null
     private var revealJob: Job? = null
@@ -71,6 +72,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
     private var lastFailedRequest: FailedRequest? = null
 
     val state: StateFlow<ChatUiState> = mutableState.asStateFlow()
+    val streaming: StateFlow<ChatStreamUiState> = mutableStream.asStateFlow()
     val actions: Flow<String> = mutableActions.receiveAsFlow()
 
     fun selectCharacter(model: ModelChoice, force: Boolean = false) {
@@ -205,6 +207,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         if (
             (text.isEmpty() && images.isEmpty()) ||
             requestJob?.isActive == true ||
+            current.isGenerating ||
             current.isHistoryLoading ||
             current.characterId != model.characterId
         ) return false
@@ -217,6 +220,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         val current = mutableState.value
         if (
             requestJob?.isActive == true ||
+            current.isGenerating ||
             current.isHistoryLoading ||
             failed.characterId != model.characterId ||
             current.characterId != failed.characterId ||
@@ -228,7 +232,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
     fun continueReply(model: ModelChoice): Boolean {
         val current = mutableState.value
         val reply = current.messages.lastOrNull()
-        if (requestJob?.isActive == true || current.isHistoryLoading || current.characterId != model.characterId ||
+        if (requestJob?.isActive == true || current.isGenerating || current.isHistoryLoading || current.characterId != model.characterId ||
             !ChatDisplayPreferences.load(getApplication()).let { it.showContinueGeneration && !it.multiPartReplies } ||
             !ChatContinuation.canContinue(reply)) return false
         startRequest(model, "", appendUser = false, continuationId = reply!!.id)
@@ -455,10 +459,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 activeConversation = saved.first,
                 versionPositions = ChatBranchGraph.versions(saved.first),
                 restoreReplyId = ChatStateTransitions.restoreReplyId(saved.first),
-                streamingText = "",
-                streamingReasoning = "",
                 continuingReplyId = continuationId,
-                isThinking = false,
                 error = null,
             )
 
@@ -482,88 +483,36 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             val parser = AssistantReplyDecoder(characterPrompt.allowedActionTags, display.multiPartReplies)
             mutableState.value = mutableState.value.copy(isGenerating = true)
             lastFailedRequest = null
-            var latestStreamingText = ""
             var latestStreamingReasoning = ""
-            val pendingParserText = StringBuilder()
-            var lastStreamingPublishAt = 0L
-            var pendingStreamingUpdate: Job? = null
-
-            fun flushParserText() {
-                if (pendingParserText.isEmpty()) return
-                latestStreamingText = parser.consume(pendingParserText.toString())
-                pendingParserText.setLength(0)
-            }
-
-            fun publishStreamingText() {
-                val now = System.nanoTime() / 1_000_000L
-                val elapsed = now - lastStreamingPublishAt
-                if (lastStreamingPublishAt == 0L || elapsed >= STREAMING_UI_UPDATE_INTERVAL_MS) {
-                    flushParserText()
-                    pendingStreamingUpdate?.cancel()
-                    pendingStreamingUpdate = null
-                    lastStreamingPublishAt = now
-                    if (isActive(requestContext)) {
-                        mutableState.value = mutableState.value.copy(
-                            streamingText = latestStreamingText,
-                            streamingReasoning = latestStreamingReasoning,
-                            isThinking = false,
-                        )
-                    }
-                } else if (pendingStreamingUpdate?.isActive != true) {
-                    pendingStreamingUpdate = launch {
-                        delay((STREAMING_UI_UPDATE_INTERVAL_MS - elapsed).coerceAtLeast(1L))
-                        if (isActive(requestContext)) {
-                            flushParserText()
-                            lastStreamingPublishAt = System.nanoTime() / 1_000_000L
-                            mutableState.value = mutableState.value.copy(
-                                streamingText = latestStreamingText,
-                                streamingReasoning = latestStreamingReasoning,
-                                isThinking = false,
-                            )
-                        }
-                    }
-                }
-            }
 
             try {
                 client.streamCompletion(settings, systemPrompt, messages, requestContext.conversationId).collect { event ->
                     if (!isActive(requestContext)) return@collect
                     when (event) {
                         is LlmStreamEvent.Content -> {
-                            pendingParserText.append(event.text)
-                            publishStreamingText()
+                            mutableStream.value = mutableStream.value.copy(text = parser.consume(event.text))
                         }
                         is LlmStreamEvent.Reasoning -> {
                             latestStreamingReasoning += event.text
-                            mutableState.value = mutableState.value.copy(
-                                streamingReasoning = latestStreamingReasoning,
-                                isThinking = true,
-                            )
+                            mutableStream.value = mutableStream.value.copy(reasoning = latestStreamingReasoning)
                         }
-                        LlmStreamEvent.ReasoningStarted -> mutableState.value = mutableState.value.copy(isThinking = true)
+                        LlmStreamEvent.ReasoningStarted -> Unit
                     }
                 }
-                pendingStreamingUpdate?.cancel()
-                flushParserText()
                 finalizeAssistant(requestContext, parser, latestStreamingReasoning, display.multiPartIntervalMs)
             } catch (cancelled: CancellationException) {
-                pendingStreamingUpdate?.cancel()
                 withContext(NonCancellable) {
-                    flushParserText()
                     finalizeAssistant(requestContext, parser, latestStreamingReasoning, completed = false)
                 }
                 throw cancelled
             } catch (error: Throwable) {
-                pendingStreamingUpdate?.cancel()
                 if (!currentCoroutineContext().isActive) {
                     withContext(NonCancellable) {
-                        flushParserText()
                         finalizeAssistant(requestContext, parser, latestStreamingReasoning, completed = false)
                     }
                     return@launch
                 }
                 if (requestContext.singlePart) {
-                    flushParserText()
                     finalizeAssistant(requestContext, parser, latestStreamingReasoning, completed = false)
                     if (isActive(requestContext)) {
                         val partial = mutableState.value.messages.lastOrNull()
@@ -584,12 +533,11 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 if (isActive(requestContext)) {
                     mutableState.value = mutableState.value.copy(
                         isGenerating = false,
-                        isThinking = false,
-                        streamingText = "",
-                        streamingReasoning = "",
                         error = llmFailureMessage(error, settings),
                     )
                 }
+            } finally {
+                mutableStream.value = ChatStreamUiState()
             }
         }
     }
@@ -628,11 +576,8 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         }.getOrElse {
             if (isActive(request)) {
                 mutableState.value = mutableState.value.copy(
-                    streamingText = "",
-                    streamingReasoning = "",
                     continuingReplyId = null,
                     isGenerating = false,
-                    isThinking = false,
                     error = ERROR_HISTORY_SAVE,
                 )
             }
@@ -649,11 +594,8 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             activeConversation = saved.first,
             versionPositions = ChatBranchGraph.versions(saved.first),
             restoreReplyId = ChatStateTransitions.restoreReplyId(saved.first),
-            streamingText = "",
-            streamingReasoning = "",
             continuingReplyId = null,
             isGenerating = false,
-            isThinking = false,
             error = null,
             revealingReplyId = response?.id?.takeIf { result.segments.size > 1 && intervalMs > 0 },
             revealedSegmentCount = if (result.segments.size > 1 && intervalMs > 0) 1 else Int.MAX_VALUE,
@@ -752,7 +694,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
 
     private suspend fun stopRequestAndJoin() {
         cancelReplyPresentation()
-        requestJob?.takeIf { it.isActive }?.cancelAndJoin()
+        requestJob?.cancelAndJoin()
     }
 
     private fun cancelReplyPresentation() {
@@ -816,7 +758,6 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         const val ERROR_HISTORY_LOAD = "CHAT_HISTORY_LOAD_FAILED"
         const val ERROR_HISTORY_SAVE = "CHAT_HISTORY_SAVE_FAILED"
         const val ERROR_HISTORY_DELETE = "CHAT_HISTORY_DELETE_FAILED"
-        private const val STREAMING_UI_UPDATE_INTERVAL_MS = 32L
     }
 }
 

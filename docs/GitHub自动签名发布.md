@@ -25,6 +25,6 @@
 
 ## 附件与校验
 
-Release 包含签名 APK、`SHA256SUMS.txt` 和 `build-provenance.json`。签名后校验包名、版本、原生库、zipalign、证书和 APK 原始内容。附件先上传到草稿，GitHub 返回的大小和 SHA256 与本地文件一致后才公开发布。
+Release 包含签名 APK 和 `build-provenance.json`，`SHA256SUMS.txt` 随 Actions 构建产物保留。签名后校验包名、版本、原生库、zipalign、证书和 APK 原始内容。附件先上传到草稿，GitHub 返回的大小和 SHA256 与本地文件一致后才公开发布。
 
 编译/签名 artifacts 均可从对应 Actions 运行下载；Debug 和未签名包不作为正式 Release 附件。

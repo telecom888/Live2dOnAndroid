@@ -19,6 +19,7 @@ import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.horizontalScroll
@@ -84,12 +85,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -130,6 +133,9 @@ import com.bangdream.pet.llm.MessageVersionPosition
 import com.bangdream.pet.llm.Live2DChatViewModel
 import com.bangdream.pet.llm.LlmSettings
 import com.bangdream.pet.llm.ChatContinuation
+import com.bangdream.pet.llm.ChatStreamUiState
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import com.bangdream.pet.loadLineUiEnabled
 import com.bangdream.pet.AvatarManager
 import com.bangdream.pet.ui.ImageBitmapCache
@@ -410,8 +416,8 @@ private fun ChatPanelContent(
             if (!compactForIme) {
                 ChatMessageList(
                     messages = state.messages,
-                    streamingText = state.streamingText,
-                    streamingReasoning = state.streamingReasoning,
+                    streaming = viewModel.streaming,
+                    isGenerating = state.isGenerating,
                     continuingReplyId = state.continuingReplyId,
                     revealingReplyId = state.revealingReplyId,
                     revealedSegmentCount = state.revealedSegmentCount,
@@ -713,8 +719,8 @@ private fun calculateImeOverlapPx(
 @Composable
 internal fun ChatMessageList(
     messages: List<ChatMessage>,
-    streamingText: String,
-    streamingReasoning: String = "",
+    streaming: StateFlow<ChatStreamUiState>,
+    isGenerating: Boolean,
     continuingReplyId: String? = null,
     revealingReplyId: String? = null,
     revealedSegmentCount: Int = Int.MAX_VALUE,
@@ -740,8 +746,13 @@ internal fun ChatMessageList(
     var editDraft by remember { mutableStateOf("") }
     var keepImages by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
-    val itemCount = messages.size + if (continuingReplyId == null && (streamingText.isNotBlank() || streamingReasoning.isNotBlank())) 1 else 0
-    val streamScrollBucket = streamingText.length / 24
+    val stream by streaming.collectAsStateWithLifecycle()
+    val hasStreamContent by remember(streaming) {
+        derivedStateOf { stream.text.isNotBlank() || stream.reasoning.isNotBlank() }
+    }
+    val showStreamRow = isGenerating && continuingReplyId == null && hasStreamContent
+    val itemCount = messages.size + if (showStreamRow) 1 else 0
+    val bottomTolerance = with(LocalDensity.current) { 24.dp.roundToPx() }
     var previousItemCount by remember { mutableIntStateOf(0) }
     var consumedJump by remember { mutableStateOf(false) }
     LaunchedEffect(scrollToMessageId, messages.size) {
@@ -753,7 +764,7 @@ internal fun ChatMessageList(
             consumedJump = true
         }
     }
-    LaunchedEffect(itemCount, streamScrollBucket, revealingReplyId, revealedSegmentCount) {
+    LaunchedEffect(itemCount, messages.lastOrNull()?.id, revealingReplyId, revealedSegmentCount) {
         val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
         val wasNearBottom = shouldFollowNewChatContent(previousItemCount, lastVisibleIndex)
         previousItemCount = itemCount
@@ -767,6 +778,23 @@ internal fun ChatMessageList(
             if (offset > 0) listState.scrollToItem(itemCount - 1, offset)
         }
         consumedJump = false
+    }
+    LaunchedEffect(isGenerating, itemCount, continuingReplyId, bottomTolerance) {
+        if (!isGenerating || (!showStreamRow && continuingReplyId == null)) return@LaunchedEffect
+        var previous: Pair<Int, Int>? = null
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            layout.visibleItemsInfo.lastOrNull()?.takeIf { it.index == itemCount - 1 }
+                ?.let { it.size to (it.offset + it.size - layout.viewportEndOffset) }
+        }.collect { tail ->
+            val before = previous
+            previous = tail
+            // Only follow height added to the bottom bubble, without resetting the list position.
+            if (tail != null && before != null && tail.first > before.first &&
+                before.second <= bottomTolerance && tail.second > 0 && !listState.isScrollInProgress) {
+                listState.scrollBy(tail.second.toFloat())
+            }
+        }
     }
     BoxWithConstraints(modifier = modifier) {
         val bubbleMaxWidth = (maxWidth * if (lineMode && displayPreferences.showMessageTime && displayPreferences.showMonthDay) 0.56f else if (lineMode) 0.68f else 0.82f).coerceAtMost(560.dp)
@@ -787,9 +815,10 @@ internal fun ChatMessageList(
                 } else {
                     null
                 }
-                val continuing = message.id == continuingReplyId
+                val continuing = isGenerating && message.id == continuingReplyId
+                val live = if (continuing) stream else null
                 val parts = message.segments.takeIf { message.role == "assistant" && it.isNotEmpty() }
-                    ?: listOf(message.content + if (continuing) streamingText else "")
+                    ?: listOf(message.content + live?.text.orEmpty())
                 val count = if (message.id == revealingReplyId) revealedSegmentCount.coerceIn(1, parts.size) else parts.size
                 Column {
                     parts.forEachIndexed { partIndex, part ->
@@ -804,7 +833,7 @@ internal fun ChatMessageList(
                                 ChatBubble(
                                     message.role,
                                     part,
-                                    reasoning = (if (continuing) listOfNotNull(message.reasoning, streamingReasoning.takeIf(String::isNotBlank))
+                                    reasoning = (if (live != null) listOfNotNull(message.reasoning, live.reasoning.takeIf(String::isNotBlank))
                                         .joinToString("\n\n").takeIf(String::isNotBlank) else message.reasoning).takeIf { firstPart },
                                     highlightQuery = highlightQuery,
                                     onReplay = replay.takeIf { lastPart },
@@ -837,12 +866,13 @@ internal fun ChatMessageList(
                     }
                 }
             }
-            if (continuingReplyId == null && (streamingText.isNotBlank() || streamingReasoning.isNotBlank())) {
+            if (showStreamRow) {
                 item(key = "streaming", contentType = "message") {
+                    val live = stream
                     ChatBubble(
                         "assistant",
-                        streamingText,
-                        reasoning = streamingReasoning,
+                        live.text,
+                        reasoning = live.reasoning,
                         avatar = avatar,
                         userAvatar = userAvatar,
                         lineMode = lineMode,
