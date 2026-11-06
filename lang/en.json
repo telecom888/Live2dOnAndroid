@@ -1,4 +1,6 @@
 {
+  "settings_sse_block_output": "Batch SSE output",
+  "settings_sse_block_output_desc": "Turn off to display each delta immediately. Turn on to group deltas received within 32 ms.",
   "chat_continue_generation": "Continue generating",
   "settings_continue_generation": "Continue generation button",
   "settings_continue_generation_desc": "Offer continuation for interrupted single-part replies. Hidden after a new message.",

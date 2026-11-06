@@ -14,6 +14,7 @@ import com.bangdream.pet.llm.CharacterPromptRepository
 import com.bangdream.pet.llm.LlmChatClient
 import com.bangdream.pet.llm.LlmSettings
 import com.bangdream.pet.llm.LlmStreamEvent
+import com.bangdream.pet.llm.StreamDisplayPublisher
 import com.bangdream.pet.llm.llmFailureMessage
 import com.bangdream.pet.VoiceSettings
 import com.bangdream.pet.loadCharacterCustomPrompt
@@ -22,6 +23,7 @@ import com.bangdream.pet.voice.VoicePlayer
 import com.bangdream.pet.voice.VoiceCloneClient
 import com.bangdream.pet.voice.VoiceSamples
 import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
@@ -75,6 +77,7 @@ class WallpaperChatEngine(private val context: Context) {
         val sessionId = active?.id ?: UUID.randomUUID().toString()
 
         val parser = AssistantReplyDecoder(prompt.allowedActionTags, display.multiPartReplies)
+        val publisher = StreamDisplayPublisher(CoroutineScope(coroutineContext), display.sseBlockOutput, publish = onStreaming)
         var error: String? = null
         try {
             client.streamCompletion(settings, systemText, baseMessages + userMessage, sessionId).collect { event ->
@@ -85,7 +88,7 @@ class WallpaperChatEngine(private val context: Context) {
                         // 只把增量 delta 交给 parser（parser 内部会累积），
                         // 传全量文本会导致 A/AB/ABC/ABCD 式重复累积。
                         val visible = parser.consume(event.text)
-                        if (!display.multiPartReplies) onStreaming(visible)
+                        if (!display.multiPartReplies) publisher.submit(visible)
                     }
                     LlmStreamEvent.ReasoningStarted -> Unit
                 }
@@ -94,6 +97,8 @@ class WallpaperChatEngine(private val context: Context) {
             throw cancelled
         } catch (throwable: Throwable) {
             error = llmFailureMessage(throwable, settings)
+        } finally {
+            publisher.flush()
         }
 
         val parsed = if (error == null) runCatching { parser.finish() }.getOrElse {

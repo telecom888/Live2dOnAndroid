@@ -1,4 +1,6 @@
 {
+  "settings_sse_block_output": "SSE のまとめ表示",
+  "settings_sse_block_output_desc": "オフでは受信した差分をすぐ表示し、オンでは 32 ミリ秒以内の差分をまとめて表示します。",
   "chat_continue_generation": "生成を続ける",
   "settings_continue_generation": "生成を続けるボタン",
   "settings_continue_generation_desc": "単一返信が中断したときに続きを生成できます。新しいメッセージの送信後は非表示になります。",

@@ -1,4 +1,6 @@
 {
+  "settings_sse_block_output": "SSE 块输出",
+  "settings_sse_block_output_desc": "关闭时直接显示每条增量，开启时合并 32 毫秒内收到的增量。",
   "chat_continue_generation": "继续生成",
   "settings_continue_generation": "继续生成按钮",
   "settings_continue_generation_desc": "单段回复中断后提供续写按钮；发送新消息后隐藏。",

@@ -8,6 +8,7 @@ data class ChatDisplayPreferences(
     val showReadAloud: Boolean = true,
     val showRetryIcon: Boolean = true,
     val showContinueGeneration: Boolean = true,
+    val sseBlockOutput: Boolean = false,
     val showContextUsage: Boolean = true,
     val showModelTimeControl: Boolean = true,
     val multiPartReplies: Boolean = false,
@@ -24,6 +25,7 @@ data class ChatDisplayPreferences(
             .putBoolean("chat_show_read_aloud", showReadAloud)
             .putBoolean("chat_show_retry_icon", showRetryIcon)
             .putBoolean("chat_show_continue_generation", showContinueGeneration)
+            .putBoolean("chat_sse_block_output", sseBlockOutput)
             .putBoolean("chat_show_context_usage", showContextUsage)
             .putBoolean("chat_show_model_time_control", showModelTimeControl)
             .putBoolean("chat_multi_part_replies", multiPartReplies)
@@ -51,6 +53,7 @@ data class ChatDisplayPreferences(
                 showReadAloud = prefs.getBoolean("chat_show_read_aloud", true),
                 showRetryIcon = prefs.getBoolean("chat_show_retry_icon", true),
                 showContinueGeneration = prefs.getBoolean("chat_show_continue_generation", true),
+                sseBlockOutput = prefs.getBoolean("chat_sse_block_output", false),
                 showContextUsage = prefs.getBoolean("chat_show_context_usage", true),
                 showModelTimeControl = prefs.getBoolean("chat_show_model_time_control", true),
                 multiPartReplies = prefs.getBoolean("chat_multi_part_replies", false),

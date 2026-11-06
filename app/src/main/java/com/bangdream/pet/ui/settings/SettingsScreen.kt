@@ -2366,6 +2366,12 @@ private fun PersonalizationPage(topInset: Dp, onBack: () -> Unit) {
                         enabled = !display.multiPartReplies,
                     )
                     SettingsSwitchRow(
+                        title = I18n.t("settings_sse_block_output"),
+                        subtitle = I18n.t("settings_sse_block_output_desc"),
+                        checked = display.sseBlockOutput,
+                        onCheckedChange = { update(display.copy(sseBlockOutput = it)) },
+                    )
+                    SettingsSwitchRow(
                         title = I18n.t("settings_show_context_usage"),
                         subtitle = I18n.t("settings_show_context_usage_desc"),
                         checked = display.showContextUsage,

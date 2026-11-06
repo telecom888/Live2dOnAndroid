@@ -483,37 +483,44 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             val parser = AssistantReplyDecoder(characterPrompt.allowedActionTags, display.multiPartReplies)
             mutableState.value = mutableState.value.copy(isGenerating = true)
             lastFailedRequest = null
-            var latestStreamingReasoning = ""
+            var live = ChatStreamUiState()
+            val publisher = StreamDisplayPublisher<ChatStreamUiState>(this, display.sseBlockOutput) {
+                if (isActive(requestContext)) mutableStream.value = it
+            }
 
             try {
                 client.streamCompletion(settings, systemPrompt, messages, requestContext.conversationId).collect { event ->
                     if (!isActive(requestContext)) return@collect
                     when (event) {
                         is LlmStreamEvent.Content -> {
-                            mutableStream.value = mutableStream.value.copy(text = parser.consume(event.text))
+                            live = live.copy(text = parser.consume(event.text))
+                            publisher.submit(live)
                         }
                         is LlmStreamEvent.Reasoning -> {
-                            latestStreamingReasoning += event.text
-                            mutableStream.value = mutableStream.value.copy(reasoning = latestStreamingReasoning)
+                            live = live.copy(reasoning = live.reasoning + event.text)
+                            publisher.submit(live)
                         }
                         LlmStreamEvent.ReasoningStarted -> Unit
                     }
                 }
-                finalizeAssistant(requestContext, parser, latestStreamingReasoning, display.multiPartIntervalMs)
+                publisher.flush()
+                finalizeAssistant(requestContext, parser, live.reasoning, display.multiPartIntervalMs)
             } catch (cancelled: CancellationException) {
+                publisher.flush()
                 withContext(NonCancellable) {
-                    finalizeAssistant(requestContext, parser, latestStreamingReasoning, completed = false)
+                    finalizeAssistant(requestContext, parser, live.reasoning, completed = false)
                 }
                 throw cancelled
             } catch (error: Throwable) {
+                publisher.flush()
                 if (!currentCoroutineContext().isActive) {
                     withContext(NonCancellable) {
-                        finalizeAssistant(requestContext, parser, latestStreamingReasoning, completed = false)
+                        finalizeAssistant(requestContext, parser, live.reasoning, completed = false)
                     }
                     return@launch
                 }
                 if (requestContext.singlePart) {
-                    finalizeAssistant(requestContext, parser, latestStreamingReasoning, completed = false)
+                    finalizeAssistant(requestContext, parser, live.reasoning, completed = false)
                     if (isActive(requestContext)) {
                         val partial = mutableState.value.messages.lastOrNull()
                         if (!ChatContinuation.canContinue(partial)) {
