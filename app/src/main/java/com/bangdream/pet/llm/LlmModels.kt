@@ -58,6 +58,7 @@ data class LlmSettings(
     val headers: List<LlmHeader> = emptyList(),
     val protocol: LlmProtocol = LlmProtocol.OPENAI,
     val anthropicAdaptiveThinking: Boolean = true,
+    val showReasoning: Boolean = true,
 ) {
     val isConfigured: Boolean
         get() = baseUrl.isNotBlank() && apiKey.isNotBlank() && model.isNotBlank()
@@ -100,6 +101,7 @@ data class LlmSettings(
             .putString(KEY_LLM_API_KEY, value.apiKey)
             .putString(KEY_LLM_MODEL, value.model)
             .putString(KEY_LLM_THINKING_MODE, value.thinkingMode.value)
+            .putBoolean(KEY_LLM_SHOW_REASONING, value.showReasoning)
             .putString("llm_protocol", value.protocol.value)
             .putBoolean("llm_anthropic_adaptive", value.anthropicAdaptiveThinking)
             .putFloat(KEY_LLM_TEMPERATURE, value.temperature)
@@ -123,6 +125,7 @@ data class LlmSettings(
                 apiKey = prefs.getString(KEY_LLM_API_KEY, null).orEmpty(),
                 model = prefs.getString(KEY_LLM_MODEL, null).orEmpty(),
                 thinkingMode = ThinkingMode.fromValue(prefs.getString(KEY_LLM_THINKING_MODE, null)),
+                showReasoning = prefs.getBoolean(KEY_LLM_SHOW_REASONING, true),
                 protocol = LlmProtocol.fromValue(prefs.getString("llm_protocol", null)),
                 anthropicAdaptiveThinking = prefs.getBoolean("llm_anthropic_adaptive", true),
                 temperature = prefs.getFloat(KEY_LLM_TEMPERATURE, 0.8f).coerceIn(0f, 2f),
@@ -207,6 +210,7 @@ private const val KEY_LLM_BASE_URL = "llm_base_url"
 private const val KEY_LLM_API_KEY = "llm_api_key"
 private const val KEY_LLM_MODEL = "llm_model"
 private const val KEY_LLM_THINKING_MODE = "llm_thinking_mode"
+private const val KEY_LLM_SHOW_REASONING = "llm_show_reasoning"
 private const val KEY_LLM_TEMPERATURE = "llm_temperature"
 private const val KEY_LLM_MAX_TOKENS = "llm_max_tokens"
 private const val KEY_LLM_CONTEXT_TOKENS = "llm_context_tokens"

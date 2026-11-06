@@ -485,7 +485,9 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             lastFailedRequest = null
             var live = ChatStreamUiState()
             val publisher = StreamDisplayPublisher<ChatStreamUiState>(this, display.sseBlockOutput) {
-                if (isActive(requestContext)) mutableStream.value = it
+                if (isActive(requestContext)) {
+                    mutableStream.value = if (settings.showReasoning) it else it.copy(reasoning = "")
+                }
             }
 
             try {
@@ -498,7 +500,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                         }
                         is LlmStreamEvent.Reasoning -> {
                             live = live.copy(reasoning = live.reasoning + event.text)
-                            publisher.submit(live)
+                            if (settings.showReasoning) publisher.submit(live)
                         }
                         LlmStreamEvent.ReasoningStarted -> Unit
                     }

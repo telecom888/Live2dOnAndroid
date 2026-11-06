@@ -762,6 +762,7 @@ private fun ConversationDetailScreen(
                 messages = state.messages,
                 streaming = viewModel.streaming,
                 isGenerating = state.isGenerating,
+                showReasoning = LlmSettings.load(context.applicationContext).showReasoning,
                 revealingReplyId = state.revealingReplyId,
                 revealedSegmentCount = state.revealedSegmentCount,
                 continuingReplyId = state.continuingReplyId,

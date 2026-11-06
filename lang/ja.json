@@ -1,4 +1,6 @@
 {
+  "settings_llm_show_reasoning": "思考内容を表示",
+  "settings_llm_show_reasoning_desc": "オフにすると返信本文のみ表示します。モデルは設定した思考モードで動作します。",
   "settings_sse_block_output": "SSE のまとめ表示",
   "settings_sse_block_output_desc": "オフでは受信した差分をすぐ表示し、オンでは 32 ミリ秒以内の差分をまとめて表示します。",
   "chat_continue_generation": "生成を続ける",

@@ -610,6 +610,16 @@ internal fun LlmSettingsScreen(onBack: () -> Unit, topInsetOverride: Dp? = null)
                         }
                     }
                 }
+                SettingsSwitchRow(
+                    title = I18n.t("settings_llm_show_reasoning"),
+                    subtitle = I18n.t("settings_llm_show_reasoning_desc"),
+                    checked = draft.showReasoning,
+                    onCheckedChange = {
+                        draft = draft.copy(showReasoning = it)
+                        saved = false
+                    },
+                    divider = false,
+                )
                 Column {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(I18n.t("settings_llm_temperature"), fontWeight = FontWeight.SemiBold)

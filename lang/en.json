@@ -1,4 +1,6 @@
 {
+  "settings_llm_show_reasoning": "Show reasoning",
+  "settings_llm_show_reasoning_desc": "When off, the chat shows only the reply. The model still follows the selected thinking mode.",
   "settings_sse_block_output": "Batch SSE output",
   "settings_sse_block_output_desc": "Turn off to display each delta immediately. Turn on to group deltas received within 32 ms.",
   "chat_continue_generation": "Continue generating",

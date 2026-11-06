@@ -418,6 +418,7 @@ private fun ChatPanelContent(
                     messages = state.messages,
                     streaming = viewModel.streaming,
                     isGenerating = state.isGenerating,
+                    showReasoning = settings.showReasoning,
                     continuingReplyId = state.continuingReplyId,
                     revealingReplyId = state.revealingReplyId,
                     revealedSegmentCount = state.revealedSegmentCount,
@@ -721,6 +722,7 @@ internal fun ChatMessageList(
     messages: List<ChatMessage>,
     streaming: StateFlow<ChatStreamUiState>,
     isGenerating: Boolean,
+    showReasoning: Boolean,
     continuingReplyId: String? = null,
     revealingReplyId: String? = null,
     revealedSegmentCount: Int = Int.MAX_VALUE,
@@ -747,8 +749,8 @@ internal fun ChatMessageList(
     var keepImages by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
     val stream by streaming.collectAsStateWithLifecycle()
-    val hasStreamContent by remember(streaming) {
-        derivedStateOf { stream.text.isNotBlank() || stream.reasoning.isNotBlank() }
+    val hasStreamContent by remember(streaming, showReasoning) {
+        derivedStateOf { stream.text.isNotBlank() || (showReasoning && stream.reasoning.isNotBlank()) }
     }
     val showStreamRow = isGenerating && continuingReplyId == null && hasStreamContent
     val itemCount = messages.size + if (showStreamRow) 1 else 0
@@ -833,8 +835,11 @@ internal fun ChatMessageList(
                                 ChatBubble(
                                     message.role,
                                     part,
-                                    reasoning = (if (live != null) listOfNotNull(message.reasoning, live.reasoning.takeIf(String::isNotBlank))
-                                        .joinToString("\n\n").takeIf(String::isNotBlank) else message.reasoning).takeIf { firstPart },
+                                    reasoning = if (showReasoning && firstPart) {
+                                        if (live == null) message.reasoning
+                                        else listOfNotNull(message.reasoning, live.reasoning.takeIf(String::isNotBlank))
+                                            .joinToString("\n\n").takeIf(String::isNotBlank)
+                                    } else null,
                                     highlightQuery = highlightQuery,
                                     onReplay = replay.takeIf { lastPart },
                                     groupContinuation = !firstPart,
@@ -872,7 +877,7 @@ internal fun ChatMessageList(
                     ChatBubble(
                         "assistant",
                         live.text,
-                        reasoning = live.reasoning,
+                        reasoning = live.reasoning.takeIf { showReasoning },
                         avatar = avatar,
                         userAvatar = userAvatar,
                         lineMode = lineMode,

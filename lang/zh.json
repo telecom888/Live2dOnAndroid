@@ -1,4 +1,6 @@
 {
+  "settings_llm_show_reasoning": "显示思考内容",
+  "settings_llm_show_reasoning_desc": "关闭时聊天只显示正文，模型仍按思考模式设置运行。",
   "settings_sse_block_output": "SSE 块输出",
   "settings_sse_block_output_desc": "关闭时直接显示每条增量，开启时合并 32 毫秒内收到的增量。",
   "chat_continue_generation": "继续生成",
