@@ -14,10 +14,9 @@ internal class NativeLlmClient {
     suspend fun stream(
         settings: LlmSettings,
         messages: JSONArray,
-        sessionKey: String,
         onEvent: suspend (LlmStreamEvent) -> Unit,
     ) {
-        request(settings, messages, sessionKey, stream = true) { connection ->
+        request(settings, messages, stream = true) { connection ->
             val text = StringBuilder()
             var reasoningStarted = false
             val lines = mutableListOf<String>()
@@ -68,8 +67,8 @@ internal class NativeLlmClient {
         }
     }
 
-    suspend fun complete(settings: LlmSettings, messages: JSONArray, sessionKey: String): String =
-        request(settings, messages, sessionKey, stream = false) { connection ->
+    suspend fun complete(settings: LlmSettings, messages: JSONArray): String =
+        request(settings, messages, stream = false) { connection ->
             val payload = parseJson(connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
             val text = parseNativeResponse(settings, payload, stream = false)
                 .filterIsInstance<LlmStreamEvent.Content>().joinToString("") { it.text }
@@ -80,7 +79,6 @@ internal class NativeLlmClient {
     private suspend fun <T> request(
         settings: LlmSettings,
         messages: JSONArray,
-        sessionKey: String,
         stream: Boolean,
         read: suspend (HttpURLConnection) -> T,
     ): T {
@@ -98,7 +96,7 @@ internal class NativeLlmClient {
             } else {
                 setRequestProperty("x-goog-api-key", settings.apiKey)
             }
-            applyExtraHeaders(settings, sessionKey)
+            applyExtraHeaders(settings)
         }
         val cancellation = currentCoroutineContext().job.invokeOnCompletion(
             onCancelling = true, invokeImmediately = true,

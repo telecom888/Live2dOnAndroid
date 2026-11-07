@@ -23,7 +23,6 @@ import kotlin.random.Random
  * - 时间注入：每条消息带时间戳，提示当前时间。
  */
 class LineOrchestrator(private val context: Context) {
-    private val settings = LlmSettings.load(context)
     private val client = LlmChatClient()
     private val prompts = CharacterPromptRepository(context)
     private val roleNames: Map<String, String> by lazy {
@@ -42,6 +41,8 @@ class LineOrchestrator(private val context: Context) {
     ): LineConversation {
         var conv = conversation
         if (conv.status != LineConversationStatus.ACTIVE || conv.memberRoleIds.isEmpty()) return conv
+        val settings = LlmSettings.load(context)
+        check(settings.isConfigured) { "LLM_NOT_CONFIGURED" }
 
         val contexts = mutableMapOf<String, MutableList<LineMessage>>()
         conv.memberRoleIds.forEach { rid ->
@@ -62,7 +63,7 @@ class LineOrchestrator(private val context: Context) {
                     onUpdated(conv)
                     return conv
                 }
-                val decision = decide(rid, conv, contexts[rid].orEmpty())
+                val decision = decide(settings, rid, conv, contexts[rid].orEmpty())
                 when (decision.action) {
                     Decision.Action.SILENT -> {
                         silentStreak++
@@ -92,7 +93,7 @@ class LineOrchestrator(private val context: Context) {
                             val readers = conv.memberRoleIds.filter { it != rid }
                             val readFlags = coroutineScope {
                                 readers.map { other ->
-                                    async { other to askRead(other, rid, trimmed, conv) }
+                                    async { other to askRead(settings, other, rid, trimmed, conv) }
                                 }.awaitAll()
                             }
                             for ((other, hasRead) in readFlags) {
@@ -121,6 +122,7 @@ class LineOrchestrator(private val context: Context) {
     }
 
     private suspend fun decide(
+        settings: LlmSettings,
         roleId: String,
         conv: LineConversation,
         visible: List<LineMessage>,
@@ -143,7 +145,7 @@ class LineOrchestrator(private val context: Context) {
 2) 如果这轮不想说话，直接输出 [silent]。
 3) 如果觉得这个对话可以结束，在你的消息最后加 [scene_end]。
 不要解释，直接输出消息内容："""
-        val response = client.complete(settings, listOf("system" to system, "user" to user), conv.id)
+        val response = client.complete(settings, listOf("system" to system, "user" to user))
         if (response.isBlank()) return Decision.silent()
         val lower = response.lowercase()
         if (lower.contains("[silent]")) return Decision.silent()
@@ -154,12 +156,12 @@ class LineOrchestrator(private val context: Context) {
         return Decision.reply(parts, end)
     }
 
-    private suspend fun askRead(readerId: String, senderId: String, content: String, conv: LineConversation): Boolean {
+    private suspend fun askRead(settings: LlmSettings, readerId: String, senderId: String, content: String, conv: LineConversation): Boolean {
         val prompt = """你是${roleNames[readerId] ?: readerId}。主题「${conv.topic}」下，
 ${roleNames[senderId] ?: senderId}给你发来一条新消息：
 「$content」
 你是否阅读这条消息？只回答 是 或 否。"""
-        val response = client.complete(settings, listOf("system" to persona(readerId), "user" to prompt), conv.id)
+        val response = client.complete(settings, listOf("system" to persona(readerId), "user" to prompt))
         val lower = response.lowercase()
         return lower.contains("是") || lower.contains("true") || lower.contains("read")
     }

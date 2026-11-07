@@ -18,8 +18,6 @@ import androidx.compose.animation.togetherWith
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -143,13 +141,6 @@ import com.bangdream.pet.ui.ImageBitmapCache
 import com.bangdream.pet.ui.chat.LineChatBackground
 import com.bangdream.pet.ui.SampledImageDecoder
 import com.bangdream.pet.isWallpaperEnabled
-import com.bangdream.pet.llm.ChatHistoryRepository
-import com.bangdream.pet.llm.OPENCODE_SESSION_HEADER
-import com.bangdream.pet.llm.isOpencodeSessionHeader
-import com.bangdream.pet.llm.LlmHeader
-import com.bangdream.pet.llm.LlmSettings
-import com.bangdream.pet.llm.ThinkingMode
-import com.bangdream.pet.llm.LlmProtocol
 import com.bangdream.pet.loadWallpaperMode
 import com.bangdream.pet.saveWallpaperMode
 import com.bangdream.pet.loadIdleAnimationEnabled
@@ -358,12 +349,8 @@ private fun UserAvatarPreview(tick: Int, size: Dp = 44.dp) {
 
 @Composable
 private fun LlmSettingsEntryCard(onOpen: () -> Unit) {
-    val context = LocalContext.current
-    val appContext = context.applicationContext
-    var settings by remember { mutableStateOf(LlmSettings.load(appContext)) }
-    LaunchedEffect(Unit) {
-        settings = LlmSettings.load(appContext)
-    }
+    val settings = rememberLlmProviders()
+    val model = settings.model(settings.defaultModel)
     Card(
         onClick = onOpen,
         modifier = Modifier.fillMaxWidth().appPressScale(),
@@ -377,7 +364,7 @@ private fun LlmSettingsEntryCard(onOpen: () -> Unit) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(I18n.t("settings_llm_title"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
-                    if (settings.isConfigured) I18n.t("settings_llm_configured", settings.model) else I18n.t("settings_llm_not_configured"),
+                    model?.let { I18n.t("settings_llm_configured", it.label) } ?: I18n.t("settings_llm_not_configured"),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
@@ -387,446 +374,6 @@ private fun LlmSettingsEntryCard(onOpen: () -> Unit) {
             Icon(Icons.Outlined.ChevronRight, contentDescription = null)
         }
     }
-}
-
-/** LLM 服务商预设：标签 / baseUrl / model。提到顶层，避免每次重组重建列表。 */
-private val LLM_PROVIDER_PRESETS = listOf(
-    Triple("DeepSeek", "https://api.deepseek.com", "deepseek-v4-flash"),
-    Triple("OpenCode Go", "https://opencode.ai/zen/go/v1", "mimo-v2.5"),
-    Triple("小米 mimo", "https://api.xiaomimimo.com/v1", "mimo-v2.5"),
-)
-
-/** LLM 自定义请求头编辑。
- * - OpenCode Go 预设会自动补一行 x-opencode-session（值留空 = 按每条对话自动生成稳定会话 ID）；
- * - 该行值可填固定值覆盖，也可删除（删除后不再发送该请求头）；
- * - 其余自定义请求头（任意 provider）手动增删，名称/值均可编辑。
- */
-@Composable
-private fun LlmHeadersEditor(
-    headers: List<LlmHeader>,
-    onHeadersChange: (List<LlmHeader>) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(I18n.t("settings_headers_title"), fontWeight = FontWeight.SemiBold)
-        Text(
-            I18n.t("settings_headers_desc"),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        if (headers.isEmpty()) {
-            Text(I18n.t("settings_not_set"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        }
-        headers.forEachIndexed { index, header ->
-            // x-opencode-session 且值为空：应用按对话自动生成稳定 ID，值框留空并显示占位说明（可填固定值覆盖）
-            val isAutoSession = isOpencodeSessionHeader(header.name) && header.value.isBlank()
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = header.name,
-                    onValueChange = { value ->
-                        onHeadersChange(headers.mapIndexed { i, h -> if (i == index) h.copy(name = value) else h })
-                    },
-                    modifier = Modifier.weight(0.7f),
-                    label = { Text(I18n.t("settings_headers_name")) },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = header.value,
-                    onValueChange = { value ->
-                        onHeadersChange(headers.mapIndexed { i, h -> if (i == index) h.copy(value = value) else h })
-                    },
-                    modifier = Modifier.weight(1f),
-                    label = if (isAutoSession) null else ({ Text(I18n.t("settings_headers_value")) }),
-                    placeholder = if (isAutoSession) {
-                        ({ Text(I18n.t("settings_headers_auto_hint")) })
-                    } else null,
-                    singleLine = true,
-                )
-                IconButton(onClick = {
-                    onHeadersChange(headers.filterIndexed { i, _ -> i != index })
-                }) {
-                    Icon(Icons.Outlined.Delete, contentDescription = I18n.t("settings_action_delete"), tint = MaterialTheme.colorScheme.error)
-                }
-            }
-        }
-        FilledTonalButton(onClick = { onHeadersChange(headers + LlmHeader()) }) {
-            Text(I18n.t("settings_headers_add"))
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable
-internal fun LlmSettingsScreen(onBack: () -> Unit, topInsetOverride: Dp? = null) {
-    val context = LocalContext.current
-    val appContext = context.applicationContext
-    var draft by remember { mutableStateOf(LlmSettings.load(appContext)) }
-    var maxTokensText by remember { mutableStateOf(draft.maxTokens.toString()) }
-    var apiKeyVisible by remember { mutableStateOf(false) }
-    var thinkingMenuExpanded by remember { mutableStateOf(false) }
-    var protocolMenuExpanded by remember { mutableStateOf(false) }
-    var contextMenuExpanded by remember { mutableStateOf(false) }
-    var saved by remember { mutableStateOf(false) }
-    var confirmClearAll by remember { mutableStateOf(false) }
-    var clearAllFailed by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    val hazeState = rememberLiquidGlassState()
-    // 之前每次重组都同步读一次 SharedPreferences
-    val glassEnabled = remember(appContext) {
-        ThemeSettings.load(appContext).liquidGlassEnabled && VisualGuard.supportsLiquidGlass(appContext)
-    }
-    val topInset = topInsetOverride ?: WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    Box(Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .appHazeSource(hazeState),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                top = topInset + 72.dp,
-                end = 16.dp,
-                bottom = 20.dp,
-            ),
-        ) {
-            item(key = "llm_form") {
-                SettingsSectionCard {
-                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                // Row 会顺序测量、把剩余宽度丢给最后一个按钮，窄屏/大字号下「小米 mimo」被压扁并换行成瘦长块。
-                // 改用 FlowRow：各按钮按自身宽度排布，放不下时整体换行；再配合紧凑内边距与单行文本兜底。
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    LLM_PROVIDER_PRESETS.forEach { (label, presetBaseUrl, presetModel) ->
-                        FilledTonalButton(
-                            onClick = {
-                                var next = draft.copy(baseUrl = presetBaseUrl, model = presetModel, protocol = LlmProtocol.OPENAI)
-                                if (label == "OpenCode Go") {
-                                    // OpenCode Go：自动补一行 x-opencode-session（值留空 = 按对话自动生成稳定 ID），已存在则不重复添加
-                                    val hasSessionHeader = next.headers.any { isOpencodeSessionHeader(it.name) }
-                                    if (!hasSessionHeader) {
-                                        next = next.copy(headers = next.headers + LlmHeader(name = OPENCODE_SESSION_HEADER))
-                                    }
-                                }
-                                draft = next
-                                saved = false
-                            },
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                        ) {
-                            Text(label, maxLines = 1)
-                        }
-                    }
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(I18n.t("settings_llm_protocol"), fontWeight = FontWeight.SemiBold)
-                    Box {
-                        TextButton(onClick = { protocolMenuExpanded = true }) { Text(draft.protocol.label) }
-                        DropdownMenu(expanded = protocolMenuExpanded, onDismissRequest = { protocolMenuExpanded = false }) {
-                            LlmProtocol.entries.forEach { protocol ->
-                                DropdownMenuItem(text = { Text(protocol.label) }, onClick = {
-                                    draft = draft.copy(protocol = protocol)
-                                    saved = false
-                                    protocolMenuExpanded = false
-                                })
-                            }
-                        }
-                    }
-                }
-                if (draft.protocol == LlmProtocol.ANTHROPIC) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(I18n.t("settings_llm_adaptive"))
-                            Text(I18n.t("settings_llm_adaptive_hint"), style = MaterialTheme.typography.bodySmall)
-                        }
-                        Switch(checked = draft.anthropicAdaptiveThinking, onCheckedChange = {
-                            draft = draft.copy(anthropicAdaptiveThinking = it)
-                            saved = false
-                        })
-                    }
-                }
-                if (draft.protocol == LlmProtocol.GOOGLE) {
-                    Text(I18n.t("settings_llm_google_thinking_hint"), style = MaterialTheme.typography.bodySmall)
-                }
-                OutlinedTextField(
-                    value = draft.baseUrl,
-                    onValueChange = { draft = draft.copy(baseUrl = it); saved = false },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(I18n.t("settings_llm_base_url")) },
-                    supportingText = { Text(I18n.t("settings_llm_http_warning")) },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = draft.apiKey,
-                    onValueChange = { draft = draft.copy(apiKey = it); saved = false },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(I18n.t("settings_llm_api_key")) },
-                    visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
-                            Icon(
-                                if (apiKeyVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                contentDescription = null,
-                            )
-                        }
-                    },
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = draft.model,
-                    onValueChange = { draft = draft.copy(model = it); saved = false },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(I18n.t("settings_llm_model")) },
-                    singleLine = true,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(I18n.t("settings_llm_thinking"), fontWeight = FontWeight.SemiBold)
-                        Text(thinkingModeLabel(draft.thinkingMode), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Box {
-                        TextButton(onClick = { thinkingMenuExpanded = true }) { Text(thinkingModeLabel(draft.thinkingMode)) }
-                        DropdownMenu(
-                            expanded = thinkingMenuExpanded,
-                            onDismissRequest = { thinkingMenuExpanded = false },
-                        ) {
-                            ThinkingMode.entries.forEach { mode ->
-                                DropdownMenuItem(
-                                    text = { Text(thinkingModeLabel(mode)) },
-                                    onClick = {
-                                        draft = draft.copy(thinkingMode = mode)
-                                        saved = false
-                                        thinkingMenuExpanded = false
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-                SettingsSwitchRow(
-                    title = I18n.t("settings_llm_show_reasoning"),
-                    subtitle = I18n.t("settings_llm_show_reasoning_desc"),
-                    checked = draft.showReasoning,
-                    onCheckedChange = {
-                        draft = draft.copy(showReasoning = it)
-                        saved = false
-                    },
-                    divider = false,
-                )
-                Column {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(I18n.t("settings_llm_temperature"), fontWeight = FontWeight.SemiBold)
-                        Text(String.format("%.1f", draft.temperature), color = MaterialTheme.colorScheme.primary)
-                    }
-                    Slider(
-                        value = draft.temperature,
-                        onValueChange = { draft = draft.copy(temperature = (it * 10).roundToInt() / 10f); saved = false },
-                        valueRange = 0f..2f,
-                        steps = 19,
-                    )
-                }
-                OutlinedTextField(
-                    value = maxTokensText,
-                    onValueChange = { value ->
-                        maxTokensText = value.filter(Char::isDigit).take(5)
-                        maxTokensText.toIntOrNull()?.takeIf { it in 1..32_768 }?.let { maxTokens ->
-                            draft = draft.copy(maxTokens = maxTokens)
-                        }
-                        saved = false
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(I18n.t("settings_llm_max_tokens")) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(I18n.t("settings_llm_context_window"), fontWeight = FontWeight.SemiBold)
-                        Text(
-                            I18n.t("settings_llm_context_window_desc"),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Box {
-                        TextButton(onClick = { contextMenuExpanded = true }) {
-                            Text(contextTokensLabel(draft.contextTokens))
-                        }
-                        DropdownMenu(
-                            expanded = contextMenuExpanded,
-                            onDismissRequest = { contextMenuExpanded = false },
-                        ) {
-                            CONTEXT_TOKEN_OPTIONS.forEach { tokens ->
-                                DropdownMenuItem(
-                                    text = { Text(contextTokensLabel(tokens)) },
-                                    onClick = {
-                                        draft = draft.copy(contextTokens = tokens)
-                                        saved = false
-                                        contextMenuExpanded = false
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(I18n.t("settings_llm_image_input"), fontWeight = FontWeight.SemiBold)
-                        Text(
-                            I18n.t("settings_llm_image_input_desc"),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Switch(
-                        checked = draft.imageInputEnabled,
-                        onCheckedChange = { draft = draft.copy(imageInputEnabled = it); saved = false },
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(I18n.t("settings_llm_send_time"), fontWeight = FontWeight.SemiBold)
-                        Text(
-                            I18n.t("settings_llm_send_time_desc"),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Switch(
-                        checked = draft.sendMessageTime,
-                        onCheckedChange = { draft = draft.copy(sendMessageTime = it); saved = false },
-                    )
-                }
-                LlmHeadersEditor(
-                    headers = draft.headers,
-                    onHeadersChange = { updated ->
-                        draft = draft.copy(headers = updated)
-                        saved = false
-                    },
-                )
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = draft.baseUrl.trim().let { it.startsWith("http://") || it.startsWith("https://") } &&
-                        draft.apiKey.isNotBlank() && draft.model.isNotBlank() &&
-                        maxTokensText.toIntOrNull()?.let { it in 1..32_768 } == true,
-                    onClick = {
-                        maxTokensText.toIntOrNull()?.let { maxTokens ->
-                            draft = draft.copy(maxTokens = maxTokens).normalized()
-                            maxTokensText = draft.maxTokens.toString()
-                            draft.save(appContext)
-                            saved = true
-                        }
-                    },
-                ) { Text(if (saved) I18n.t("settings_llm_saved") else I18n.t("settings_llm_save")) }
-                TextButton(modifier = Modifier.fillMaxWidth(), onClick = { confirmClearAll = true }) {
-                    Text(I18n.t("settings_llm_clear_all"))
-                }
-                    }
-                }
-            }
-        }
-
-    if (confirmClearAll) {
-        AlertDialog(
-            onDismissRequest = { confirmClearAll = false },
-            title = { Text(I18n.t("settings_llm_clear_all")) },
-            text = { Text(I18n.t("settings_llm_clear_all_confirm")) },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmClearAll = false
-                    scope.launch {
-                        val cleared = withContext(Dispatchers.IO) {
-                            runCatching { ChatHistoryRepository(appContext).clearAll() }.isSuccess
-                        }
-                        clearAllFailed = !cleared
-                    }
-                }) { Text(I18n.t("confirm")) }
-            },
-            dismissButton = { TextButton(onClick = { confirmClearAll = false }) { Text(I18n.t("cancel")) } },
-        )
-    }
-
-    if (clearAllFailed) {
-        AlertDialog(
-            onDismissRequest = { clearAllFailed = false },
-            title = { Text(I18n.t("settings_llm_clear_all")) },
-            text = { Text(I18n.t("chat_history_delete_failed")) },
-            confirmButton = {
-                TextButton(onClick = { clearAllFailed = false }) { Text(I18n.t("confirm")) }
-            },
-        )
-    }
-
-    CenterAlignedTopAppBar(
-            modifier = Modifier.align(Alignment.TopCenter).appLiquidGlass(hazeState, enabled = glassEnabled),
-            title = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(I18n.t("settings_llm_title"), style = MaterialTheme.typography.titleLarge)
-                    Text(
-                        I18n.t("settings_llm_desc"),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            },
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Outlined.ArrowBack, contentDescription = I18n.t("back"))
-                }
-            },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                containerColor = Color.Transparent,
-            ),
-        )
-    }
-}
-
-private val CONTEXT_TOKEN_OPTIONS = listOf(
-    32_768,      // 32K
-    65_536,      // 64K
-    131_072,     // 128K
-    262_144,     // 256K
-    524_288,     // 512K
-    1_048_576,   // 1M
-    2_097_152,   // 2M
-)
-
-private fun contextTokensLabel(tokens: Int): String = when (tokens) {
-    32_768 -> "32K"
-    65_536 -> "64K"
-    131_072 -> "128K"
-    262_144 -> "256K"
-    524_288 -> "512K"
-    1_048_576 -> "1M"
-    2_097_152 -> "2M"
-    else -> "${tokens / 1024}K"
-}
-
-private fun thinkingModeLabel(mode: ThinkingMode): String = when (mode) {
-    ThinkingMode.Auto -> I18n.t("settings_llm_thinking_auto")
-    ThinkingMode.Enabled -> I18n.t("settings_llm_thinking_on")
-    ThinkingMode.Disabled -> I18n.t("settings_llm_thinking_off")
 }
 
 @Composable
@@ -1301,7 +848,7 @@ private fun SettingsSectionHeader(title: String) {
 }
 
 @Composable
-private fun SettingsSectionCard(
+internal fun SettingsSectionCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -1985,7 +1532,7 @@ private fun SettingsRowBase(
 }
 
 @Composable
-private fun SettingsSwitchRow(
+internal fun SettingsSwitchRow(
     title: String,
     subtitle: String? = null,
     checked: Boolean,

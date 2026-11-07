@@ -13,9 +13,11 @@ class ChatContinuationTest {
         val root = Files.createTempDirectory("continuation-history").toFile()
         try {
             val history = ChatHistoryRepository(root)
-            val original = ChatConversation("chat", "anon", "chat", 1, 2, listOf(user, partial))
+            val route = LlmReplyRoute(LlmModelRef("provider", "model"), "endpoint-fingerprint")
+            val original = ChatConversation("chat", "anon", "chat", 1, 2, listOf(user, partial.copy(continuationRoute = route)))
             history.saveConversation(original)
             val loaded = history.loadConversation("anon", "chat")!!
+            assertEquals(route, loaded.messages.last().continuationRoute)
             val resumed = ChatContinuation.merge(loaded.messages.last(), "world", "", completed = false)
             val saved = history.saveConversation(ChatBranchGraph.updateMessage(loaded, "a") { resumed })
             val reloaded = history.loadConversation("anon", "chat")!!

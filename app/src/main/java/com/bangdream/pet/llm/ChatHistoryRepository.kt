@@ -263,6 +263,7 @@ class ChatHistoryRepository internal constructor(
                         buildList { for (i in 0 until parts.length()) parts.optString(i).takeIf(String::isNotBlank)?.let { add(it) } }
                     }.orEmpty(),
                     incomplete = item.optBoolean("incomplete", false),
+                    continuationRoute = LlmReplyRoute.fromJson(item.optJSONObject("continuationRoute")),
                     requestHistory = item.optJSONArray("requestHistory")?.let { turns ->
                         buildList {
                             for (i in 0 until turns.length()) {
@@ -292,6 +293,7 @@ class ChatHistoryRepository internal constructor(
                     .put("parentId", message.parentId)
                     .put("segments", JSONArray(message.segments))
                     .put("incomplete", message.incomplete)
+                    .put("continuationRoute", message.continuationRoute?.toJson())
                     .put("requestHistory", JSONArray().apply {
                         message.requestHistory.forEach { turn ->
                             put(JSONObject().put("role", turn.role).put("content", turn.content))

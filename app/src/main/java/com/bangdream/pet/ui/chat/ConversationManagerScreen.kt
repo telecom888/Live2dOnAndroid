@@ -96,13 +96,15 @@ import com.bangdream.pet.data.ModelChoice
 import com.bangdream.pet.llm.ChatConversationSummary
 import com.bangdream.pet.llm.ChatTextSearch
 import com.bangdream.pet.llm.ChatUiState
-import com.bangdream.pet.llm.LlmSettings
 import com.bangdream.pet.llm.ChatContinuation
 import com.bangdream.pet.llm.Live2DChatViewModel
 import com.bangdream.pet.llm.TimeContextOverride
 import com.bangdream.pet.ui.design.emphasizedTween
 import com.bangdream.pet.ui.design.expressiveTween
 import com.bangdream.pet.ui.live2d.ChatRequestError
+import com.bangdream.pet.ui.live2d.ContinuationModelDialog
+import com.bangdream.pet.ui.live2d.LlmSetupHint
+import com.bangdream.pet.ui.settings.rememberActiveLlmSettings
 import com.bangdream.pet.ui.live2d.ChatMessageList
 import java.text.DateFormat
 import java.util.Date
@@ -570,7 +572,8 @@ private fun ConversationDetailScreen(
     val lineBackgroundColor = Color(displayPreferences.lineBackgroundColor)
     val lineForegroundColor = if (lineBackgroundColor.luminance() < 0.45f) Color.White else Color(0xFF1B1B1B)
     val scope = rememberCoroutineScope()
-    val contextTokens = remember { LlmSettings.load(context.applicationContext).contextTokens }
+    val llmSettings = rememberActiveLlmSettings()
+    val contextTokens = llmSettings.contextTokens
     val usedTokens = remember(state.messages) {
         state.messages.sumOf { message ->
             if (message.requestHistory.isEmpty()) ChatTextSearch.estimateTokens(message.content)
@@ -578,7 +581,7 @@ private fun ConversationDetailScreen(
         }
     }
     val usageRatio = (usedTokens.toFloat() / contextTokens.toFloat()).coerceIn(0f, 1f)
-    val imageInputEnabled = remember { LlmSettings.load(context.applicationContext).imageInputEnabled }
+    val imageInputEnabled = llmSettings.imageInputEnabled
     var selectedImages by remember { mutableStateOf<List<PickedImage>>(emptyList()) }
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(maxItems = 9),
@@ -762,7 +765,7 @@ private fun ConversationDetailScreen(
                 messages = state.messages,
                 streaming = viewModel.streaming,
                 isGenerating = state.isGenerating,
-                showReasoning = LlmSettings.load(context.applicationContext).showReasoning,
+                showReasoning = llmSettings.showReasoning,
                 revealingReplyId = state.revealingReplyId,
                 revealedSegmentCount = state.revealedSegmentCount,
                 continuingReplyId = state.continuingReplyId,
@@ -801,6 +804,7 @@ private fun ConversationDetailScreen(
             modifier = Modifier.padding(horizontal = 12.dp),
             retryEnabled = !hasPartialReply,
         )
+        if (!llmSettings.isConfigured && !state.isGenerating) LlmSetupHint()
         if (selectedImages.isNotEmpty()) {
             Row(
                 modifier = Modifier
@@ -845,7 +849,7 @@ private fun ConversationDetailScreen(
             Spacer(Modifier.width(8.dp))
             FilledIconButton(
                 onClick = { if (state.isGenerating) viewModel.stop() else send() },
-                enabled = state.isGenerating || input.value.isNotBlank() || selectedImages.isNotEmpty(),
+                enabled = state.isGenerating || (llmSettings.isConfigured && (input.value.isNotBlank() || selectedImages.isNotEmpty())),
                 modifier = Modifier.size(48.dp),
             ) {
                 Icon(
@@ -857,6 +861,7 @@ private fun ConversationDetailScreen(
     }
     }
 
+    ContinuationModelDialog(state, viewModel, character)
     if (renameDialog) {
         AlertDialog(
             onDismissRequest = { renameDialog = false },

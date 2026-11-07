@@ -3,6 +3,7 @@ package com.bangdream.pet.llm
 import com.bangdream.pet.I18n
 
 fun llmErrorText(error: String): String = when (error) {
+    "LLM_NOT_CONFIGURED" -> I18n.t("chat_not_configured")
     "LLM_TIMEOUT" -> I18n.t("chat_error_timeout")
     "LLM_STREAM_INTERRUPTED" -> I18n.t("chat_error_interrupted")
     "LLM_HOST_UNREACHABLE" -> I18n.t("chat_error_host")

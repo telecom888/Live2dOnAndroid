@@ -47,12 +47,16 @@ data class ChatUiState(
     val restoreReplyId: String? = null,
     val timeContextOverride: TimeContextOverride = TimeContextOverride.INHERIT,
     val continuingReplyId: String? = null,
+    val continuationFallback: ContinuationFallback? = null,
     val isGenerating: Boolean = false,
     val isHistoryLoading: Boolean = false,
     val error: String? = null,
     val revealingReplyId: String? = null,
     val revealedSegmentCount: Int = Int.MAX_VALUE,
 )
+
+@Immutable
+data class ContinuationFallback(val replyId: String, val route: LlmReplyRoute, val label: String)
 
 @Immutable
 data class ChatStreamUiState(val text: String = "", val reasoning: String = "")
@@ -211,6 +215,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             current.isHistoryLoading ||
             current.characterId != model.characterId
         ) return false
+        if (!checkConfigured(current)) return false
         startRequest(model, text, appendUser = true, images = images)
         return true
     }
@@ -229,14 +234,38 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         startRequest(model, failed.input, appendUser = false)
     }
 
-    fun continueReply(model: ModelChoice): Boolean {
+    fun continueReply(model: ModelChoice, confirmed: ContinuationFallback? = null): Boolean {
         val current = mutableState.value
         val reply = current.messages.lastOrNull()
         if (requestJob?.isActive == true || current.isGenerating || current.isHistoryLoading || current.characterId != model.characterId ||
             !ChatDisplayPreferences.load(getApplication()).let { it.showContinueGeneration && !it.multiPartReplies } ||
             !ChatContinuation.canContinue(reply)) return false
-        startRequest(model, "", appendUser = false, continuationId = reply!!.id)
+        val partial = requireNotNull(reply)
+        val providers = LlmProviderStore.get(getApplication()).state.value
+        val original = partial.continuationRoute
+        val default = providers.route(providers.defaultModel)
+        val route = when {
+            original != null && providers.route(original.model) == original -> original
+            default == null -> {
+                mutableState.value = current.copy(continuationFallback = null, error = ERROR_LLM_NOT_CONFIGURED)
+                return false
+            }
+            confirmed != null && confirmed.replyId == partial.id && confirmed.route == default -> default
+            else -> {
+                val provider = providers.provider(default.model.providerId)
+                val label = listOfNotNull(provider?.name, providers.model(default.model)?.label).joinToString(" · ")
+                mutableState.value = current.copy(continuationFallback = ContinuationFallback(partial.id, default, label))
+                return false
+            }
+        }
+        val settings = providers.settings(route.model) ?: return false
+        dismissContinuationFallback()
+        startRequest(model, "", appendUser = false, continuationId = partial.id, continuedWith = settings to route)
         return true
+    }
+
+    fun dismissContinuationFallback() {
+        mutableState.value = mutableState.value.copy(continuationFallback = null)
     }
 
     fun setTimeContextOverride(value: TimeContextOverride) {
@@ -295,6 +324,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         val images = if (keepImages) original.images else emptyList()
         if (content.isEmpty() && images.isEmpty()) return false
         if (current.isGenerating || current.isHistoryLoading || current.characterId != model.characterId) return false
+        if (!checkConfigured(current)) return false
         mutableState.value = current.copy(isHistoryLoading = true)
         launchTransition {
             val settings = LlmSettings.load(getApplication())
@@ -331,6 +361,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         val conversation = current.activeConversation ?: return false
         val response = conversation.nodes.firstOrNull { it.id == assistantMessageId && it.role == "assistant" } ?: return false
         if (current.isGenerating || current.isHistoryLoading || current.characterId != model.characterId) return false
+        if (!checkConfigured(current)) return false
         mutableState.value = current.copy(isHistoryLoading = true)
         launchTransition {
             val result = runIoCatching {
@@ -375,14 +406,33 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun startRequest(model: ModelChoice, input: String, appendUser: Boolean, images: List<String> = emptyList(), continuationId: String? = null) {
+    private fun checkConfigured(current: ChatUiState): Boolean {
+        if (LlmSettings.load(getApplication()).isConfigured) return true
+        mutableState.value = current.copy(error = ERROR_LLM_NOT_CONFIGURED)
+        return false
+    }
+
+    private fun startRequest(
+        model: ModelChoice,
+        input: String,
+        appendUser: Boolean,
+        images: List<String> = emptyList(),
+        continuationId: String? = null,
+        continuedWith: Pair<LlmSettings, LlmReplyRoute>? = null,
+    ) {
         cancelReplyPresentation()
         requestJob = viewModelScope.launch {
             val current = mutableState.value
             if (current.characterId != model.characterId) return@launch
 
             val now = System.currentTimeMillis()
-            val settings = LlmSettings.load(getApplication())
+            val providers = LlmProviderStore.get(getApplication()).state.value
+            val settings = continuedWith?.first ?: providers.activeSettings()
+            val route = continuedWith?.second ?: providers.route(providers.defaultModel)
+            if (!settings.isConfigured) {
+                mutableState.value = current.copy(error = ERROR_LLM_NOT_CONFIGURED)
+                return@launch
+            }
             val display = ChatDisplayPreferences.load(getApplication())
             val includeTime = when (current.timeContextOverride) {
                 TimeContextOverride.ENABLED -> true
@@ -426,6 +476,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 conversation = requestConversation,
                 continuation = continuation,
                 singlePart = !display.multiPartReplies,
+                route = route,
             )
 
             // LINE 已读：模拟「对方（角色）看过了」，在模型开始回复前随机时间把这条用户消息标记为已读
@@ -460,13 +511,10 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
                 versionPositions = ChatBranchGraph.versions(saved.first),
                 restoreReplyId = ChatStateTransitions.restoreReplyId(saved.first),
                 continuingReplyId = continuationId,
+                continuationFallback = null,
                 error = null,
             )
 
-            if (!settings.isConfigured) {
-                mutableState.value = mutableState.value.copy(error = ERROR_LLM_NOT_CONFIGURED)
-                return@launch
-            }
             val characterPrompt = withContext(Dispatchers.IO) { prompts.buildSystemPrompt(model) }
             val customPrompt = withContext(Dispatchers.IO) {
                 loadCharacterCustomPrompt(getApplication(), model.characterId)
@@ -491,7 +539,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
             }
 
             try {
-                client.streamCompletion(settings, systemPrompt, messages, requestContext.conversationId).collect { event ->
+                client.streamCompletion(settings, systemPrompt, messages).collect { event ->
                     if (!isActive(requestContext)) return@collect
                     when (event) {
                         is LlmStreamEvent.Content -> {
@@ -560,12 +608,17 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
     ) {
         val result = parser.finish(completed, preserveWhitespace = request.singlePart)
         if (completed && result.text.isBlank()) throw java.io.IOException("LLM_EMPTY_RESPONSE")
-        val response = request.continuation?.let {
+        val reply = request.continuation?.let {
             ChatContinuation.merge(it, result.text, reasoning, completed)
         } ?: result.text.takeIf(String::isNotBlank)?.let {
             newMessage("assistant", it).copy(reasoning = reasoning.takeIf(String::isNotBlank), read = true,
                 segments = result.segments, incomplete = request.singlePart && !completed)
         }
+        val response = reply?.copy(continuationRoute = when {
+            !reply.incomplete -> null
+            result.text.isEmpty() -> request.continuation?.continuationRoute
+            else -> request.route
+        })
         val saved = runIoCatching {
             val persisted = history.updateConversation(request.characterId, request.conversationId) { latest ->
                 val base = if (latest.nodes.any { it.id == request.conversation.activeLeafId }) {
@@ -760,6 +813,7 @@ class Live2DChatViewModel(application: Application) : AndroidViewModel(applicati
         val conversation: ChatConversation,
         val continuation: ChatMessage? = null,
         val singlePart: Boolean = true,
+        val route: LlmReplyRoute? = null,
     )
 
     companion object {

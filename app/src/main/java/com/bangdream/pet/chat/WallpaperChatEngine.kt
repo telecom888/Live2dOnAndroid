@@ -40,7 +40,7 @@ data class WallpaperChatResult(
 )
 
 /**
- * 壁纸聊天引擎：OpenAI 兼容（默认 DeepSeek / opencode go mimo），
+ * 壁纸聊天引擎使用全局默认模型，
  * 支持 thinking 开关、每角色多会话历史、动作标签 [动作]。
  */
 class WallpaperChatEngine(private val context: Context) {
@@ -56,7 +56,7 @@ class WallpaperChatEngine(private val context: Context) {
         val settings = LlmSettings.load(context)
         val display = ChatDisplayPreferences.load(context)
         if (!settings.isConfigured) {
-            return WallpaperChatResult("", null, "请先在设置中配置模型提供商（默认 DeepSeek）。")
+            return WallpaperChatResult("", null, I18n.t("chat_not_configured"))
         }
         val characterId = model.characterId
         val prompt = prompts.buildSystemPrompt(model)
@@ -73,14 +73,12 @@ class WallpaperChatEngine(private val context: Context) {
         val now = System.currentTimeMillis()
         val userMessage = ChatMessage(UUID.randomUUID().toString(), "user", userText, now)
         val baseMessages = active?.messages.orEmpty()
-        // OpenCode Go：x-opencode-session 每条对话一个稳定值；复用会话 id（无会话时先预生成）
-        val sessionId = active?.id ?: UUID.randomUUID().toString()
 
         val parser = AssistantReplyDecoder(prompt.allowedActionTags, display.multiPartReplies)
         val publisher = StreamDisplayPublisher(CoroutineScope(coroutineContext), display.sseBlockOutput, publish = onStreaming)
         var error: String? = null
         try {
-            client.streamCompletion(settings, systemText, baseMessages + userMessage, sessionId).collect { event ->
+            client.streamCompletion(settings, systemText, baseMessages + userMessage).collect { event ->
                 coroutineContext.ensureActive()
                 when (event) {
                     is LlmStreamEvent.Reasoning -> Unit
@@ -116,7 +114,7 @@ class WallpaperChatEngine(private val context: Context) {
                 segments = parsed.segments,
             )
             val base = active ?: ChatConversation(
-                id = sessionId,
+                id = UUID.randomUUID().toString(),
                 characterId = characterId,
                 title = userText.take(24),
                 createdAt = now,

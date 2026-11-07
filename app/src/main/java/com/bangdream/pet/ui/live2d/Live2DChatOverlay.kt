@@ -132,6 +132,8 @@ import com.bangdream.pet.llm.ChatUiState
 import com.bangdream.pet.llm.MessageVersionPosition
 import com.bangdream.pet.llm.Live2DChatViewModel
 import com.bangdream.pet.llm.LlmSettings
+import com.bangdream.pet.ui.settings.LlmSettingsActivity
+import com.bangdream.pet.ui.settings.rememberActiveLlmSettings
 import com.bangdream.pet.llm.ChatContinuation
 import com.bangdream.pet.llm.ChatStreamUiState
 import kotlinx.coroutines.flow.StateFlow
@@ -165,7 +167,7 @@ fun Live2DChatOverlay(
     val context = LocalContext.current
     val hostView = LocalView.current
     val focusManager = LocalFocusManager.current
-    val settings = remember { LlmSettings.load(context.applicationContext) }
+    val settings = rememberActiveLlmSettings()
     val input = remember(model.characterId) { mutableStateOf("") }
     var showingHistory by remember(model.characterId) { mutableStateOf(false) }
     var pendingDelete by remember(model.characterId) { mutableStateOf<ChatConversationSummary?>(null) }
@@ -405,13 +407,6 @@ private fun ChatPanelContent(
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-        } else if (!settings.isConfigured) {
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text(
-                    I18n.t("chat_not_configured"),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         } else {
             if (!compactForIme) {
                 ChatMessageList(
@@ -450,6 +445,7 @@ private fun ChatPanelContent(
             }
             ChatRequestError(state.error, displayPreferences.showRetryIcon, onRetry = { viewModel.retry(model) },
                 retryEnabled = !hasPartialReply)
+            if (!settings.isConfigured && !state.isGenerating) LlmSetupHint()
             if (!compactForIme && selectedImages.isNotEmpty()) {
                 Row(
                     modifier = Modifier
@@ -510,7 +506,7 @@ private fun ChatPanelContent(
                             }
                         }
                     },
-                    enabled = state.isGenerating || input.value.isNotBlank() || selectedImages.isNotEmpty(),
+                    enabled = state.isGenerating || (settings.isConfigured && (input.value.isNotBlank() || selectedImages.isNotEmpty())),
                     modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
@@ -521,6 +517,31 @@ private fun ChatPanelContent(
             }
         }
     }
+    ContinuationModelDialog(state, viewModel, model)
+}
+
+@Composable
+internal fun LlmSetupHint() {
+    val context = LocalContext.current
+    TextButton(onClick = {
+        context.startActivity(android.content.Intent(context, LlmSettingsActivity::class.java))
+    }) { Text(I18n.t("chat_not_configured")) }
+}
+
+@Composable
+internal fun ContinuationModelDialog(state: ChatUiState, viewModel: Live2DChatViewModel, model: ModelChoice) {
+    val fallback = state.continuationFallback?.takeIf { it.replyId == state.messages.lastOrNull()?.id } ?: return
+    AlertDialog(
+        onDismissRequest = viewModel::dismissContinuationFallback,
+        title = { Text(I18n.t("llm_continue_model_title")) },
+        text = { Text(I18n.t("llm_continue_model_confirm", fallback.label)) },
+        confirmButton = {
+            TextButton(onClick = { viewModel.continueReply(model, fallback) }) {
+                Text(I18n.t("chat_continue_generation"))
+            }
+        },
+        dismissButton = { TextButton(onClick = viewModel::dismissContinuationFallback) { Text(I18n.t("cancel")) } },
+    )
 }
 
 @Composable

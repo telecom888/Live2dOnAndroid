@@ -1,16 +1,10 @@
 package com.bangdream.pet.llm
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.runtime.Immutable
-import com.bangdream.pet.SETTINGS_PREFS
 import org.json.JSONArray
 import org.json.JSONObject
-
-/** OpenCode Go 要求的稳定会话请求头名称：值留空时由应用按每条对话自动生成稳定 ID。 */
-const val OPENCODE_SESSION_HEADER = "x-opencode-session"
-
-fun isOpencodeSessionHeader(name: String): Boolean =
-    name.equals(OPENCODE_SESSION_HEADER, ignoreCase = true)
 
 enum class ThinkingMode(val value: String) {
     Auto("auto"),
@@ -50,11 +44,10 @@ data class LlmSettings(
     val customPrompt: String = "",
     val thinkingMode: ThinkingMode = ThinkingMode.Auto,
     val temperature: Float = 0.8f,
-    val maxTokens: Int = 1024,
+    val maxTokens: Long = 1024,
     val contextTokens: Int = DEFAULT_CONTEXT_TOKENS,
     val imageInputEnabled: Boolean = false,
     val sendMessageTime: Boolean = false,
-    /** 自定义请求头（如 OpenCode Go 的 x-opencode-session）。 */
     val headers: List<LlmHeader> = emptyList(),
     val protocol: LlmProtocol = LlmProtocol.OPENAI,
     val anthropicAdaptiveThinking: Boolean = true,
@@ -69,7 +62,7 @@ data class LlmSettings(
         model = model.trim(),
         customPrompt = customPrompt.trim(),
         temperature = temperature.coerceIn(0f, 2f),
-        maxTokens = maxTokens.coerceIn(1, 32_768),
+        maxTokens = maxTokens.coerceAtLeast(1),
         contextTokens = contextTokens.coerceIn(MIN_CONTEXT_TOKENS, MAX_CONTEXT_TOKENS),
         headers = headers
             .map { LlmHeader(name = it.name.trim(), value = it.value.trim()) }
@@ -94,51 +87,39 @@ data class LlmSettings(
         }
     }
 
-    fun save(context: Context) {
-        val value = normalized()
-        context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_LLM_BASE_URL, value.baseUrl)
-            .putString(KEY_LLM_API_KEY, value.apiKey)
-            .putString(KEY_LLM_MODEL, value.model)
-            .putString(KEY_LLM_THINKING_MODE, value.thinkingMode.value)
-            .putBoolean(KEY_LLM_SHOW_REASONING, value.showReasoning)
-            .putString("llm_protocol", value.protocol.value)
-            .putBoolean("llm_anthropic_adaptive", value.anthropicAdaptiveThinking)
-            .putFloat(KEY_LLM_TEMPERATURE, value.temperature)
-            .putInt(KEY_LLM_MAX_TOKENS, value.maxTokens)
-            .putInt(KEY_LLM_CONTEXT_TOKENS, value.contextTokens)
-            .putBoolean(KEY_LLM_IMAGE_INPUT_ENABLED, value.imageInputEnabled)
-            .putBoolean(KEY_LLM_SEND_MESSAGE_TIME, value.sendMessageTime)
-            .putString(KEY_LLM_HEADERS, encodeHeaders(value.headers))
-            .apply()
-    }
-
     companion object {
         const val DEFAULT_CONTEXT_TOKENS = 1_048_576 // 1M
         const val MIN_CONTEXT_TOKENS = 8_192
         const val MAX_CONTEXT_TOKENS = 4_000_000
 
-        fun load(context: Context): LlmSettings {
-            val prefs = context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
-            return LlmSettings(
-                baseUrl = prefs.getString(KEY_LLM_BASE_URL, null).orEmpty(),
-                apiKey = prefs.getString(KEY_LLM_API_KEY, null).orEmpty(),
-                model = prefs.getString(KEY_LLM_MODEL, null).orEmpty(),
-                thinkingMode = ThinkingMode.fromValue(prefs.getString(KEY_LLM_THINKING_MODE, null)),
-                showReasoning = prefs.getBoolean(KEY_LLM_SHOW_REASONING, true),
-                protocol = LlmProtocol.fromValue(prefs.getString("llm_protocol", null)),
-                anthropicAdaptiveThinking = prefs.getBoolean("llm_anthropic_adaptive", true),
-                temperature = prefs.getFloat(KEY_LLM_TEMPERATURE, 0.8f).coerceIn(0f, 2f),
-                maxTokens = prefs.getInt(KEY_LLM_MAX_TOKENS, 1024).coerceIn(1, 32_768),
-                contextTokens = prefs.getInt(KEY_LLM_CONTEXT_TOKENS, DEFAULT_CONTEXT_TOKENS)
-                    .coerceIn(MIN_CONTEXT_TOKENS, MAX_CONTEXT_TOKENS),
-                imageInputEnabled = prefs.getBoolean(KEY_LLM_IMAGE_INPUT_ENABLED, false),
-                sendMessageTime = prefs.getBoolean(KEY_LLM_SEND_MESSAGE_TIME, false),
-                headers = decodeHeaders(prefs.getString(KEY_LLM_HEADERS, null)),
-            )
+        fun load(context: Context): LlmSettings = LlmProviderStore.get(context).state.value.activeSettings()
+
+        internal fun loadLegacy(prefs: SharedPreferences): LlmSettings = LlmSettings(
+            baseUrl = prefs.getString(KEY_LLM_BASE_URL, null).orEmpty(),
+            apiKey = prefs.getString(KEY_LLM_API_KEY, null).orEmpty(),
+            model = prefs.getString(KEY_LLM_MODEL, null).orEmpty(),
+            thinkingMode = ThinkingMode.fromValue(prefs.getString(KEY_LLM_THINKING_MODE, null)),
+            showReasoning = prefs.getBoolean(KEY_LLM_SHOW_REASONING, true),
+            protocol = LlmProtocol.fromValue(prefs.getString("llm_protocol", null)),
+            anthropicAdaptiveThinking = prefs.getBoolean("llm_anthropic_adaptive", true),
+            temperature = prefs.getFloat(KEY_LLM_TEMPERATURE, 0.8f),
+            maxTokens = prefs.getInt(KEY_LLM_MAX_TOKENS, 1024).toLong(),
+            contextTokens = prefs.getInt(KEY_LLM_CONTEXT_TOKENS, DEFAULT_CONTEXT_TOKENS),
+            imageInputEnabled = prefs.getBoolean(KEY_LLM_IMAGE_INPUT_ENABLED, false),
+            sendMessageTime = prefs.getBoolean(KEY_LLM_SEND_MESSAGE_TIME, false),
+            headers = runCatching { decodeHeaders(JSONArray(prefs.getString(KEY_LLM_HEADERS, null))) }
+                .getOrDefault(emptyList()),
+        ).normalized()
+
+        internal fun clearLegacy(editor: SharedPreferences.Editor) {
+            listOf(
+                KEY_LLM_BASE_URL, KEY_LLM_API_KEY, KEY_LLM_MODEL, KEY_LLM_THINKING_MODE,
+                KEY_LLM_SHOW_REASONING, "llm_protocol", "llm_anthropic_adaptive", KEY_LLM_TEMPERATURE,
+                KEY_LLM_MAX_TOKENS, KEY_LLM_CONTEXT_TOKENS, KEY_LLM_IMAGE_INPUT_ENABLED,
+                KEY_LLM_SEND_MESSAGE_TIME, KEY_LLM_HEADERS,
+            ).forEach(editor::remove)
         }
     }
-
 }
 
 @Immutable
@@ -162,6 +143,7 @@ data class ChatMessage(
     val incomplete: Boolean = false,
     /** Wire turns behind one visible reply, preserving continuation boundaries. */
     val requestHistory: List<ChatRequestTurn> = emptyList(),
+    val continuationRoute: LlmReplyRoute? = null,
 )
 
 @Immutable
@@ -218,23 +200,18 @@ private const val KEY_LLM_IMAGE_INPUT_ENABLED = "llm_image_input_enabled"
 private const val KEY_LLM_SEND_MESSAGE_TIME = "llm_send_message_time"
 private const val KEY_LLM_HEADERS = "llm_headers"
 
-private fun encodeHeaders(headers: List<LlmHeader>): String {
+internal fun encodeHeaders(headers: List<LlmHeader>): JSONArray {
     val array = JSONArray()
     headers.forEach { header ->
         array.put(JSONObject().put("name", header.name).put("value", header.value))
     }
-    return array.toString()
+    return array
 }
 
-private fun decodeHeaders(value: String?): List<LlmHeader> {
-    if (value.isNullOrBlank()) return emptyList()
-    return runCatching {
-        val array = JSONArray(value)
-        buildList {
-            for (i in 0 until array.length()) {
-                val obj = array.optJSONObject(i) ?: continue
-                add(LlmHeader(name = obj.optString("name"), value = obj.optString("value")))
-            }
-        }
-    }.getOrDefault(emptyList())
+internal fun decodeHeaders(array: JSONArray?): List<LlmHeader> = buildList {
+    if (array == null) return@buildList
+    for (i in 0 until array.length()) {
+        val obj = array.optJSONObject(i) ?: continue
+        add(LlmHeader(name = obj.optString("name"), value = obj.optString("value")))
+    }
 }
