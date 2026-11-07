@@ -170,12 +170,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun SettingsScreen(
+internal fun SettingsScreen(
     selectedModel: ModelChoice?,
     themeSettings: ThemeSettings,
     onThemeSettingsChanged: (ThemeSettings) -> Unit,
     renderSettings: RenderSettings,
     onRenderSettingsChanged: (RenderSettings) -> Unit,
+    updates: AppUpdateViewModel,
     topInset: Dp = 0.dp,
     onDetailActiveChange: (Boolean) -> Unit = {},
 ) {
@@ -217,6 +218,7 @@ fun SettingsScreen(
                     onOpenDetail = { route = it },
                     topInset = topInset,
                     listState = homeListState,
+                    updates = updates,
                 )
             }
         }
@@ -827,12 +829,22 @@ private fun WallpaperSettingsCard(
 }
 
 @Composable
-private fun InfoCard(title: String, body: String) {
+private fun AboutSettingsCard(updates: AppUpdateViewModel) {
     SettingsSectionCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(I18n.t("settings_about"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(I18n.t("settings_about_text"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(I18n.t("update_installed_version", updates.installedVersion), style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = updates::checkManually, enabled = !updates.checking) {
+                Text(I18n.t(if (updates.checking) "update_checking" else "update_check"))
+            }
         }
+        SettingsSwitchRow(
+            title = I18n.t("update_auto_check"),
+            checked = updates.autoCheckEnabled,
+            onCheckedChange = updates::setAutomaticCheck,
+            divider = false,
+        )
     }
 }
 
@@ -1415,6 +1427,7 @@ private fun SettingsHomeList(
     onOpenDetail: (SettingsDetail) -> Unit,
     topInset: Dp,
     listState: LazyListState,
+    updates: AppUpdateViewModel,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1448,7 +1461,7 @@ private fun SettingsHomeList(
         }
         item(key = "section_voice") { SettingsSectionHeader(I18n.t("settings_section_voice")) }
         item(key = "voice") { VoiceHomeCard(onOpenVoice = { onOpenDetail(SettingsDetail.VOICE) }) }
-        item(key = "info") { InfoCard(I18n.t("settings_about"), I18n.t("settings_about_text")) }
+        item(key = "info") { AboutSettingsCard(updates) }
     }
 }
 

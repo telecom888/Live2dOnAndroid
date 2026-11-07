@@ -311,6 +311,29 @@ private fun ProviderList(
                 )
             }
         }
+        item("heading") { Text(I18n.t("llm_providers"), style = MaterialTheme.typography.titleMedium) }
+        items(settings.providers, key = LlmProvider::id) { provider ->
+            Card(onClick = { onOpen(provider) }, modifier = Modifier.fillMaxWidth().animateItem()) {
+                ListItem(
+                    headlineContent = { Text(provider.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    supportingContent = { Text("${provider.connection.protocol.label} · ${I18n.t("llm_model_count", provider.models.size)}") },
+                    trailingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            DefaultBadge(active?.providerId == provider.id)
+                            Icon(Icons.Outlined.ChevronRight, null)
+                        }
+                    },
+                )
+            }
+        }
+        if (settings.providers.isEmpty()) {
+            item("empty") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(I18n.t("llm_provider_empty"))
+                    FilledTonalButton(onClick = onAdd) { Text(I18n.t("llm_provider_add")) }
+                }
+            }
+        }
         item("chatPreferences") {
             SettingsSectionCard {
                 SettingsSwitchRow(
@@ -337,29 +360,6 @@ private fun ProviderList(
                     divider = false,
                     enabled = activeProvider != null,
                 )
-            }
-        }
-        item("heading") { Text(I18n.t("llm_providers"), style = MaterialTheme.typography.titleMedium) }
-        items(settings.providers, key = LlmProvider::id) { provider ->
-            Card(onClick = { onOpen(provider) }, modifier = Modifier.fillMaxWidth().animateItem()) {
-                ListItem(
-                    headlineContent = { Text(provider.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    supportingContent = { Text("${provider.connection.protocol.label} · ${I18n.t("llm_model_count", provider.models.size)}") },
-                    trailingContent = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            DefaultBadge(active?.providerId == provider.id)
-                            Icon(Icons.Outlined.ChevronRight, null)
-                        }
-                    },
-                )
-            }
-        }
-        if (settings.providers.isEmpty()) {
-            item("empty") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(I18n.t("llm_provider_empty"))
-                    FilledTonalButton(onClick = onAdd) { Text(I18n.t("llm_provider_add")) }
-                }
             }
         }
         item("history") { ClearChatHistory() }

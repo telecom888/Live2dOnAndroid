@@ -61,6 +61,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bangdream.pet.data.AppData
 import com.bangdream.pet.data.DataRepository
 import com.bangdream.pet.data.ModelChoice
@@ -76,6 +77,8 @@ import com.bangdream.pet.ui.design.standardTween
 import com.bangdream.pet.ui.chat.ConversationManagerScreen
 import com.bangdream.pet.ui.live2d.Live2DScreen
 import com.bangdream.pet.ui.model.ModelScreen
+import com.bangdream.pet.ui.settings.AppUpdateDialogs
+import com.bangdream.pet.ui.settings.AppUpdateViewModel
 import com.bangdream.pet.ui.settings.SettingsScreen
 import com.bangdream.pet.ui.theme.BangDreamPetTheme
 import kotlinx.coroutines.CancellationException
@@ -91,6 +94,8 @@ class MainActivity : ComponentActivity() {
         val appContext = applicationContext
         I18n.init(appContext)
         setContent {
+            val updates: AppUpdateViewModel = viewModel()
+            LaunchedEffect(updates) { updates.checkAutomatically() }
             var themeSettings by remember { mutableStateOf(ThemeSettings.load(appContext)) }
             val darkTheme = themeSettings.darkMode.resolveDarkTheme(isSystemInDarkTheme())
             BangDreamPetTheme(
@@ -100,11 +105,13 @@ class MainActivity : ComponentActivity() {
             ) {
                 BangDreamPetApp(
                     themeSettings = themeSettings,
+                    updates = updates,
                     onThemeSettingsChanged = { settings ->
                         themeSettings = settings
                         settings.save(appContext)
                     },
                 )
+                AppUpdateDialogs(updates)
             }
         }
     }
@@ -141,8 +148,9 @@ data class ModelTransferState(
 )
 
 @Composable
-fun BangDreamPetApp(
+private fun BangDreamPetApp(
     themeSettings: ThemeSettings,
+    updates: AppUpdateViewModel,
     onThemeSettingsChanged: (ThemeSettings) -> Unit,
 ) {
     val context = LocalContext.current
@@ -369,6 +377,7 @@ fun BangDreamPetApp(
                                 onThemeSettingsChanged = onThemeSettingsChanged,
                                 renderSettings = renderSettings,
                                 onRenderSettingsChanged = updateRenderSettings,
+                                updates = updates,
                                 topInset = topInset,
                                 onDetailActiveChange = { settingsDetailActive = it },
                             )
