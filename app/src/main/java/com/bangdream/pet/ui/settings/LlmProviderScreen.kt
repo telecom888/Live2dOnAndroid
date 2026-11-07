@@ -168,7 +168,7 @@ internal fun LlmSettingsScreen(onBack: () -> Unit, topInsetOverride: Dp? = null)
                         }
                     },
                     onOpen = { if (page == target) page = "detail/${it.id}" },
-                    onShowReasoning = { enabled -> store.update { it.copy(showReasoning = enabled) } },
+                    store = store,
                 )
                 target.startsWith("detail/") -> {
                     val provider = settings.provider(id)
@@ -225,6 +225,7 @@ internal fun LlmSettingsScreen(onBack: () -> Unit, topInsetOverride: Dp? = null)
         AlertDialog(
             onDismissRequest = { discard = false },
             title = { Text(I18n.t("llm_discard_title")) },
+            text = { Text(I18n.t("llm_discard_message")) },
             confirmButton = {
                 TextButton(onClick = {
                     discard = false
@@ -280,10 +281,19 @@ private fun ProviderList(
     onBack: () -> Unit,
     onAdd: () -> Unit,
     onOpen: (LlmProvider) -> Unit,
-    onShowReasoning: (Boolean) -> Unit,
+    store: LlmProviderStore,
 ) {
     val active = settings.defaultModel
     val activeModel = settings.model(active)
+    val activeProvider = active?.let { settings.provider(it.providerId) }
+    fun updateActiveConnection(change: (LlmSettings) -> LlmSettings) {
+        val id = activeProvider?.id ?: return
+        store.update { current ->
+            val provider = current.provider(id) ?: return@update current
+            if (current.defaultModel?.providerId != id) return@update current
+            current.replace(provider.copy(connection = change(provider.connection)), current.defaultModel)
+        }
+    }
     LlmPage(I18n.t("settings_llm_title"), topInset, onBack, actions = {
         IconButton(onClick = onAdd) { Icon(Icons.Outlined.Add, I18n.t("llm_provider_add")) }
     }) {
@@ -298,6 +308,34 @@ private fun ProviderList(
                             Text(label ?: I18n.t("settings_llm_not_configured"))
                         }
                     },
+                )
+            }
+        }
+        item("chatPreferences") {
+            SettingsSectionCard {
+                SettingsSwitchRow(
+                    I18n.t("settings_llm_show_reasoning"), I18n.t("settings_llm_show_reasoning_desc"),
+                    settings.showReasoning, { enabled -> store.update { it.copy(showReasoning = enabled) } },
+                )
+                Text(
+                    activeProvider?.let { I18n.t("llm_chat_preferences_provider", it.name) }
+                        ?: I18n.t("llm_chat_preferences_no_default"),
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                SettingsSwitchRow(
+                    I18n.t("settings_llm_image_input"), I18n.t("settings_llm_image_input_desc"),
+                    activeProvider?.connection?.imageInputEnabled == true,
+                    { enabled -> updateActiveConnection { it.copy(imageInputEnabled = enabled) } },
+                    enabled = activeProvider != null,
+                )
+                SettingsSwitchRow(
+                    I18n.t("settings_llm_send_time"), I18n.t("settings_llm_send_time_desc"),
+                    activeProvider?.connection?.sendMessageTime == true,
+                    { enabled -> updateActiveConnection { it.copy(sendMessageTime = enabled) } },
+                    divider = false,
+                    enabled = activeProvider != null,
                 )
             }
         }
@@ -322,14 +360,6 @@ private fun ProviderList(
                     Text(I18n.t("llm_provider_empty"))
                     FilledTonalButton(onClick = onAdd) { Text(I18n.t("llm_provider_add")) }
                 }
-            }
-        }
-        item("reasoning") {
-            SettingsSectionCard {
-                SettingsSwitchRow(
-                    I18n.t("settings_llm_show_reasoning"), I18n.t("settings_llm_show_reasoning_desc"),
-                    settings.showReasoning, onShowReasoning, divider = false,
-                )
             }
         }
         item("history") { ClearChatHistory() }
@@ -516,30 +546,65 @@ private fun ReplacementRow(label: String, selected: Boolean, onClick: () -> Unit
     }
 }
 
+private const val CLEAR_CHAT_HISTORY_PHRASE = "确认清空全部聊天记录"
+
+private enum class ClearHistoryStep { WARNING, TYPE_PHRASE, FAILED }
+
 @Composable
 private fun ClearChatHistory() {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
-    var confirm by rememberSaveable { mutableStateOf(false) }
-    var failed by rememberSaveable { mutableStateOf(false) }
-    TextButton(onClick = { confirm = true }) { Text(I18n.t("settings_llm_clear_all")) }
-    if (confirm || failed) {
+    var step by rememberSaveable { mutableStateOf<ClearHistoryStep?>(null) }
+    var typedPhrase by rememberSaveable { mutableStateOf("") }
+    var clearing by remember { mutableStateOf(false) }
+    fun dismiss() {
+        step = null
+        typedPhrase = ""
+    }
+    TextButton(onClick = { step = ClearHistoryStep.WARNING }, enabled = !clearing) {
+        Text(I18n.t("settings_llm_clear_all"))
+    }
+    val current = step
+    if (current != null) {
         AlertDialog(
-            onDismissRequest = { confirm = false; failed = false },
+            onDismissRequest = ::dismiss,
             title = { Text(I18n.t("settings_llm_clear_all")) },
-            text = { Text(I18n.t(if (failed) "chat_history_delete_failed" else "settings_llm_clear_all_confirm")) },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (failed) failed = false
-                    else {
-                        confirm = false
-                        scope.launch {
-                            failed = !withContext(Dispatchers.IO) { runCatching { ChatHistoryRepository(context).clearAll() }.isSuccess }
-                        }
+            text = {
+                when (current) {
+                    ClearHistoryStep.WARNING -> Text(I18n.t("settings_llm_clear_all_confirm"))
+                    ClearHistoryStep.TYPE_PHRASE -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(I18n.t("llm_clear_history_phrase_prompt", CLEAR_CHAT_HISTORY_PHRASE))
+                        LlmField(typedPhrase, { typedPhrase = it }, "llm_clear_history_phrase_label")
                     }
-                }) { Text(I18n.t("confirm")) }
+                    ClearHistoryStep.FAILED -> Text(I18n.t("chat_history_delete_failed"))
+                }
             },
-            dismissButton = if (failed) null else ({ TextButton(onClick = { confirm = false }) { Text(I18n.t("cancel")) } }),
+            confirmButton = {
+                when (current) {
+                    ClearHistoryStep.WARNING -> TextButton(onClick = { step = ClearHistoryStep.TYPE_PHRASE }) {
+                        Text(I18n.t("llm_clear_history_continue"))
+                    }
+                    ClearHistoryStep.TYPE_PHRASE -> TextButton(
+                        enabled = typedPhrase == CLEAR_CHAT_HISTORY_PHRASE && !clearing,
+                        onClick = {
+                            if (step != ClearHistoryStep.TYPE_PHRASE || typedPhrase != CLEAR_CHAT_HISTORY_PHRASE || clearing) return@TextButton
+                            clearing = true
+                            dismiss()
+                            scope.launch {
+                                val cleared = withContext(Dispatchers.IO) {
+                                    runCatching { ChatHistoryRepository(context).clearAll() }.isSuccess
+                                }
+                                clearing = false
+                                if (!cleared) step = ClearHistoryStep.FAILED
+                            }
+                        }
+                    ) { Text(I18n.t("settings_action_delete")) }
+                    ClearHistoryStep.FAILED -> TextButton(onClick = ::dismiss) { Text(I18n.t("confirm")) }
+                }
+            },
+            dismissButton = if (current == ClearHistoryStep.FAILED) null else ({
+                TextButton(onClick = ::dismiss) { Text(I18n.t("cancel")) }
+            }),
         )
     }
 }

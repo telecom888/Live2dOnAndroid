@@ -43,7 +43,7 @@ data class LlmSettings(
     val model: String = "deepseek-v4-flash",
     val customPrompt: String = "",
     val thinkingMode: ThinkingMode = ThinkingMode.Auto,
-    val temperature: Float = 0.8f,
+    val temperature: Float = DEFAULT_TEMPERATURE,
     val maxTokens: Long = 1024,
     val contextTokens: Int = DEFAULT_CONTEXT_TOKENS,
     val imageInputEnabled: Boolean = false,
@@ -88,6 +88,7 @@ data class LlmSettings(
     }
 
     companion object {
+        const val DEFAULT_TEMPERATURE = 1.0f
         const val DEFAULT_CONTEXT_TOKENS = 1_048_576 // 1M
         const val MIN_CONTEXT_TOKENS = 8_192
         const val MAX_CONTEXT_TOKENS = 4_000_000
@@ -102,7 +103,7 @@ data class LlmSettings(
             showReasoning = prefs.getBoolean(KEY_LLM_SHOW_REASONING, true),
             protocol = LlmProtocol.fromValue(prefs.getString("llm_protocol", null)),
             anthropicAdaptiveThinking = prefs.getBoolean("llm_anthropic_adaptive", true),
-            temperature = prefs.getFloat(KEY_LLM_TEMPERATURE, 0.8f),
+            temperature = prefs.getFloat(KEY_LLM_TEMPERATURE, DEFAULT_TEMPERATURE),
             maxTokens = prefs.getInt(KEY_LLM_MAX_TOKENS, 1024).toLong(),
             contextTokens = prefs.getInt(KEY_LLM_CONTEXT_TOKENS, DEFAULT_CONTEXT_TOKENS),
             imageInputEnabled = prefs.getBoolean(KEY_LLM_IMAGE_INPUT_ENABLED, false),

@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
@@ -36,6 +38,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.bangdream.pet.I18n
@@ -58,7 +61,7 @@ private enum class CatalogView { INITIAL, LOADING, EMPTY, ERROR, RESULTS }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ModelPicker(provider: LlmProvider, onDismiss: () -> Unit, onAdd: (List<LlmModel>) -> Unit) {
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val scope = rememberCoroutineScope()
     val catalog = remember { LlmModelCatalog() }
     val connection = provider.connection
@@ -131,7 +134,12 @@ internal fun ModelPicker(provider: LlmProvider, onDismiss: () -> Unit, onAdd: (L
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.fillMaxHeight(),
+        sheetState = sheet,
+        contentWindowInsets = { WindowInsets.safeDrawing },
+    ) {
         Column(
             Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -144,13 +152,28 @@ internal fun ModelPicker(provider: LlmProvider, onDismiss: () -> Unit, onAdd: (L
                 TextButton(onClick = { manual = true }, enabled = !closing) { Text(I18n.t("llm_model_manual")) }
             }
             if (!canFetch) Text(I18n.t("llm_catalog_requires_connection"), style = MaterialTheme.typography.bodySmall)
-            if (entries?.isNotEmpty() == true) LlmField(query, { query = it }, "llm_catalog_search")
+            if (entries?.isNotEmpty() == true) {
+                LlmField(
+                    query, { query = it }, "llm_catalog_search",
+                    Modifier.fillMaxWidth().onFocusChanged { focus ->
+                        if (focus.isFocused) scope.launch { sheet.expand() }
+                    },
+                )
+            }
             AnimatedVisibility(loading, enter = fadeIn(standardTween()), exit = fadeOut(standardTween())) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             }
             error?.takeIf { view == CatalogView.RESULTS }?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            AnimatedVisibility(selectedModels.isNotEmpty(), enter = fadeIn(standardTween()), exit = fadeOut(standardTween())) {
+                Button(
+                    onClick = { addAndClose(selectedModels) },
+                    enabled = !closing && selectedModels.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(I18n.t("llm_model_add_selected", selectedModels.size)) }
+            }
             AnimatedContent(
                 targetState = view,
+                modifier = Modifier.weight(1f),
                 transitionSpec = { fadeIn(standardTween()) togetherWith fadeOut(standardTween()) },
                 label = "catalogState",
             ) { state ->
@@ -161,40 +184,31 @@ internal fun ModelPicker(provider: LlmProvider, onDismiss: () -> Unit, onAdd: (L
                     CatalogView.ERROR -> Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
                     CatalogView.RESULTS -> Box {
                         if (filtered.isEmpty()) Text(I18n.t("llm_catalog_no_results"))
-                        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+                        LazyColumn(Modifier.fillMaxWidth()) {
                             items(filtered, key = { it.model.id }) { item ->
                                 val model = item.model
                                 val existing = model.id in alreadyAdded
                                 val checked = existing || model.id in selected
                                 val enabled = !existing && item.compatible != false && !closing
+                                val detail = when {
+                                    existing -> I18n.t("llm_model_already_added")
+                                    item.compatible == false -> I18n.t("llm_model_incompatible")
+                                    else -> ""
+                                }
+                                val subtitle = listOf(model.id.takeIf { model.label != model.id }.orEmpty(), detail)
+                                    .filter(String::isNotBlank).joinToString(" · ")
                                 ListItem(
                                     modifier = Modifier.toggleable(checked, enabled = enabled, role = Role.Checkbox) {
                                         selected = ArrayList(if (it) selected + model.id else selected - model.id)
                                     },
                                     headlineContent = { Text(model.label) },
-                                    supportingContent = {
-                                        val detail = when {
-                                            existing -> I18n.t("llm_model_already_added")
-                                            item.compatible == false -> I18n.t("llm_model_incompatible")
-                                            item.compatible == null -> I18n.t("llm_model_unverified")
-                                            else -> ""
-                                        }
-                                        Text(listOf(model.id.takeIf { model.label != model.id }.orEmpty(), detail)
-                                            .filter(String::isNotBlank).joinToString(" · "))
-                                    },
+                                    supportingContent = if (subtitle.isEmpty()) null else ({ Text(subtitle) }),
                                     trailingContent = { Checkbox(checked, onCheckedChange = null, enabled = enabled) },
                                 )
                             }
                         }
                     }
                 }
-            }
-            AnimatedVisibility(selectedModels.isNotEmpty(), enter = fadeIn(standardTween()), exit = fadeOut(standardTween())) {
-                Button(
-                    onClick = { addAndClose(selectedModels) },
-                    enabled = !closing && selectedModels.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(I18n.t("llm_model_add_selected", selectedModels.size)) }
             }
         }
     }

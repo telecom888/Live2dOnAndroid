@@ -121,7 +121,6 @@ internal fun ProviderEditor(
                     onValueChange = { change(settings.copy(baseUrl = it)) },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(I18n.t("settings_llm_base_url")) },
-                    supportingText = { Text(I18n.t("settings_llm_http_warning")) },
                     singleLine = true,
                 )
                 OutlinedTextField(
@@ -266,14 +265,6 @@ private fun ProviderAdvanced(
             change(settings.copy(contextTokens = it))
         }
         Text(I18n.t("settings_llm_context_window_desc"), style = MaterialTheme.typography.bodySmall)
-        SettingsSwitchRow(
-            I18n.t("settings_llm_image_input"), I18n.t("settings_llm_image_input_desc"),
-            settings.imageInputEnabled, { change(settings.copy(imageInputEnabled = it)) }, divider = false,
-        )
-        SettingsSwitchRow(
-            I18n.t("settings_llm_send_time"), I18n.t("settings_llm_send_time_desc"),
-            settings.sendMessageTime, { change(settings.copy(sendMessageTime = it)) }, divider = false,
-        )
         LlmHeadersEditor(settings.headers) { change(settings.copy(headers = it)) }
     }
 }

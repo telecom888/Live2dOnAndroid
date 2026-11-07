@@ -177,7 +177,7 @@ private fun providerFromJson(json: JSONObject): LlmProvider? = json.optString("i
             baseUrl = json.optString("baseUrl"), apiKey = json.optString("apiKey"), model = "",
             protocol = LlmProtocol.fromValue(json.optString("protocol")), headers = decodeHeaders(json.optJSONArray("headers")),
             thinkingMode = ThinkingMode.fromValue(json.optString("thinkingMode")),
-            temperature = json.optDouble("temperature", 0.8).toFloat(),
+            temperature = json.optDouble("temperature", LlmSettings.DEFAULT_TEMPERATURE.toDouble()).toFloat(),
             maxTokens = json.optLong("maxTokens", 1024), contextTokens = json.optInt("contextTokens", LlmSettings.DEFAULT_CONTEXT_TOKENS),
             imageInputEnabled = json.optBoolean("imageInputEnabled"), sendMessageTime = json.optBoolean("sendMessageTime"),
             anthropicAdaptiveThinking = json.optBoolean("anthropicAdaptiveThinking", true),
