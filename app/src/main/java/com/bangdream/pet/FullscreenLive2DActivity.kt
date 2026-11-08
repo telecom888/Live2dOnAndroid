@@ -3,7 +3,6 @@ package com.bangdream.pet
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,7 +37,7 @@ class FullscreenLive2DActivity : ComponentActivity() {
             }
 
             BangDreamPetTheme(
-                darkTheme = themeSettings.darkMode.resolveDarkTheme(isSystemInDarkTheme()),
+                darkMode = themeSettings.darkMode,
                 dynamicColor = themeSettings.dynamicColorEnabled,
             ) {
                 Live2DScreen(

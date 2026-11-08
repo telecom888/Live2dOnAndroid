@@ -14,7 +14,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -97,9 +96,8 @@ class MainActivity : ComponentActivity() {
             val updates: AppUpdateViewModel = viewModel()
             LaunchedEffect(updates) { updates.checkAutomatically() }
             var themeSettings by remember { mutableStateOf(ThemeSettings.load(appContext)) }
-            val darkTheme = themeSettings.darkMode.resolveDarkTheme(isSystemInDarkTheme())
             BangDreamPetTheme(
-                darkTheme = darkTheme,
+                darkMode = themeSettings.darkMode,
                 dynamicColor = themeSettings.dynamicColorEnabled,
                 accentColor = themeSettings.accentColor,
             ) {

@@ -6,7 +6,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,7 +60,7 @@ class WallpaperAdjustActivity : ComponentActivity() {
         setContent {
             val themeSettings = remember { ThemeSettings.load(applicationContext) }
             BangDreamPetTheme(
-                darkTheme = themeSettings.darkMode.resolveDarkTheme(isSystemInDarkTheme()),
+                darkMode = themeSettings.darkMode,
                 dynamicColor = themeSettings.dynamicColorEnabled,
             ) {
                 WallpaperAdjustScreen(onClose = { finish() })

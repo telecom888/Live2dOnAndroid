@@ -96,6 +96,7 @@ enum class DarkModeSetting(val value: String) {
     On("on"),
     Off("off"),
     System("system"),
+    Amoled("amoled"),
     ;
 
     companion object {
@@ -156,7 +157,7 @@ data class ThemeSettings(
 }
 
 fun DarkModeSetting.resolveDarkTheme(systemDark: Boolean): Boolean = when (this) {
-    DarkModeSetting.On -> true
+    DarkModeSetting.On, DarkModeSetting.Amoled -> true
     DarkModeSetting.Off -> false
     DarkModeSetting.System -> systemDark
 }

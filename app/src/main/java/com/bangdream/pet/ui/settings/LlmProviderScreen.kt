@@ -26,21 +26,27 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -417,28 +423,64 @@ private fun ProviderDetail(
         if (provider.models.isEmpty()) item("empty") { Text(I18n.t("llm_models_empty")) }
         items(provider.models, key = LlmModel::id) { model ->
             val ref = LlmModelRef(provider.id, model.id)
+            val isDefault = active == ref
+            var menuOpen by remember { mutableStateOf(false) }
             SettingsSectionCard(modifier = Modifier.animateItem()) {
                 ListItem(
-                    headlineContent = { Text(model.label, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    headlineContent = {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(model.label, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            AnimatedVisibility(isDefault, enter = fadeIn(standardTween()), exit = fadeOut(standardTween())) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                ) {
+                                    Text(
+                                        I18n.t("llm_default_badge"),
+                                        Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+                        }
+                    },
                     supportingContent = if (model.label == model.id) null else ({
                         Text(model.id, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }),
                     trailingContent = {
-                        Row {
-                            IconButton(onClick = { editedModelId = model.id }) { Icon(Icons.Outlined.Edit, I18n.t("llm_model_edit")) }
-                            IconButton(onClick = { deleteTarget = model.id }) { Icon(Icons.Outlined.Delete, I18n.t("llm_model_delete")) }
+                        Box {
+                            IconButton(onClick = { menuOpen = true }) {
+                                Icon(Icons.Outlined.MoreHoriz, I18n.t("llm_model_actions", model.label))
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                if (!isDefault) {
+                                    DropdownMenuItem(
+                                        text = { Text(I18n.t("llm_set_default")) },
+                                        enabled = settings.settings(ref)?.isConfigured == true,
+                                        onClick = {
+                                            menuOpen = false
+                                            store.update { it.copy(defaultModel = ref) }
+                                        },
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text(I18n.t("llm_model_edit")) },
+                                    onClick = { menuOpen = false; editedModelId = model.id },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(I18n.t("llm_model_delete")) },
+                                    onClick = { menuOpen = false; deleteTarget = model.id },
+                                )
+                            }
                         }
                     },
                 )
-                Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    DefaultBadge(active == ref)
-                    AnimatedVisibility(active != ref, enter = fadeIn(standardTween()), exit = fadeOut(standardTween())) {
-                        TextButton(
-                            enabled = settings.settings(ref)?.isConfigured == true,
-                            onClick = { store.update { it.copy(defaultModel = ref) } },
-                        ) { Text(I18n.t("llm_set_default")) }
-                    }
-                }
             }
         }
     }

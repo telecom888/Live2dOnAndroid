@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,7 +39,6 @@ import com.bangdream.pet.BuiltinVoiceLanguage
 import com.bangdream.pet.I18n
 import com.bangdream.pet.ThemeSettings
 import com.bangdream.pet.loadBuiltinVoiceLanguage
-import com.bangdream.pet.resolveDarkTheme
 import com.bangdream.pet.ui.design.VisualGuard
 import com.bangdream.pet.ui.design.appEntrance
 import com.bangdream.pet.ui.design.appHazeSource
@@ -61,7 +59,7 @@ class VoiceListActivity : ComponentActivity() {
         setContent {
             val themeSettings = remember { ThemeSettings.load(applicationContext) }
             BangDreamPetTheme(
-                darkTheme = themeSettings.darkMode.resolveDarkTheme(isSystemInDarkTheme()),
+                darkMode = themeSettings.darkMode,
                 dynamicColor = themeSettings.dynamicColorEnabled,
             ) {
                 VoiceListScreen(characterId = characterId, characterName = characterName, onBack = { finish() })

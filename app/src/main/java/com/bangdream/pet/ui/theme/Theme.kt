@@ -4,7 +4,10 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.os.Build
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -15,6 +18,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -23,6 +27,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import com.bangdream.pet.DarkModeSetting
+import com.bangdream.pet.resolveDarkTheme
 
 private val LightColors = lightColorScheme(
     primary = Color(0xFFB32666),
@@ -127,11 +133,13 @@ private val AppShapes = Shapes(
 
 @Composable
 fun BangDreamPetTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkMode: DarkModeSetting = DarkModeSetting.System,
     dynamicColor: Boolean = false,
     accentColor: String = "pink",
     content: @Composable () -> Unit,
 ) {
+    val darkTheme = darkMode.resolveDarkTheme(isSystemInDarkTheme())
+    val amoled = darkMode == DarkModeSetting.Amoled
     val useDynamic = accentColor == "monet" || (dynamicColor && accentColor == "pink")
     val colors: ColorScheme = when {
         useDynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
@@ -143,12 +151,27 @@ fun BangDreamPetTheme(
     }
     SystemBarAppearance(darkTheme)
     MaterialTheme(
-        colorScheme = colors,
+        colorScheme = if (amoled) colors.amoledSurfaces() else colors,
         typography = AppTypography,
         shapes = AppShapes,
-        content = content,
-    )
+    ) {
+        Box(Modifier.fillMaxSize().background(if (amoled) Color.Black else Color.Transparent)) { content() }
+    }
 }
+
+private fun ColorScheme.amoledSurfaces(): ColorScheme = copy(
+    background = Color.Black,
+    surface = Color.Black,
+    surfaceDim = Color.Black,
+    surfaceTint = Color.Transparent,
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = Color(0xFF0A0A0A),
+    surfaceContainer = Color(0xFF111111),
+    surfaceContainerHigh = Color(0xFF171717),
+    surfaceContainerHighest = Color(0xFF202020),
+    surfaceBright = Color(0xFF2A2A2A),
+    surfaceVariant = Color(0xFF202020),
+)
 
 private fun presetColorScheme(accent: String, darkTheme: Boolean): ColorScheme {
     val light = when (accent) {

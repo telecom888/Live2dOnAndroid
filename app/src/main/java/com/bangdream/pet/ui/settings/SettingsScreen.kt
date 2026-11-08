@@ -878,12 +878,14 @@ private fun darkModeLabel(mode: DarkModeSetting): String = when (mode) {
     DarkModeSetting.On -> I18n.t("settings_dark_mode_on")
     DarkModeSetting.Off -> I18n.t("settings_dark_mode_off")
     DarkModeSetting.System -> I18n.t("settings_dark_mode_system")
+    DarkModeSetting.Amoled -> I18n.t("settings_dark_mode_amoled")
 }
 
 private fun darkModeDescription(mode: DarkModeSetting): String = when (mode) {
     DarkModeSetting.On -> I18n.t("settings_dark_mode_on_desc")
     DarkModeSetting.Off -> I18n.t("settings_dark_mode_off_desc")
     DarkModeSetting.System -> I18n.t("settings_dark_mode_system_desc")
+    DarkModeSetting.Amoled -> I18n.t("settings_dark_mode_amoled_desc")
 }
 
 
