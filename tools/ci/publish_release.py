@@ -74,9 +74,7 @@ def main():
         raise ValueError('Release is already published; refusing to overwrite it')
     if existing is not None and existing['target_commitish'] != commit:
         raise ValueError('Draft release targets another commit')
-    notes = Path('.github/release-notes.md').read_text(encoding='utf-8') + (
-        f"\n\n构建来源：{provenance['workflow_run']}\n\n提交：`{commit}`\n"
-    )
+    notes = Path('.github/release-notes.md').read_text(encoding='utf-8')
     if existing is None:
         # Keep the creation response: a list/tag lookup may not see a new draft yet.
         existing = api(f'repos/{repo}/releases', 'POST', {
