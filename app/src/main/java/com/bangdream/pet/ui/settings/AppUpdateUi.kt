@@ -23,6 +23,8 @@ import com.bangdream.pet.data.GitHubAppUpdates
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+internal data class AppUpdatePrompt(val release: AppUpdate, val allowSkip: Boolean)
+
 internal class AppUpdateViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = application.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
     private val releases = GitHubAppUpdates()
@@ -35,7 +37,7 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
         private set
     var checking by mutableStateOf(false)
         private set
-    var update by mutableStateOf<AppUpdate?>(null)
+    var prompt by mutableStateOf<AppUpdatePrompt?>(null)
         private set
     var notice by mutableStateOf<String?>(null)
         private set
@@ -60,10 +62,13 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
             try {
                 val latest = releases.check(installedVersion)
                 if (manual) {
-                    update = latest
-                    if (latest == null) notice = "update_no_new_version"
+                    if (latest != null) {
+                        prompt = AppUpdatePrompt(latest, allowSkip = false)
+                    } else {
+                        notice = "update_no_new_version"
+                    }
                 } else if (autoCheckEnabled && latest != null && latest.version !in ignoredVersions()) {
-                    update = latest
+                    prompt = AppUpdatePrompt(latest, allowSkip = true)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -75,11 +80,13 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
         }
     }
 
-    fun dismissUpdate() { update = null }
+    fun dismissUpdate() { prompt = null }
     fun dismissNotice() { notice = null }
 
     fun ignoreVersion() {
-        val version = update?.version ?: return
+        val current = prompt ?: return
+        if (!current.allowSkip) return
+        val version = current.release.version
         preferences.edit().putStringSet(IGNORED_VERSIONS, ignoredVersions() + version).apply()
         dismissUpdate()
     }
@@ -87,12 +94,12 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
     private fun ignoredVersions(): Set<String> = preferences.getStringSet(IGNORED_VERSIONS, emptySet()).orEmpty()
 
     fun openDownload(context: Context) {
-        val url = update?.downloadUrl ?: return
-        val intent = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER).apply {
-            action = Intent.ACTION_VIEW
-            removeCategory(Intent.CATEGORY_LAUNCHER)
+        val url = prompt?.release?.downloadUrl ?: return
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
             addCategory(Intent.CATEGORY_BROWSABLE)
-            data = Uri.parse(url)
+            // Match the default HTTPS browser without resolving a GitHub App Link.
+            selector = Intent(Intent.ACTION_VIEW, Uri.parse("https:"))
+                .addCategory(Intent.CATEGORY_BROWSABLE)
         }
         dismissUpdate()
         try {
@@ -111,14 +118,16 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
 @Composable
 internal fun AppUpdateDialogs(updates: AppUpdateViewModel) {
     val context = LocalContext.current
-    updates.update?.let { update ->
+    updates.prompt?.let { prompt ->
         AlertDialog(
             onDismissRequest = updates::dismissUpdate,
-            title = { Text(I18n.t("update_available", update.version)) },
+            title = { Text(I18n.t("update_available", prompt.release.version)) },
             text = {
                 Column {
                     Text(I18n.t("update_download_prompt", updates.installedVersion))
-                    TextButton(onClick = updates::ignoreVersion) { Text(I18n.t("update_ignore_version")) }
+                    if (prompt.allowSkip) {
+                        TextButton(onClick = updates::ignoreVersion) { Text(I18n.t("update_ignore_version")) }
+                    }
                 }
             },
             confirmButton = {
