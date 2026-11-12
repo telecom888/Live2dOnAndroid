@@ -407,7 +407,7 @@ internal fun LlmSettings.customHeaders(): List<LlmHeader> {
     val reserved = setOf("content-type", "accept", "authorization") + when (protocol) {
         LlmProtocol.OPENAI -> emptySet()
         LlmProtocol.ANTHROPIC -> setOf("x-api-key", "anthropic-version")
-        LlmProtocol.GOOGLE -> setOf("x-goog-api-key")
+        LlmProtocol.GOOGLE, LlmProtocol.VERTEX_AI -> setOf("x-goog-api-key")
     }
     return headers.map { LlmHeader(it.name.trim(), it.value.trim()) }
         .filter { it.name.isNotEmpty() && it.value.isNotEmpty() && it.name.lowercase() !in reserved }

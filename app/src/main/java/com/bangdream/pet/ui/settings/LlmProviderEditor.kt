@@ -54,6 +54,7 @@ import com.bangdream.pet.llm.LlmSettings
 import com.bangdream.pet.llm.ThinkingMode
 import com.bangdream.pet.llm.catalogUrl
 import com.bangdream.pet.llm.llmBaseUrl
+import com.bangdream.pet.llm.vertexAiModelsBaseUrl
 import com.bangdream.pet.ui.design.standardTween
 import kotlin.math.roundToInt
 
@@ -65,6 +66,11 @@ private val presets = listOf(
     ProviderPreset("OpenRouter", "https://openrouter.ai/api/v1"),
     ProviderPreset("Anthropic", "https://api.anthropic.com", LlmProtocol.ANTHROPIC),
     ProviderPreset("Gemini", "https://generativelanguage.googleapis.com", LlmProtocol.GOOGLE),
+    ProviderPreset(
+        "Vertex AI",
+        "https://aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/global/publishers/google/models",
+        LlmProtocol.VERTEX_AI,
+    ),
     ProviderPreset("Xiaomi MiMo", "https://api.xiaomimimo.com/v1"),
 )
 
@@ -82,7 +88,8 @@ internal fun ProviderEditor(
 ) {
     val settings = draft.connection
     val tokenValue = maxTokens.toLongOrNull()?.takeIf { it > 0 }
-    val validCatalogUrl = draft.modelsUrl.isBlank() || draft.catalogUrl() != null
+    val validCatalogUrl = settings.protocol == LlmProtocol.VERTEX_AI ||
+        draft.modelsUrl.isBlank() || draft.catalogUrl() != null
     var advanced by rememberSaveable { mutableStateOf(false) }
     var keyVisible by remember { mutableStateOf(false) }
     var showPicker by rememberSaveable { mutableStateOf(false) }
@@ -121,6 +128,9 @@ internal fun ProviderEditor(
                     onValueChange = { change(settings.copy(baseUrl = it)) },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(I18n.t("settings_llm_base_url")) },
+                    supportingText = if (settings.protocol == LlmProtocol.VERTEX_AI) ({
+                        Text("Replace PROJECT_ID with your Google Cloud project ID")
+                    }) else null,
                     singleLine = true,
                 )
                 OutlinedTextField(
@@ -184,7 +194,8 @@ internal fun ProviderEditor(
             Button(
                 onClick = { onSave(draft.copy(connection = settings.copy(maxTokens = requireNotNull(tokenValue))).normalized()) },
                 enabled = draft.name.isNotBlank() && llmBaseUrl(settings.baseUrl) != null &&
-                    settings.apiKey.isNotBlank() && validCatalogUrl && tokenValue != null,
+                    settings.apiKey.isNotBlank() && validCatalogUrl && tokenValue != null &&
+                    (settings.protocol != LlmProtocol.VERTEX_AI || settings.vertexAiModelsBaseUrl() != null),
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(I18n.t("settings_llm_save")) }
         }
@@ -216,15 +227,17 @@ private fun ProviderAdvanced(
     val settings = draft.connection
     fun change(settings: LlmSettings) = onDraft(draft.copy(connection = settings))
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(
-            value = draft.modelsUrl,
-            onValueChange = { onDraft(draft.copy(modelsUrl = it)) },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(I18n.t("llm_models_url")) },
-            supportingText = { Text(I18n.t("llm_models_url_hint")) },
-            isError = !validCatalogUrl,
-            singleLine = true,
-        )
+        if (settings.protocol != LlmProtocol.VERTEX_AI) {
+            OutlinedTextField(
+                value = draft.modelsUrl,
+                onValueChange = { onDraft(draft.copy(modelsUrl = it)) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(I18n.t("llm_models_url")) },
+                supportingText = { Text(I18n.t("llm_models_url_hint")) },
+                isError = !validCatalogUrl,
+                singleLine = true,
+            )
+        }
         ChoiceRow("settings_llm_thinking", settings.thinkingMode, ThinkingMode.entries, { mode ->
             I18n.t(when (mode) {
                 ThinkingMode.Auto -> "settings_llm_thinking_auto"
@@ -238,7 +251,7 @@ private fun ProviderAdvanced(
                 settings.anthropicAdaptiveThinking, { change(settings.copy(anthropicAdaptiveThinking = it)) }, divider = false,
             )
         }
-        AnimatedVisibility(settings.protocol == LlmProtocol.GOOGLE) {
+        AnimatedVisibility(settings.protocol.usesGeminiSchema) {
             Text(I18n.t("settings_llm_google_thinking_hint"), style = MaterialTheme.typography.bodySmall)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
