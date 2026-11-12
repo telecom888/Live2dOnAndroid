@@ -19,12 +19,9 @@ internal fun llmBaseUrl(value: String): HttpUrl? = value.trim().toHttpUrlOrNull(
 }
 
 internal fun LlmProvider.catalogUrl(): HttpUrl? {
-    if (connection.protocol == LlmProtocol.VERTEX_AI) {
-        // A fixed Google-owned endpoint is intentional: never send OAuth bearer tokens
-        // to an arbitrary custom Base URL or model-list override.
-        if (connection.vertexAiModelsBaseUrl() == null) return null
-        return VERTEX_MODEL_GARDEN_URL.toHttpUrlOrNull()
-    }
+    // Model Garden listing requires OAuth and returns publisherModels[] rather than models[].
+    // Vertex AI currently uses the existing manual-model entry screen.
+    if (connection.protocol == LlmProtocol.VERTEX_AI) return null
     val base = llmBaseUrl(connection.baseUrl) ?: return null
     if (modelsUrl.isNotBlank()) {
         val custom = modelsUrl.trim().toHttpUrlOrNull() ?: return null
@@ -44,40 +41,15 @@ internal fun LlmProvider.catalogUrl(): HttpUrl? {
     return endpoint.newBuilder().encodedPath(modelsPath).build()
 }
 
-private const val VERTEX_MODEL_GARDEN_URL =
-    "https://aiplatform.googleapis.com/v1beta1/publishers/google/models"
-
 internal data class CatalogModel(val model: LlmModel, val compatible: Boolean?)
-
-/** Model Garden contains many non-chat models; expose only Gemini IDs for manual selection. */
-internal fun vertexPublisherChatModel(entry: JSONObject): CatalogModel? {
-    val name = entry.optString("name")
-    if (!name.startsWith("publishers/google/models/")) return null
-    val id = name.removePrefix("publishers/google/models/").substringBefore('@')
-    if (!id.startsWith("gemini-") || id.contains('/') || id.isBlank()) return null
-    // Image-generation, TTS and Live models need APIs outside this chat client.
-    if (id.contains("-image") || id.contains("-tts") || id.contains("-live-") ||
-        id.contains("-embedding")
-    ) return null
-    return CatalogModel(LlmModel(id, entry.optString("displayName")), true)
-}
 
 internal class CatalogFailure(val status: Int) : IOException("HTTP $status")
 internal class InvalidCatalog : IOException()
 
 internal class LlmModelCatalog(private val client: OkHttpClient = HTTP) {
-    suspend fun fetch(provider: LlmProvider, vertexOAuthToken: String = ""): List<CatalogModel> {
+    suspend fun fetch(provider: LlmProvider): List<CatalogModel> {
         val url = provider.catalogUrl() ?: throw InvalidCatalog()
         val settings = provider.connection.normalized()
-        val vertex = settings.protocol == LlmProtocol.VERTEX_AI
-        val accessToken = vertexOAuthToken.trim()
-        if (vertex && accessToken.isEmpty()) throw InvalidCatalog()
-        val projectId = if (vertex) {
-            settings.vertexAiModelsBaseUrl()
-                ?.substringAfter("/projects/")
-                ?.substringBefore("/locations/")
-                ?.takeIf(String::isNotBlank) ?: throw InvalidCatalog()
-        } else ""
         val result = linkedMapOf<String, CatalogModel>()
         val cursors = mutableSetOf<String>()
         var next: String? = null
@@ -85,49 +57,34 @@ internal class LlmModelCatalog(private val client: OkHttpClient = HTTP) {
             val pageUrl = url.newBuilder().apply {
                 when (settings.protocol) {
                     LlmProtocol.ANTHROPIC -> next?.let { setQueryParameter("after_id", it) }
-                    LlmProtocol.GOOGLE, LlmProtocol.VERTEX_AI ->
-                        next?.let { setQueryParameter("pageToken", it) }
-                    LlmProtocol.OPENAI -> Unit
+                    LlmProtocol.GOOGLE -> next?.let { setQueryParameter("pageToken", it) }
+                    LlmProtocol.OPENAI, LlmProtocol.VERTEX_AI -> Unit
                 }
             }.build()
             val request = Request.Builder().url(pageUrl).get().header("Accept", "application/json")
-            if (vertex) request.header("x-goog-user-project", projectId)
             val auth = when {
                 url.host == "api.xiaomimimo.com" && settings.protocol == LlmProtocol.OPENAI -> mapOf("api-key" to settings.apiKey)
                 settings.protocol == LlmProtocol.ANTHROPIC -> mapOf("x-api-key" to settings.apiKey, "anthropic-version" to "2023-06-01")
-                vertex -> mapOf("Authorization" to "Bearer $accessToken")
-                settings.protocol == LlmProtocol.GOOGLE -> mapOf("x-goog-api-key" to settings.apiKey)
+                settings.protocol.usesGeminiSchema -> mapOf("x-goog-api-key" to settings.apiKey)
                 else -> mapOf("Authorization" to "Bearer ${settings.apiKey}")
             }
-            // Prevent custom headers from replacing OAuth, quota project, or endpoint identity.
-            if (!vertex) {
-                settings.customHeaders().filterNot { (name, _) ->
-                    name.equals("Host", ignoreCase = true) || auth.keys.any { it.equals(name, ignoreCase = true) }
-                }.forEach { (name, value) -> request.header(name, value) }
-            }
+            settings.customHeaders().filterNot { (name, _) ->
+                name.equals("Host", ignoreCase = true) || auth.keys.any { it.equals(name, ignoreCase = true) }
+            }.forEach { (name, value) -> request.header(name, value) }
             auth.forEach { (name, value) -> request.header(name, value) }
 
             val page = client.newCall(request.build()).readCatalog()
             val protocol = settings.protocol
-            val entries = page.optJSONArray(when (protocol) {
-                LlmProtocol.GOOGLE -> "models"
-                LlmProtocol.VERTEX_AI -> "publisherModels"
-                else -> "data"
-            }) ?: throw InvalidCatalog()
+            val entries = page.optJSONArray(if (protocol == LlmProtocol.GOOGLE) "models" else "data") ?: throw InvalidCatalog()
             entries.objects().forEach { entry ->
-                if (vertex) {
-                    vertexPublisherChatModel(entry)?.let { result.putIfAbsent(it.model.id, it) }
-                } else {
-                    val id = modelId(protocol, entry.optString(if (protocol == LlmProtocol.GOOGLE) "name" else "id"))
-                    if (id.isNotBlank()) {
-                        val name = when (protocol) {
-                            LlmProtocol.GOOGLE -> entry.optString("displayName")
-                            LlmProtocol.ANTHROPIC -> entry.optString("display_name")
-                            LlmProtocol.OPENAI -> entry.optString("name")
-                            LlmProtocol.VERTEX_AI -> "" // handled above
-                        }
-                        result.putIfAbsent(id, CatalogModel(LlmModel(id, name), catalogCompatibility(protocol, entry)))
+                val id = modelId(protocol, entry.optString(if (protocol == LlmProtocol.GOOGLE) "name" else "id"))
+                if (id.isNotBlank()) {
+                    val name = when (protocol) {
+                        LlmProtocol.GOOGLE, LlmProtocol.VERTEX_AI -> entry.optString("displayName")
+                        LlmProtocol.ANTHROPIC -> entry.optString("display_name")
+                        LlmProtocol.OPENAI -> entry.optString("name")
                     }
+                    result.putIfAbsent(id, CatalogModel(LlmModel(id, name), catalogCompatibility(protocol, entry)))
                 }
             }
             next = when (protocol) {
@@ -135,8 +92,7 @@ internal class LlmModelCatalog(private val client: OkHttpClient = HTTP) {
                     page.optString("last_id").ifBlank { throw InvalidCatalog() }
                 } else null
                 LlmProtocol.GOOGLE -> page.optString("nextPageToken").takeIf(String::isNotBlank)
-                LlmProtocol.VERTEX_AI -> page.optString("nextPageToken").takeIf(String::isNotBlank)
-                LlmProtocol.OPENAI -> null
+                LlmProtocol.VERTEX_AI, LlmProtocol.OPENAI -> null
             }
             if (next != null && !cursors.add(next)) throw InvalidCatalog()
         } while (next != null)

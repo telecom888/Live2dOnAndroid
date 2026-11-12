@@ -25,7 +25,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -41,7 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.bangdream.pet.I18n
 import com.bangdream.pet.llm.CatalogFailure
@@ -50,7 +48,6 @@ import com.bangdream.pet.llm.InvalidCatalog
 import com.bangdream.pet.llm.LlmModel
 import com.bangdream.pet.llm.LlmModelCatalog
 import com.bangdream.pet.llm.LlmProvider
-import com.bangdream.pet.llm.LlmProtocol
 import com.bangdream.pet.llm.catalogUrl
 import com.bangdream.pet.llm.modelId
 import com.bangdream.pet.ui.design.standardTween
@@ -79,11 +76,7 @@ internal fun ModelPicker(provider: LlmProvider, onDismiss: () -> Unit, onAdd: (L
     var selected by rememberSaveable(connection, provider.modelsUrl) { mutableStateOf(arrayListOf<String>()) }
     var manual by rememberSaveable { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
-    // Short-lived OAuth token stays in memory, not in persistent provider settings.
-    var vertexOAuthToken by remember { mutableStateOf("") }
-    val isVertex = connection.protocol == LlmProtocol.VERTEX_AI
-    val canFetch = provider.catalogUrl() != null &&
-        (if (isVertex) vertexOAuthToken.isNotBlank() else connection.apiKey.isNotBlank())
+    val canFetch = provider.catalogUrl() != null && connection.apiKey.isNotBlank()
     val filtered = remember(entries, query) {
         val search = query.trim()
         entries.orEmpty().filter { it.model.id.contains(search, true) || it.model.label.contains(search, true) }
@@ -122,15 +115,14 @@ internal fun ModelPicker(provider: LlmProvider, onDismiss: () -> Unit, onAdd: (L
         if (request == 0) return@LaunchedEffect
         try {
             entries = withContext(Dispatchers.Default) {
-                catalog.fetch(provider, if (isVertex) vertexOAuthToken else "")
-                    .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.model.label })
+                catalog.fetch(provider).sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.model.label })
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
             error = when (failure) {
                 is CatalogFailure -> when (failure.status) {
-                    401, 403 -> I18n.t(if (isVertex) "llm_vertex_catalog_auth" else "llm_catalog_auth")
+                    401, 403 -> I18n.t("llm_catalog_auth")
                     404, 405, 501 -> I18n.t("llm_catalog_unsupported")
                     else -> I18n.t("llm_catalog_http", failure.status)
                 }
@@ -153,24 +145,13 @@ internal fun ModelPicker(provider: LlmProvider, onDismiss: () -> Unit, onAdd: (L
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(I18n.t("llm_model_add"), style = MaterialTheme.typography.titleLarge)
-            if (isVertex) {
-                OutlinedTextField(
-                    value = vertexOAuthToken,
-                    onValueChange = { vertexOAuthToken = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(I18n.t("llm_vertex_catalog_token")) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                )
-                Text(I18n.t("llm_vertex_catalog_hint"), style = MaterialTheme.typography.bodySmall)
-            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = ::fetch, enabled = canFetch && !loading && !closing) {
                     Text(I18n.t(if (entries == null) "llm_catalog_get" else "llm_catalog_refresh"))
                 }
                 TextButton(onClick = { manual = true }, enabled = !closing) { Text(I18n.t("llm_model_manual")) }
             }
-            if (!canFetch && !isVertex) Text(I18n.t("llm_catalog_requires_connection"), style = MaterialTheme.typography.bodySmall)
+            if (!canFetch) Text(I18n.t("llm_catalog_requires_connection"), style = MaterialTheme.typography.bodySmall)
             if (entries?.isNotEmpty() == true) {
                 LlmField(
                     query, { query = it }, "llm_catalog_search",
