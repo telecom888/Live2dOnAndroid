@@ -52,7 +52,7 @@ class LlmProviderTest {
                 LlmProtocol.OPENAI -> LlmChatClient().buildRequestBody(settings, JSONArray())
                 else -> buildNativeRequest(settings, JSONArray(), stream = true)
             }
-            val sent = if (protocol == LlmProtocol.GOOGLE) body.getJSONObject("generationConfig").getLong("maxOutputTokens")
+            val sent = if (protocol.usesGeminiSchema) body.getJSONObject("generationConfig").getLong("maxOutputTokens")
             else body.getLong("max_tokens")
             assertEquals(limit, sent)
         }
