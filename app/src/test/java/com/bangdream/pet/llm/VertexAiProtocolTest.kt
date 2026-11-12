@@ -57,14 +57,29 @@ class VertexAiProtocolTest {
     }
 
     @Test
-    fun modelCatalogIsManualOnlyAndExistingGoogleRemainsUnchanged() {
-        assertNull(LlmProvider("vertex", connection = settings()).catalogUrl())
+    fun modelCatalogUsesOAuthAndExistingGoogleRemainsUnchanged() {
+        assertEquals("https://aiplatform.googleapis.com/v1beta1/publishers/google/models",
+            LlmProvider("vertex", connection = settings()).catalogUrl().toString())
+        assertNull(LlmProvider("invalid", connection = settings("https://example.com")).catalogUrl())
         val gemini = LlmSettings(baseUrl = "https://generativelanguage.googleapis.com",
             apiKey = "fake-key", model = "gemini-test", protocol = LlmProtocol.GOOGLE)
         assertEquals("https://generativelanguage.googleapis.com/v1beta/models/gemini-test:generateContent",
             gemini.endpoint(stream = false))
         assertTrue(LlmProtocol.VERTEX_AI.usesGeminiSchema)
         assertFalse(LlmProtocol.OPENAI.usesGeminiSchema)
+    }
+
+    @Test
+    fun parsesOnlyGeminiChatModelsFromModelGarden() {
+        fun model(name: String) = JSONObject().put("name", name)
+        val result = vertexPublisherChatModel(
+            model("publishers/google/models/gemini-3.8-flash").put("displayName", "Gemini Flash")
+        )
+        assertEquals("gemini-3.8-flash", result?.model?.id)
+        assertEquals("Gemini Flash", result?.model?.name)
+        assertNull(vertexPublisherChatModel(model("publishers/google/models/textembedding-gecko")))
+        assertNull(vertexPublisherChatModel(model("publishers/google/models/gemini-3.1-flash-image")))
+        assertNull(vertexPublisherChatModel(model("publishers/anthropic/models/gemini-3.8-flash")))
     }
 
     @Test
