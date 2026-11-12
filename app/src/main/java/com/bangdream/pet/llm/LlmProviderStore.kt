@@ -49,7 +49,7 @@ data class LlmProvider(
 }
 
 internal fun modelId(protocol: LlmProtocol, id: String): String =
-    id.trim().let { if (protocol == LlmProtocol.GOOGLE) it.removePrefix("models/") else it }
+    id.trim().let { if (protocol.usesGeminiSchema) it.removePrefix("models/") else it }
 
 @Immutable
 data class LlmProviderSettings(

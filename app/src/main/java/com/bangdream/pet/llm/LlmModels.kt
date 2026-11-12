@@ -23,7 +23,12 @@ enum class LlmProtocol(val value: String, val label: String) {
     OPENAI("openai", "OpenAI"),
     ANTHROPIC("anthropic", "Anthropic"),
     GOOGLE("google", "Google"),
+    VERTEX_AI("vertex_ai", "Vertex AI"),
     ;
+
+    // Vertex AI and AI Studio use the same Gemini JSON/SSE content schema.
+    val usesGeminiSchema: Boolean
+        get() = this == GOOGLE || this == VERTEX_AI
 
     companion object {
         fun fromValue(value: String?): LlmProtocol = entries.firstOrNull { it.value == value } ?: OPENAI
@@ -84,6 +89,13 @@ data class LlmSettings(
                 val id = java.net.URLEncoder.encode(model.trim().removePrefix("models/"), "UTF-8").replace("+", "%20")
                 "$versioned/models/$id:" + if (stream) "streamGenerateContent?alt=sse" else "generateContent"
             }
+            LlmProtocol.VERTEX_AI -> {
+                val modelsRoot = vertexAiModelsBaseUrl()
+                    ?: throw IllegalArgumentException("Invalid Vertex AI base URL")
+                val id = java.net.URLEncoder.encode(model.trim().removePrefix("models/"), "UTF-8")
+                    .replace("+", "%20")
+                "$modelsRoot/$id:" + if (stream) "streamGenerateContent?alt=sse" else "generateContent"
+            }
         }
     }
 
@@ -121,6 +133,29 @@ data class LlmSettings(
             ).forEach(editor::remove)
         }
     }
+}
+
+/**
+ * Vertex AI's project-scoped Google-publisher model collection.
+ * The host may be the standard aiplatform.googleapis.com endpoint or a regional endpoint.
+ * Accept both .../publishers/google and .../publishers/google/models.
+ * Never use the AI Studio /v1beta/models path here.
+ */
+internal fun LlmSettings.vertexAiModelsBaseUrl(): String? {
+    val base = baseUrl.trim().trimEnd('/')
+    val root = when {
+        base.endsWith("/publishers/google/models") -> base
+        base.endsWith("/publishers/google") -> "$base/models"
+        else -> return null
+    }
+    val uri = runCatching { java.net.URI(root) }.getOrNull() ?: return null
+    if (uri.scheme != "https" || uri.host.isNullOrBlank() ||
+        uri.userInfo != null || uri.rawQuery != null || uri.rawFragment != null
+    ) return null
+    val path = Regex("""^/v1/projects/([A-Za-z0-9_-]+)/locations/([A-Za-z0-9-]+)/publishers/google/models$""")
+        .matchEntire(uri.path.orEmpty()) ?: return null
+    if (path.groupValues[1].equals("PROJECT_ID", ignoreCase = true)) return null
+    return root
 }
 
 @Immutable

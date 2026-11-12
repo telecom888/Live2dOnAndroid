@@ -19,6 +19,9 @@ internal fun llmBaseUrl(value: String): HttpUrl? = value.trim().toHttpUrlOrNull(
 }
 
 internal fun LlmProvider.catalogUrl(): HttpUrl? {
+    // Model Garden listing requires OAuth and returns publisherModels[] rather than models[].
+    // Vertex AI currently uses the existing manual-model entry screen.
+    if (connection.protocol == LlmProtocol.VERTEX_AI) return null
     val base = llmBaseUrl(connection.baseUrl) ?: return null
     if (modelsUrl.isNotBlank()) {
         val custom = modelsUrl.trim().toHttpUrlOrNull() ?: return null
@@ -33,6 +36,7 @@ internal fun LlmProvider.catalogUrl(): HttpUrl? {
         LlmProtocol.OPENAI -> path.dropLast("/chat/completions".length) + "/models"
         LlmProtocol.ANTHROPIC -> path.removeSuffix("/messages") + "/models"
         LlmProtocol.GOOGLE -> path.substringBeforeLast('/')
+        LlmProtocol.VERTEX_AI -> return null
     }
     return endpoint.newBuilder().encodedPath(modelsPath).build()
 }
@@ -54,14 +58,14 @@ internal class LlmModelCatalog(private val client: OkHttpClient = HTTP) {
                 when (settings.protocol) {
                     LlmProtocol.ANTHROPIC -> next?.let { setQueryParameter("after_id", it) }
                     LlmProtocol.GOOGLE -> next?.let { setQueryParameter("pageToken", it) }
-                    LlmProtocol.OPENAI -> Unit
+                    LlmProtocol.OPENAI, LlmProtocol.VERTEX_AI -> Unit
                 }
             }.build()
             val request = Request.Builder().url(pageUrl).get().header("Accept", "application/json")
             val auth = when {
                 url.host == "api.xiaomimimo.com" && settings.protocol == LlmProtocol.OPENAI -> mapOf("api-key" to settings.apiKey)
                 settings.protocol == LlmProtocol.ANTHROPIC -> mapOf("x-api-key" to settings.apiKey, "anthropic-version" to "2023-06-01")
-                settings.protocol == LlmProtocol.GOOGLE -> mapOf("x-goog-api-key" to settings.apiKey)
+                settings.protocol.usesGeminiSchema -> mapOf("x-goog-api-key" to settings.apiKey)
                 else -> mapOf("Authorization" to "Bearer ${settings.apiKey}")
             }
             settings.customHeaders().filterNot { (name, _) ->
@@ -76,7 +80,7 @@ internal class LlmModelCatalog(private val client: OkHttpClient = HTTP) {
                 val id = modelId(protocol, entry.optString(if (protocol == LlmProtocol.GOOGLE) "name" else "id"))
                 if (id.isNotBlank()) {
                     val name = when (protocol) {
-                        LlmProtocol.GOOGLE -> entry.optString("displayName")
+                        LlmProtocol.GOOGLE, LlmProtocol.VERTEX_AI -> entry.optString("displayName")
                         LlmProtocol.ANTHROPIC -> entry.optString("display_name")
                         LlmProtocol.OPENAI -> entry.optString("name")
                     }
@@ -88,7 +92,7 @@ internal class LlmModelCatalog(private val client: OkHttpClient = HTTP) {
                     page.optString("last_id").ifBlank { throw InvalidCatalog() }
                 } else null
                 LlmProtocol.GOOGLE -> page.optString("nextPageToken").takeIf(String::isNotBlank)
-                LlmProtocol.OPENAI -> null
+                LlmProtocol.VERTEX_AI, LlmProtocol.OPENAI -> null
             }
             if (next != null && !cursors.add(next)) throw InvalidCatalog()
         } while (next != null)
@@ -100,7 +104,7 @@ internal class LlmModelCatalog(private val client: OkHttpClient = HTTP) {
             (0 until values.length()).any { predicate(values.optString(it)) }
         }
         return when (protocol) {
-            LlmProtocol.GOOGLE -> hasValue("supportedGenerationMethods") { it == "generateContent" }
+            LlmProtocol.GOOGLE, LlmProtocol.VERTEX_AI -> hasValue("supportedGenerationMethods") { it == "generateContent" }
             LlmProtocol.ANTHROPIC -> true
             LlmProtocol.OPENAI -> hasValue("endpoints") { it.endsWith("/chat/completions") }
         }

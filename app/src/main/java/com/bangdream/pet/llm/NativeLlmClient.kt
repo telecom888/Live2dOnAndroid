@@ -28,7 +28,7 @@ internal class NativeLlmClient {
                 lines.clear()
                 if (raw.trim() == "[DONE]") return true
                 val payload = parseJson(raw)
-                if (settings.protocol == LlmProtocol.GOOGLE) {
+                if (settings.protocol.usesGeminiSchema) {
                     val finish = payload.optJSONArray("candidates")?.optJSONObject(0)?.optString("finishReason").orEmpty()
                     if (finish.isNotEmpty()) finished = true
                     if (finish == "MAX_TOKENS") outputLimit = true
@@ -120,7 +120,7 @@ internal class NativeLlmClient {
 }
 
 internal fun buildNativeRequest(settings: LlmSettings, messages: JSONArray, stream: Boolean): JSONObject {
-    val google = settings.protocol == LlmProtocol.GOOGLE
+    val google = settings.protocol.usesGeminiSchema
     val system = mutableListOf<String>()
     val turns = JSONArray()
     for (index in 0 until messages.length()) {
@@ -212,7 +212,7 @@ internal fun parseNativeResponse(settings: LlmSettings, payload: JSONObject, str
         val value = block.opt(field) as? String ?: return
         if (value.isNotEmpty()) events += if (thinking) LlmStreamEvent.Reasoning(value) else LlmStreamEvent.Content(value)
     }
-    if (settings.protocol == LlmProtocol.GOOGLE) {
+    if (settings.protocol.usesGeminiSchema) {
         if (payload.optJSONObject("promptFeedback")?.optString("blockReason").orEmpty().isNotEmpty()) throw IOException("LLM_CONTENT_FILTERED")
         val candidate = payload.optJSONArray("candidates")?.optJSONObject(0) ?: return events
         val finish = candidate.optString("finishReason")
